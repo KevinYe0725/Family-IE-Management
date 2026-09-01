@@ -3,7 +3,7 @@
 .superpowers/
 node_modules/
 coverage/
+target/
 data/*.db
 data/*.db-*
 tmp/
-
