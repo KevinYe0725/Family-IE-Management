@@ -1,0 +1,9 @@
+.DS_Store
+.worktrees/
+.superpowers/
+node_modules/
+coverage/
+data/*.db
+data/*.db-*
+tmp/
+
