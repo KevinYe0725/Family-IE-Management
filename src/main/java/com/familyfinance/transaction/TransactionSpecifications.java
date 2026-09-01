@@ -9,6 +9,8 @@ import org.springframework.data.jpa.domain.Specification;
 
 final class TransactionSpecifications {
 
+    private static final char LIKE_ESCAPE = '\\';
+
     private TransactionSpecifications() {
     }
 
@@ -34,15 +36,22 @@ final class TransactionSpecifications {
                 predicates.add(builder.lessThanOrEqualTo(root.get("occurredOn"), criteria.to()));
             }
             if (criteria.keyword() != null) {
-                String pattern = "%" + criteria.keyword().toLowerCase(Locale.ROOT) + "%";
+                String pattern = "%" + escapeLike(criteria.keyword().toLowerCase(Locale.ROOT)) + "%";
                 predicates.add(builder.or(
-                        builder.like(builder.lower(root.get("merchant")), pattern),
-                        builder.like(builder.lower(root.get("location")), pattern),
-                        builder.like(builder.lower(root.get("note")), pattern),
-                        builder.like(builder.lower(root.join("category").get("name")), pattern),
-                        builder.like(builder.lower(root.join("member").get("name")), pattern)));
+                        builder.like(builder.lower(root.get("merchant")), pattern, LIKE_ESCAPE),
+                        builder.like(builder.lower(root.get("location")), pattern, LIKE_ESCAPE),
+                        builder.like(builder.lower(root.get("note")), pattern, LIKE_ESCAPE),
+                        builder.like(builder.lower(root.join("category").get("name")), pattern, LIKE_ESCAPE),
+                        builder.like(builder.lower(root.join("member").get("name")), pattern, LIKE_ESCAPE)));
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    private static String escapeLike(String keyword) {
+        return keyword
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 }

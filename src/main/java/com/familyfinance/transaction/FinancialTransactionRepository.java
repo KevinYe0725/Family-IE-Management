@@ -1,5 +1,6 @@
 package com.familyfinance.transaction;
 
+import com.familyfinance.category.TransactionKind;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Sort;
@@ -19,5 +20,12 @@ public interface FinancialTransactionRepository
             Long householdId,
             LocalDate from,
             LocalDate to,
+            Sort sort);
+
+    @EntityGraph(attributePaths = {"member", "category"})
+    List<FinancialTransaction> findByHouseholdIdAndKindAndOccurredOnBefore(
+            Long householdId,
+            TransactionKind kind,
+            LocalDate before,
             Sort sort);
 }

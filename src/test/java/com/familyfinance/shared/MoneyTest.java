@@ -18,6 +18,17 @@ class MoneyTest {
     }
 
     @Test
+    void acceptsMaximumAndRejectsAmountsThatWouldOverflowDuringCentConversion() {
+        assertThat(Money.parseCents("999999999.99")).isEqualTo(99_999_999_999L);
+        assertThatThrownBy(() -> Money.parseCents("1000000000.00"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("金额不能超过 999,999,999.99");
+        assertThatThrownBy(() -> Money.parseCents("184467440737095517"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("金额不能超过 999,999,999.99");
+    }
+
+    @Test
     void rejectsInvalidMoneyInputs() {
         assertThatThrownBy(() -> Money.parseCents("0.00"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -31,8 +42,5 @@ class MoneyTest {
         assertThatThrownBy(() -> Money.parseCents("12.345"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("金额格式必须是最多两位小数的数字");
-        assertThatThrownBy(() -> Money.parseCents("1000000000.00"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("金额不能超过 999,999,999.99");
     }
 }

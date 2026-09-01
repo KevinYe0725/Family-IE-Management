@@ -95,6 +95,27 @@ class AnalysisServiceTest {
     }
 
     @Test
+    void analysisUsesTheThreeMostRecentPopulatedExpenseMonthsAcrossCalendarGaps() {
+        Fixture fixture = fixture();
+        saveExpense(fixture, 100000L, "2026-08-03", fixture.food(), "八月支出");
+        saveExpense(fixture, 200000L, "2026-06-03", fixture.food(), "六月支出");
+        saveExpense(fixture, 300000L, "2026-03-03", fixture.food(), "三月支出");
+        saveExpense(fixture, 900000L, "2026-01-03", fixture.food(), "第四个更早月份");
+        saveExpense(fixture, 150000L, "2026-09-09", fixture.food(), "本月支出");
+        saveExpense(fixture, 900000L, "2026-10-03", fixture.food(), "未来支出");
+
+        Fixture outsider = fixture();
+        saveExpense(outsider, 900000L, "2026-08-04", outsider.food(), "其他家庭支出");
+
+        AnalysisResponse analysis = analysisService.analysis(fixture.household().getId(), YearMonth.parse("2026-09"));
+
+        assertThat(analysis.historyStatus()).isEqualTo("sufficient");
+        assertThat(analysis.insights().get(0).type()).isEqualTo("MONTHLY_DECREASE");
+        assertThat(analysis.insights().get(0).metric()).isEqualTo("-25.0%");
+        assertThat(analysis.insights().get(0).message()).contains("前三个月有数据月份平均 2000.00");
+    }
+
+    @Test
     void analysisDoesNotFabricateInsightsForEmptyCurrentMonth() {
         Fixture fixture = fixture();
         saveExpense(fixture, 100000L, "2026-06-03", fixture.food(), "六月家庭餐饮");

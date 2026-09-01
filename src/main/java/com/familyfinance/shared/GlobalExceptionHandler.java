@@ -1,7 +1,10 @@
 package com.familyfinance.shared;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -16,6 +19,8 @@ import tools.jackson.databind.exc.ValueInstantiationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiEnvelope<Void>> handleValidation(MethodArgumentNotValidException exception) {
@@ -78,7 +83,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    ResponseEntity<ApiEnvelope<Void>> handleUnexpected(Exception exception) {
+    ResponseEntity<ApiEnvelope<Void>> handleUnexpected(Exception exception, HttpServletRequest request) {
+        String requestId = RequestCorrelationFilter.requestId(request);
+        LOGGER.error("Unexpected API exception requestId={}", requestId, exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiEnvelope.error(ApiError.of("INTERNAL_ERROR", "服务器暂时无法处理请求")));
     }

@@ -16,6 +16,7 @@ import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,9 @@ class TransactionApiTest {
 
     @Autowired
     FinancialTransactionRepository transactionRepository;
+
+    @Autowired
+    EntityManager entityManager;
 
     @Test
     void createExpenseStoresIntegerCentsAndReturnsFormattedAmount() throws Exception {
@@ -175,6 +179,45 @@ class TransactionApiTest {
     }
 
     @Test
+    void fiveHundredCharacterNotePersistsPastTheDatabaseFlushBoundary() throws Exception {
+        MockHttpSession session = login();
+        Household household = demoHousehold();
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category category = expenseCategory(household, "餐饮");
+        String note = "备".repeat(500);
+
+        MvcResult created = mvc.perform(post("/api/transactions")
+                        .session(session)
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content(transactionRequest(member.getId(), category.getId(), note)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long transactionId = readId(created);
+        transactionRepository.flush();
+        entityManager.clear();
+        assertThat(transactionRepository.findById(transactionId).orElseThrow().getNote()).isEqualTo(note);
+    }
+
+    @Test
+    void fiveHundredOneCharacterNoteReturnsAValidationFieldError() throws Exception {
+        MockHttpSession session = login();
+        Household household = demoHousehold();
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category category = expenseCategory(household, "餐饮");
+
+        mvc.perform(post("/api/transactions")
+                        .session(session)
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content(transactionRequest(member.getId(), category.getId(), "备".repeat(501))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.note").value("备注长度不能超过 500 个字符"));
+    }
+
+    @Test
     void filterSeptemberExpensesByKeyword() throws Exception {
         MockHttpSession session = login();
 
@@ -188,6 +231,40 @@ class TransactionApiTest {
                 .andExpect(jsonPath("$.data[0].kind").value("expense"))
                 .andExpect(jsonPath("$.data[0].amount").value("156.80"))
                 .andExpect(jsonPath("$.data[0].note").value("家庭餐饮"));
+    }
+
+    @Test
+    void percentInKeywordMatchesALiteralPercentOnly() throws Exception {
+        MockHttpSession session = login();
+        Household household = demoHousehold();
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category category = expenseCategory(household, "餐饮");
+        saveSearchTransaction(household, member, category, "计划完成100%");
+        saveSearchTransaction(household, member, category, "计划完成100分");
+
+        mvc.perform(get("/api/transactions")
+                        .session(session)
+                        .param("q", "100%"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].note").value("计划完成100%"));
+    }
+
+    @Test
+    void underscoreInKeywordMatchesALiteralUnderscoreOnly() throws Exception {
+        MockHttpSession session = login();
+        Household household = demoHousehold();
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category category = expenseCategory(household, "餐饮");
+        saveSearchTransaction(household, member, category, "账本_专项");
+        saveSearchTransaction(household, member, category, "账本X专项");
+
+        mvc.perform(get("/api/transactions")
+                        .session(session)
+                        .param("q", "_"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].note").value("账本_专项"));
     }
 
     @Test
@@ -284,6 +361,38 @@ class TransactionApiTest {
                 .filter(saved -> saved.getName().equals(name))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private void saveSearchTransaction(
+            Household household,
+            FamilyMember member,
+            Category category,
+            String note) {
+        transactionRepository.save(new FinancialTransaction(
+                household,
+                member,
+                category,
+                TransactionKind.EXPENSE,
+                1234L,
+                LocalDate.parse("2026-09-22"),
+                "测试商家",
+                "杭州",
+                note,
+                TEST_TIME,
+                TEST_TIME));
+    }
+
+    private static String transactionRequest(Long memberId, Long categoryId, String note) {
+        return """
+                {
+                  "kind": "expense",
+                  "amount": "12.30",
+                  "occurredOn": "2026-09-18",
+                  "memberId": %d,
+                  "categoryId": %d,
+                  "note": "%s"
+                }
+                """.formatted(memberId, categoryId, note);
     }
 
     private static Long readId(MvcResult result) throws Exception {

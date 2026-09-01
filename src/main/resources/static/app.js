@@ -1,8 +1,9 @@
 import { RefreshGate } from './refresh-gate.js';
 import { expireSessionOnUnauthorized } from './session-expiry.js';
+import { createApiClient } from './api-client.js';
+import { state } from './ui-state.js';
 
 (function () {
-  const state = window.FamilyLedgerState;
   const app = document.getElementById('app');
   const refreshGate = new RefreshGate();
   const routeNames = { dashboard: '总览', transactions: '收支明细', analysis: '账目分析', settings: '家庭设置' };
@@ -21,16 +22,18 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
   };
   const query = values => Object.entries(values).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 
-  async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: 'same-origin', ...options });
-    const body = response.status === 204 ? null : await response.json().catch(() => null);
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || '请求未能完成');
-      error.status = response.status;
-      error.fields = body?.error?.fields;
-      throw error;
-    }
-    return body?.data;
+  const apiClient = createApiClient({
+    fetchImpl: (...args) => fetch(...args),
+    onUnauthorized: error => expireSessionOnUnauthorized(
+      error,
+      state,
+      () => refreshGate.invalidate(),
+      { storage: sessionStorage, renderLogin }
+    )
+  });
+
+  async function api(path, options = {}, responseType = 'json', requestOptions = {}) {
+    return apiClient.request(path, options, responseType, requestOptions);
   }
 
   async function csrfHeaders() {
@@ -57,9 +60,7 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
     try {
       return (await refresh()).current;
     } catch (error) {
-      if (expireSessionOnUnauthorized(error, state, () => refreshGate.invalidate(), { storage: sessionStorage, renderLogin })) {
-        return false;
-      }
+      if (error.sessionExpired) return false;
       showRefreshFailure(context);
       return false;
     }
@@ -96,13 +97,14 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
       state.data.session = await api('/api/session');
       await refreshSafely('会话已恢复');
     } catch (error) {
-      if (expireSessionOnUnauthorized(error, state, () => refreshGate.invalidate(), { storage: sessionStorage, renderLogin })) return;
+      if (error.sessionExpired) return;
       app.innerHTML = `<main class="login-stage"><section class="login-card"><h1>无法连接账本</h1><p>${esc(error.message)}</p><button class="button" id="retry">重新连接</button></section></main>`;
       document.getElementById('retry').onclick = boot;
     }
   }
 
   function renderLogin(error = '') {
+    document.querySelectorAll('dialog').forEach(dialog => dialog.remove());
     app.innerHTML = `<main class="login-stage"><section class="login-card" aria-labelledby="login-title">
       <div class="eyebrow">家庭现金流账本</div><h1 class="brand" id="login-title">家<em>账</em></h1>
       <p>把每一笔钱放回家庭的共同时间线，今天的收支一眼看清。</p>
@@ -116,7 +118,12 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
         refreshGate.invalidate();
         const headers = await csrfHeaders();
         const payload = new URLSearchParams({ username: form.get('username'), password: form.get('password') });
-        await api('/api/auth/login', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: payload });
+        await api(
+          '/api/auth/login',
+          { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: payload },
+          'json',
+          { handleUnauthorized: false }
+        );
         sessionStorage.setItem('family-ledger-authenticated', '1');
         state.data.session = await api('/api/session');
         await refreshSafely('已登录');
@@ -124,10 +131,10 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
     };
   }
 
-  function navButton(route, icon) { return `<button type="button" data-route="${route}" aria-current="${state.route === route ? 'page' : 'false'}"><span class="glyph">${icon}</span>${routeNames[route]}</button>`; }
+  function navButton(route, icon) { return `<button type="button" data-route="${route}" aria-current="${state.route === route ? 'page' : 'false'}"><span class="glyph" aria-hidden="true">${icon}</span>${routeNames[route]}</button>`; }
   function renderShell(content) {
     const flash = state.flash ? `<p class="status ${state.flash.type}" role="status">${esc(state.flash.message)}</p>` : '<p class="status" role="status"></p>';
-    app.innerHTML = `<div class="app-layout"><aside class="ledger-nav" aria-label="主导航"><div class="ledger-mark">家<span>账</span></div><nav class="nav-list">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}</nav><div class="nav-foot">${esc(state.data.session.username)} 的家庭账本<br><button type="button" class="button small logout-button" id="logout">退出登录</button></div></aside><section class="workspace"><header class="topbar"><div><div class="eyebrow">2026 家庭账本</div><h1>${routeNames[state.route]}</h1></div><label class="month-control" for="month"><span class="label">账期</span><input id="month" type="month" value="${esc(state.month)}" aria-label="选择账期"></label></header><main id="main" class="content" tabindex="-1">${flash}${content}</main></section><nav class="mobile-tabs" aria-label="移动导航">${navButton('dashboard','总览')}${navButton('transactions','明细')}${navButton('analysis','分析')}${navButton('settings','设置')}<button type="button" class="mobile-logout" id="mobile-logout">退出</button></nav></div>`;
+    app.innerHTML = `<div class="app-layout"><aside class="ledger-nav" aria-label="主导航"><div class="ledger-mark">家<span>账</span></div><nav class="nav-list">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}</nav><div class="nav-foot">${esc(state.data.session.username)} 的家庭账本<br><button type="button" class="button small logout-button" id="logout">退出登录</button></div></aside><section class="workspace"><header class="topbar"><div><div class="eyebrow">2026 家庭账本</div><h1>${routeNames[state.route]}</h1></div><label class="month-control" for="month"><span class="label">账期</span><input id="month" type="month" value="${esc(state.month)}" aria-label="选择账期"></label></header><main id="main" class="content" tabindex="-1">${flash}${content}</main></section><nav class="mobile-tabs" aria-label="移动导航">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}<button type="button" class="mobile-logout" id="mobile-logout">退出</button></nav></div>`;
     app.querySelectorAll('[data-route]').forEach(button => button.onclick = () => go(button.dataset.route));
     document.getElementById('month').onchange = async event => { state.month = event.target.value; state.filters = { kind: '', memberId: '', categoryId: '', q: '' }; await refreshSafely('账期已切换'); };
     document.getElementById('logout').onclick = logout;
@@ -179,15 +186,15 @@ import { expireSessionOnUnauthorized } from './session-expiry.js';
     app.querySelectorAll('[data-category-edit]').forEach(button => button.onclick = () => categoryDialog(state.data.categories.find(c => c.id === Number(button.dataset.categoryEdit)))); app.querySelectorAll('[data-category-delete]').forEach(button => button.onclick = () => removeResource('/api/categories', button.dataset.categoryDelete, '分类'));
   }
 
-  function appendDialog(title, content, submitLabel, onSubmit, focusSelector) { const dialog = document.createElement('dialog'); const titleId = `dialog-title-${Date.now()}`; let submitted = false; dialog.setAttribute('aria-labelledby', titleId); dialog.innerHTML = `<form class="modal-card" method="dialog"><div class="panel-head"><h2 id="${titleId}">${title}</h2><button type="button" class="button secondary small" aria-label="关闭">关闭</button></div>${content}<p class="status error" role="status"></p><div class="modal-actions"><button class="button secondary" type="button">取消</button><button class="button" type="submit">${submitLabel}</button></div></form>`; document.body.append(dialog); const form = dialog.querySelector('form'); const close = () => dialog.close(); dialog.querySelector('[aria-label="关闭"]').onclick = close; dialog.querySelector('.modal-actions .secondary').onclick = close; dialog.addEventListener('close', () => { dialog.remove(); if (!submitted && focusSelector) queueMicrotask(() => document.querySelector(focusSelector)?.focus()); }); dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); form.onsubmit = async event => { event.preventDefault(); const status = dialog.querySelector('.status'); const submit = form.querySelector('[type="submit"]'); submit.disabled = true; try { await onSubmit(new FormData(form)); submitted = true; state.focusSelector = focusSelector; close(); notice(`${submitLabel}成功`); } catch (problem) { submit.disabled = false; status.textContent = problem.fields ? Object.values(problem.fields).join('；') : problem.message; } }; dialog.showModal(); dialog.querySelector('input,select,textarea')?.focus(); return dialog; }
+  function appendDialog(title, content, submitLabel, onSubmit, focusSelector) { const dialog = document.createElement('dialog'); const titleId = `dialog-title-${Date.now()}`; let submitted = false; dialog.setAttribute('aria-labelledby', titleId); dialog.innerHTML = `<form class="modal-card" method="dialog"><div class="panel-head"><h2 id="${titleId}">${title}</h2><button type="button" class="button secondary small" aria-label="关闭">关闭</button></div>${content}<p class="status error" role="status"></p><div class="modal-actions"><button class="button secondary" type="button">取消</button><button class="button" type="submit">${submitLabel}</button></div></form>`; document.body.append(dialog); const form = dialog.querySelector('form'); const close = () => dialog.close(); dialog.querySelector('[aria-label="关闭"]').onclick = close; dialog.querySelector('.modal-actions .secondary').onclick = close; dialog.addEventListener('close', () => { dialog.remove(); if (!submitted && focusSelector) queueMicrotask(() => document.querySelector(focusSelector)?.focus()); }); dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); form.onsubmit = async event => { event.preventDefault(); const status = dialog.querySelector('.status'); const submit = form.querySelector('[type="submit"]'); submit.disabled = true; try { await onSubmit(new FormData(form)); submitted = true; state.focusSelector = focusSelector; close(); notice(`${submitLabel}成功`); } catch (problem) { if (problem.sessionExpired) return; submit.disabled = false; status.textContent = problem.fields ? Object.values(problem.fields).join('；') : problem.message; } }; dialog.showModal(); dialog.querySelector('input,select,textarea')?.focus(); return dialog; }
 
   function transactionDialog(row) { const isEdit = Boolean(row); const values = row || { kind: 'expense', amount: '', occurredOn: `${state.month}-01`, memberId: state.data.members[0]?.id, categoryId: '', merchant: '', location: '', note: '' }; const categoryOptions = state.data.categories.map(c => `<option value="${c.id}" data-kind="${c.kind}"${selected(values.categoryId,c.id)}>${esc(c.name)}（${c.kind === 'income' ? '收入' : '支出'}）</option>`).join(''); const focusSelector = isEdit ? `[data-focus-key="transaction-${row.id}-edit"]` : '#new-transaction'; const dialog = appendDialog(isEdit ? '编辑收支' : '记一笔收支', `<div class="modal-grid"><div class="field"><label for="tx-kind">类型</label><select id="tx-kind" name="kind"><option value="expense"${selected(values.kind,'expense')}>支出</option><option value="income"${selected(values.kind,'income')}>收入</option></select></div><div class="field"><label for="tx-amount">金额</label><input id="tx-amount" name="amount" inputmode="decimal" required value="${esc(values.amount)}" placeholder="例如 88.60"></div><div class="field"><label for="tx-date">日期</label><input id="tx-date" name="occurredOn" type="date" required value="${esc(values.occurredOn)}"></div><div class="field"><label for="tx-member">成员</label><select id="tx-member" name="memberId" required>${state.data.members.map(m => `<option value="${m.id}"${selected(values.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="tx-category">分类</label><select id="tx-category" name="categoryId" required>${categoryOptions}</select></div><div class="field"><label for="tx-merchant">商家</label><input id="tx-merchant" name="merchant" value="${esc(values.merchant)}"></div><div class="field wide"><label for="tx-location">地点</label><input id="tx-location" name="location" value="${esc(values.location)}"></div><div class="field wide"><label for="tx-note">备注</label><textarea id="tx-note" name="note">${esc(values.note)}</textarea></div></div>`, isEdit ? '保存修改' : '保存收支', async form => { const payload = Object.fromEntries(form); payload.memberId = Number(payload.memberId); payload.categoryId = Number(payload.categoryId); return write(isEdit ? `/api/transactions/${row.id}` : '/api/transactions', isEdit ? 'PATCH' : 'POST', payload, isEdit ? '收支已保存' : '收支已保存'); }, focusSelector); const kind = dialog.querySelector('#tx-kind'); const category = dialog.querySelector('#tx-category'); const matchCategories = () => { [...category.options].forEach(option => { option.hidden = option.dataset.kind !== kind.value; }); const current = category.selectedOptions[0]; if (!current || current.dataset.kind !== kind.value) { category.value = [...category.options].find(option => option.dataset.kind === kind.value)?.value || ''; } }; kind.onchange = matchCategories; matchCategories(); }
   function memberDialog(member) { const value = member || { name: '', roleLabel: '' }; appendDialog(member ? '编辑成员' : '新增成员', `<div class="form-grid"><div class="field"><label for="member-name">姓名</label><input id="member-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="member-role">身份说明</label><input id="member-role" name="roleLabel" value="${esc(value.roleLabel)}" placeholder="例如 爸爸"></div></div>`, member ? '保存修改' : '新增成员', form => write(member ? `/api/members/${member.id}` : '/api/members', member ? 'PATCH' : 'POST', Object.fromEntries(form), '成员已保存'), member ? `[data-member-edit="${member.id}"]` : '#new-member'); }
   function categoryDialog(category) { const value = category || { kind: 'expense', name: '', color: '#3B7A72' }; appendDialog(category ? '编辑分类' : '新增分类', `<div class="form-grid"><div class="field"><label for="category-kind">类型</label><select id="category-kind" name="kind"><option value="expense"${selected(value.kind,'expense')}>支出</option><option value="income"${selected(value.kind,'income')}>收入</option></select></div><div class="field"><label for="category-name">名称</label><input id="category-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="category-color">标记颜色</label><input id="category-color" name="color" required value="${esc(value.color)}" pattern="^#[0-9A-Fa-f]{6}$"></div></div>`, category ? '保存修改' : '新增分类', form => write(category ? `/api/categories/${category.id}` : '/api/categories', category ? 'PATCH' : 'POST', Object.fromEntries(form), '分类已保存'), category ? `[data-category-edit="${category.id}"]` : '#new-category'); }
-  async function removeResource(base, id, label) { if (!window.confirm(`删除这位${label}？被账目使用时系统会说明原因。`)) return; try { await write(`${base}/${id}`, 'DELETE', undefined, `${label}已删除`); notice(`${label}已删除`); } catch (problem) { notice(problem.message, 'error'); } }
-  async function removeTransaction(id) { if (!window.confirm('删除这笔收支？此操作不能撤销。')) return; try { await write(`/api/transactions/${id}`, 'DELETE', undefined, '收支已删除'); notice('收支已删除'); } catch (problem) { notice(problem.message, 'error'); } }
-  async function downloadCsv() { try { const response = await fetch(`/api/export.csv?${query({ month: state.month, ...state.filters })}`, { credentials: 'same-origin' }); if (!response.ok) throw new Error('导出失败'); const url = URL.createObjectURL(await response.blob()); const link = Object.assign(document.createElement('a'), { href: url, download: 'family-finance.csv' }); link.click(); URL.revokeObjectURL(url); notice('CSV 已开始下载'); } catch (problem) { notice(problem.message, 'error'); } }
-  async function logout() { refreshGate.invalidate(); try { await api('/api/auth/logout', { method: 'POST', headers: await csrfHeaders() }); } catch (problem) { notice(problem.message, 'error'); return; } sessionStorage.removeItem('family-ledger-authenticated'); state.data.session = null; state.flash = null; renderLogin(); }
+  async function removeResource(base, id, label) { if (!window.confirm(`删除这位${label}？被账目使用时系统会说明原因。`)) return; try { await write(`${base}/${id}`, 'DELETE', undefined, `${label}已删除`); notice(`${label}已删除`); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }
+  async function removeTransaction(id) { if (!window.confirm('删除这笔收支？此操作不能撤销。')) return; try { await write(`/api/transactions/${id}`, 'DELETE', undefined, '收支已删除'); notice('收支已删除'); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }
+  async function downloadCsv() { try { const blob = await api(`/api/export.csv?${query({ month: state.month, ...state.filters })}`, {}, 'blob'); const url = URL.createObjectURL(blob); const link = Object.assign(document.createElement('a'), { href: url, download: 'family-finance.csv' }); link.click(); URL.revokeObjectURL(url); notice('CSV 已开始下载'); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }
+  async function logout() { refreshGate.invalidate(); try { await api('/api/auth/logout', { method: 'POST', headers: await csrfHeaders() }); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); return; } sessionStorage.removeItem('family-ledger-authenticated'); state.data.session = null; state.flash = null; renderLogin(); }
   function go(route) { state.route = route; history.pushState({}, '', route === 'dashboard' ? '/' : `/${route}`); render(); document.getElementById('main')?.focus(); }
   window.addEventListener('popstate', () => { const route = location.pathname.slice(1) || 'dashboard'; state.route = routeNames[route] ? route : 'dashboard'; render(); });
   const initial = location.pathname.slice(1) || 'dashboard'; state.route = routeNames[initial] ? initial : 'dashboard'; boot();

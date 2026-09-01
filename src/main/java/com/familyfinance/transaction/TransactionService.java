@@ -9,6 +9,7 @@ import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.shared.Money;
 import com.familyfinance.shared.RequestValidationException;
+import com.familyfinance.shared.ResourceConflictException;
 import com.familyfinance.shared.ResourceNotFoundException;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -16,6 +17,7 @@ import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,19 +77,23 @@ public class TransactionService {
         throwIfInvalid(fields);
 
         Instant now = Instant.now();
-        FinancialTransaction transaction = transactionRepository.save(new FinancialTransaction(
-                household,
-                member,
-                category,
-                kind,
-                amountCents,
-                occurredOn,
-                normalizeText(request.merchant()),
-                normalizeText(request.location()),
-                normalizeText(request.note()),
-                now,
-                now));
-        return TransactionResponse.from(transaction);
+        try {
+            FinancialTransaction transaction = transactionRepository.saveAndFlush(new FinancialTransaction(
+                    household,
+                    member,
+                    category,
+                    kind,
+                    amountCents,
+                    occurredOn,
+                    normalizeText(request.merchant()),
+                    normalizeText(request.location()),
+                    normalizeText(request.note()),
+                    now,
+                    now));
+            return TransactionResponse.from(transaction);
+        } catch (DataIntegrityViolationException exception) {
+            throw persistenceConflict();
+        }
     }
 
     @Transactional
@@ -110,17 +116,22 @@ public class TransactionService {
         }
         throwIfInvalid(fields);
 
-        transaction.updateDetails(
-                member,
-                category,
-                kind,
-                amountCents,
-                occurredOn,
-                request.merchant() == null ? transaction.getMerchant() : normalizeText(request.merchant()),
-                request.location() == null ? transaction.getLocation() : normalizeText(request.location()),
-                request.note() == null ? transaction.getNote() : normalizeText(request.note()),
-                Instant.now());
-        return TransactionResponse.from(transaction);
+        try {
+            transaction.updateDetails(
+                    member,
+                    category,
+                    kind,
+                    amountCents,
+                    occurredOn,
+                    request.merchant() == null ? transaction.getMerchant() : normalizeText(request.merchant()),
+                    request.location() == null ? transaction.getLocation() : normalizeText(request.location()),
+                    request.note() == null ? transaction.getNote() : normalizeText(request.note()),
+                    Instant.now());
+            transactionRepository.flush();
+            return TransactionResponse.from(transaction);
+        } catch (DataIntegrityViolationException exception) {
+            throw persistenceConflict();
+        }
     }
 
     @Transactional
@@ -213,6 +224,12 @@ public class TransactionService {
         if (!fields.isEmpty()) {
             throw new RequestValidationException(fields);
         }
+    }
+
+    private static ResourceConflictException persistenceConflict() {
+        return new ResourceConflictException(
+                "RESOURCE_CONFLICT",
+                "收支记录关联的数据已变化，请刷新后重试");
     }
 
 }

@@ -40,6 +40,9 @@ class StaticApplicationTest {
         mvc.perform(get("/app.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("text/javascript"));
+        mvc.perform(get("/api-client.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/javascript"));
         mvc.perform(get("/transactions"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/index.html"));

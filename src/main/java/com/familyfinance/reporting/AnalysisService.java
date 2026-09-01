@@ -23,6 +23,9 @@ public class AnalysisService {
     private static final Sort MONTH_SORT = Sort.by(
             Sort.Order.asc("occurredOn"),
             Sort.Order.asc("id"));
+    private static final Sort HISTORY_SORT = Sort.by(
+            Sort.Order.desc("occurredOn"),
+            Sort.Order.desc("id"));
 
     private final FinancialTransactionRepository transactionRepository;
 
@@ -36,11 +39,11 @@ public class AnalysisService {
                 month.atDay(1),
                 month.atEndOfMonth(),
                 MONTH_SORT);
-        List<FinancialTransaction> historyTransactions = transactionRepository.findByHouseholdIdAndOccurredOnBetween(
+        List<FinancialTransaction> historyTransactions = transactionRepository.findByHouseholdIdAndKindAndOccurredOnBefore(
                 householdId,
-                month.minusMonths(3).atDay(1),
-                month.minusMonths(1).atEndOfMonth(),
-                MONTH_SORT);
+                TransactionKind.EXPENSE,
+                month.atDay(1),
+                HISTORY_SORT);
 
         long currentExpenseCents = expenseTotal(currentTransactions);
         Map<YearMonth, Long> historyByMonth = historicalExpenseTotals(historyTransactions);
@@ -76,6 +79,9 @@ public class AnalysisService {
         for (FinancialTransaction transaction : transactions) {
             if (transaction.getKind() == TransactionKind.EXPENSE) {
                 YearMonth month = YearMonth.from(transaction.getOccurredOn());
+                if (!totals.containsKey(month) && totals.size() == 3) {
+                    break;
+                }
                 totals.merge(month, transaction.getAmountCents(), Long::sum);
             }
         }

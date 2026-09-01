@@ -11,6 +11,7 @@ import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,6 +25,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -58,6 +60,9 @@ class CategoryConflictTranslationApiTest {
     @MockitoSpyBean
     FinancialTransactionRepository transactionRepository;
 
+    @Autowired
+    EntityManager entityManager;
+
     @Test
     void concurrentDuplicateCreateReturnsConflictInsteadOfGenericFailure() throws Exception {
         String uniqueName = "并发冲突" + System.nanoTime();
@@ -69,10 +74,18 @@ class CategoryConflictTranslationApiTest {
                         bothInsideSave.countDown();
                         assertThat(bothInsideSave.await(5, TimeUnit.SECONDS)).isTrue();
                     }
-                    return invocation.callRealMethod();
+                    try {
+                        entityManager.persist(category);
+                        entityManager.flush();
+                        return category;
+                    } catch (RuntimeException exception) {
+                        throw new DataIntegrityViolationException(
+                                "concurrent category persistence conflict",
+                                exception);
+                    }
                 })
                 .when(categoryRepository)
-                .save(Mockito.any(Category.class));
+                .saveAndFlush(Mockito.any(Category.class));
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -83,6 +96,10 @@ class CategoryConflictTranslationApiTest {
             ResponseSnapshot secondResponse = second.get(10, TimeUnit.SECONDS);
 
             assertThat(List.of(firstResponse.status(), secondResponse.status()))
+                    .withFailMessage(
+                            "saveAndFlush boundary responses: first=%s second=%s",
+                            firstResponse.body(),
+                            secondResponse.body())
                     .containsExactlyInAnyOrder(201, 409);
 
             ResponseSnapshot conflict = firstResponse.status() == 409 ? firstResponse : secondResponse;

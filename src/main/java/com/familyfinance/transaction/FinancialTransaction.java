@@ -55,6 +55,7 @@ public class FinancialTransaction {
 
     private String location;
 
+    @Column(length = 500)
     private String note;
 
     @Column(name = "created_at", nullable = false, updatable = false)
