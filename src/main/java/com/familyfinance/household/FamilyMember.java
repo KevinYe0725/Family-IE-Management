@@ -61,4 +61,9 @@ public class FamilyMember {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public void updateProfile(String name, String roleLabel) {
+        this.name = name;
+        this.roleLabel = roleLabel;
+    }
 }

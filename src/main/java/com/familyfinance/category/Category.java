@@ -92,4 +92,10 @@ public class Category {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public void update(TransactionKind kind, String name, String color) {
+        this.kind = kind;
+        this.name = name;
+        this.color = color;
+    }
 }
