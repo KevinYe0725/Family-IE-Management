@@ -10,6 +10,6 @@
 | 6. 看板数字可与流水核对，结余正确 | `DashboardServiceTest`、`ReportingApiTest`；浏览器“总览”切换 2026-09，对照明细。 |
 | 7. 分析来自规则且数据不足时说明边界 | `AnalysisServiceTest`、`ReportingApiTest`；浏览器“账目分析”查看提示与 2026-05 空账期。 |
 | 8. CSV 含当前筛选且中文可读 | `CsvExportApiTest`、`SprintOneSmokeTest`；浏览器应用筛选后点击“下载 CSV”。 |
-| 9. 桌面与移动真实可操作 | Playwright CLI 在 1440×900 与 390×844 下执行登录、收支、分析、设置、导出、退出和键盘焦点检查；截图保存在 `output/playwright/`。 |
+| 9. 桌面与移动真实可操作 | Playwright CLI 在 **1440×900** 执行登录、看板与退出；在 **390×844** 执行登录、看板、收支新增/编辑/筛选/删除、分析、设置、CSV 请求、退出、Escape/保存后的键盘焦点和水平溢出检查；截图保存在 `output/playwright/`。 |
 
 验收时，若有写操作失败，先检查浏览器是否先请求了 `/api/csrf` 并发送 `X-XSRF-TOKEN`。登录后 Spring Security 会更新会话，因此后续写入应重新取得令牌。
