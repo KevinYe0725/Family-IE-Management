@@ -95,13 +95,33 @@ public class AnalysisService {
                 .multiply(BigDecimal.valueOf(100))
                 .divide(average, 1, RoundingMode.HALF_UP);
         String metric = percent.toPlainString() + "%";
-        String type = percent.signum() >= 0 ? "MONTHLY_INCREASE" : "MONTHLY_DECREASE";
-        String title = percent.signum() >= 0 ? "本月支出高于近期平均" : "本月支出低于近期平均";
+        String type = monthlyComparisonType(percent);
+        String title = monthlyComparisonTitle(percent);
         String message = "本月支出 " + DashboardService.formatCents(currentExpenseCents)
                 + "，前三个月有数据月份平均 "
                 + DashboardService.formatCents(average.setScale(0, RoundingMode.HALF_UP).longValueExact())
                 + "，变化 " + metric + "。";
         return new InsightResponse(type, title, message, metric);
+    }
+
+    private static String monthlyComparisonType(BigDecimal percent) {
+        if (percent.signum() > 0) {
+            return "MONTHLY_INCREASE";
+        }
+        if (percent.signum() < 0) {
+            return "MONTHLY_DECREASE";
+        }
+        return "MONTHLY_STABLE";
+    }
+
+    private static String monthlyComparisonTitle(BigDecimal percent) {
+        if (percent.signum() > 0) {
+            return "本月支出高于近期平均";
+        }
+        if (percent.signum() < 0) {
+            return "本月支出低于近期平均";
+        }
+        return "本月支出与近期平均持平";
     }
 
     private static java.util.Optional<InsightResponse> topCategory(

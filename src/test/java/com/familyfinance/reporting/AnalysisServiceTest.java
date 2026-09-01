@@ -79,6 +79,22 @@ class AnalysisServiceTest {
     }
 
     @Test
+    void analysisTreatsEqualCurrentExpenseAndHistoryAverageAsStable() {
+        Fixture fixture = fixture();
+        saveExpense(fixture, 100000L, "2026-07-03", fixture.food(), "七月家庭餐饮");
+        saveExpense(fixture, 100000L, "2026-08-03", fixture.food(), "八月家庭餐饮");
+        saveExpense(fixture, 100000L, "2026-09-09", fixture.food(), "九月家庭餐饮");
+
+        AnalysisResponse analysis = analysisService.analysis(fixture.household().getId(), YearMonth.parse("2026-09"));
+
+        assertThat(analysis.historyStatus()).isEqualTo("sufficient");
+        assertThat(analysis.insights().get(0).type()).isEqualTo("MONTHLY_STABLE");
+        assertThat(analysis.insights().get(0).title()).isEqualTo("本月支出与近期平均持平");
+        assertThat(analysis.insights().get(0).metric()).isEqualTo("0.0%");
+        assertThat(analysis.insights()).hasSize(3);
+    }
+
+    @Test
     void analysisDoesNotFabricateInsightsForEmptyCurrentMonth() {
         Fixture fixture = fixture();
         saveExpense(fixture, 100000L, "2026-06-03", fixture.food(), "六月家庭餐饮");

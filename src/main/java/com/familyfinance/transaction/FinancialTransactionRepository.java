@@ -2,9 +2,10 @@ package com.familyfinance.transaction;
 
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.domain.Sort;
 
 public interface FinancialTransactionRepository
         extends JpaRepository<FinancialTransaction, Long>, JpaSpecificationExecutor<FinancialTransaction> {
@@ -13,6 +14,7 @@ public interface FinancialTransactionRepository
 
     boolean existsByHouseholdIdAndCategoryId(Long householdId, Long categoryId);
 
+    @EntityGraph(attributePaths = {"member", "category"})
     List<FinancialTransaction> findByHouseholdIdAndOccurredOnBetween(
             Long householdId,
             LocalDate from,
