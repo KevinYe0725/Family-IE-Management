@@ -1,4 +1,5 @@
 import { RefreshGate } from './refresh-gate.js';
+import { SESSION_EXPIRED_MESSAGE, expireSessionOnUnauthorized } from './session-expiry.js';
 
 (function () {
   const state = window.FamilyLedgerState;
@@ -56,6 +57,11 @@ import { RefreshGate } from './refresh-gate.js';
     try {
       return (await refresh()).current;
     } catch (error) {
+      if (expireSessionOnUnauthorized(error, state, () => refreshGate.invalidate())) {
+        sessionStorage.removeItem('family-ledger-authenticated');
+        renderLogin(SESSION_EXPIRED_MESSAGE);
+        return false;
+      }
       showRefreshFailure(context);
       return false;
     }
@@ -92,7 +98,10 @@ import { RefreshGate } from './refresh-gate.js';
       state.data.session = await api('/api/session');
       await refreshSafely('会话已恢复');
     } catch (error) {
-      if (error.status === 401) { refreshGate.invalidate(); renderLogin(); }
+      if (expireSessionOnUnauthorized(error, state, () => refreshGate.invalidate())) {
+        sessionStorage.removeItem('family-ledger-authenticated');
+        renderLogin(SESSION_EXPIRED_MESSAGE);
+      }
       else { app.innerHTML = `<main class="login-stage"><section class="login-card"><h1>无法连接账本</h1><p>${esc(error.message)}</p><button class="button" id="retry">重新连接</button></section></main>`; document.getElementById('retry').onclick = boot; }
     }
   }

@@ -12,19 +12,43 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-test('commits only the newest refresh and discards obsolete failures', async () => {
+test('discards an older success after a newer refresh commits first', async () => {
   const gate = new RefreshGate();
-  const slow = deferred();
-  const current = deferred();
+  const older = deferred();
+  const newer = deferred();
   const committed = [];
 
-  const slowRun = gate.run(() => slow.promise, value => committed.push(value));
-  const currentRun = gate.run(() => current.promise, value => committed.push(value));
+  const olderRun = gate.run(() => older.promise, value => committed.push(value));
+  const newerRun = gate.run(() => newer.promise, value => committed.push(value));
 
-  current.resolve('newest snapshot');
-  assert.deepEqual(await currentRun, { current: true });
-  slow.reject(new Error('old request failed'));
+  newer.resolve('newest snapshot');
+  assert.deepEqual(await newerRun, { current: true });
+  older.resolve('older snapshot');
 
-  assert.deepEqual(await slowRun, { current: false });
+  assert.deepEqual(await olderRun, { current: false });
   assert.deepEqual(committed, ['newest snapshot']);
+});
+
+test('discards a delayed success after invalidation', async () => {
+  const gate = new RefreshGate();
+  const delayed = deferred();
+  const committed = [];
+
+  const run = gate.run(() => delayed.promise, value => committed.push(value));
+  gate.invalidate();
+  delayed.resolve('late snapshot');
+
+  assert.deepEqual(await run, { current: false });
+  assert.deepEqual(committed, []);
+});
+
+test('discards a delayed failure after invalidation without reporting it', async () => {
+  const gate = new RefreshGate();
+  const delayed = deferred();
+
+  const run = gate.run(() => delayed.promise, () => assert.fail('obsolete refresh must not commit'));
+  gate.invalidate();
+  delayed.reject(new Error('late request failed'));
+
+  assert.deepEqual(await run, { current: false });
 });
