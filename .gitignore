@@ -1,8 +1,11 @@
 .DS_Store
+.learnings/
+.playwright-cli/
 .worktrees/
 .superpowers/
 node_modules/
 coverage/
+output/
 target/
 data/*.db
 data/*.db-*
