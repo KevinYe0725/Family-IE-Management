@@ -18,6 +18,7 @@ import jakarta.persistence.Table;
 import jakarta.validation.constraints.Positive;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Objects;
 
 @Entity
 @Table(name = "financial_transactions")
@@ -77,6 +78,7 @@ public class FinancialTransaction {
             String note,
             Instant createdAt,
             Instant updatedAt) {
+        requireValidTransactionScope(household, member, category, kind);
         this.household = household;
         this.member = member;
         this.category = category;
@@ -136,5 +138,32 @@ public class FinancialTransaction {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    private static void requireValidTransactionScope(
+            Household household,
+            FamilyMember member,
+            Category category,
+            TransactionKind kind) {
+        Objects.requireNonNull(household, "household must not be null");
+        Objects.requireNonNull(member, "member must not be null");
+        Objects.requireNonNull(category, "category must not be null");
+        Objects.requireNonNull(kind, "kind must not be null");
+        if (!sameHousehold(household, member.getHousehold())) {
+            throw new IllegalArgumentException("Transaction member must belong to the transaction household");
+        }
+        if (!sameHousehold(household, category.getHousehold())) {
+            throw new IllegalArgumentException("Transaction category must belong to the transaction household");
+        }
+        if (category.getKind() != kind) {
+            throw new IllegalArgumentException("Transaction category kind must match transaction kind");
+        }
+    }
+
+    private static boolean sameHousehold(Household expected, Household actual) {
+        if (expected == actual) {
+            return true;
+        }
+        return expected.getId() != null && Objects.equals(expected.getId(), actual.getId());
     }
 }
