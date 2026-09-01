@@ -14,12 +14,25 @@ test('401 expires the session and invalidates a pending refresh before it can co
   const delayed = deferred();
   const committed = [];
   const state = { data: { session: { username: 'demo' } }, flash: { message: 'old message' } };
+  const storedValues = new Map([['family-ledger-authenticated', '1']]);
+  const storage = {
+    getItem(key) { return storedValues.get(key) ?? null; },
+    removeItem(key) { storedValues.delete(key); }
+  };
+  const renderedMessages = [];
   const pending = gate.run(() => delayed.promise, value => committed.push(value));
 
-  assert.equal(expireSessionOnUnauthorized({ status: 401 }, state, () => gate.invalidate()), true);
+  assert.equal(expireSessionOnUnauthorized(
+    { status: 401 },
+    state,
+    () => gate.invalidate(),
+    { storage, renderLogin: message => renderedMessages.push(message) }
+  ), true);
   assert.equal(state.data.session, null);
   assert.equal(state.flash, null);
-  assert.equal(SESSION_EXPIRED_MESSAGE, '登录会话已过期，请重新登录。');
+  assert.equal(storage.getItem('family-ledger-authenticated'), null);
+  assert.deepEqual(renderedMessages, [SESSION_EXPIRED_MESSAGE]);
+  assert.equal(renderedMessages[0], '登录会话已过期，请重新登录。');
 
   delayed.resolve('late authenticated snapshot');
   assert.deepEqual(await pending, { current: false });
