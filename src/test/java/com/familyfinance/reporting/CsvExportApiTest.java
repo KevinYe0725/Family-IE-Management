@@ -95,6 +95,73 @@ class CsvExportApiTest {
         assertThat(csv).doesNotContain("九月工资");
     }
 
+    @Test
+    void exportCsvNeutralizesSpreadsheetFormulaPrefixesBeforeQuoting() throws Exception {
+        MockHttpSession session = login();
+        Household household = householdRepository.findAll().get(0);
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category food = categoryRepository.findByHouseholdOrderById(household).stream()
+                .filter(saved -> saved.getKind() == TransactionKind.EXPENSE)
+                .filter(saved -> saved.getName().equals("餐饮"))
+                .findFirst()
+                .orElseThrow();
+
+        transactionRepository.save(new FinancialTransaction(
+                household,
+                member,
+                food,
+                TransactionKind.EXPENSE,
+                1230L,
+                LocalDate.parse("2026-09-22"),
+                "=2+2",
+                "+SUM(1,1)",
+                "-危险公式",
+                TEST_TIME,
+                TEST_TIME));
+        transactionRepository.save(new FinancialTransaction(
+                household,
+                member,
+                food,
+                TransactionKind.EXPENSE,
+                2340L,
+                LocalDate.parse("2026-09-23"),
+                "@HYPERLINK",
+                "\t制表符公式",
+                "普通备注",
+                TEST_TIME,
+                TEST_TIME));
+
+        MvcResult result = mvc.perform(get("/api/export.csv")
+                        .session(session)
+                        .param("from", "2026-09-22")
+                        .param("to", "2026-09-23")
+                        .param("kind", "expense"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "text/csv;charset=UTF-8"))
+                .andReturn();
+
+        byte[] bytes = result.getResponse().getContentAsByteArray();
+        assertThat(bytes).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
+
+        String csv = new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
+        assertThat(csv).contains("2026-09-22,支出,12.30,Kevin,餐饮,'=2+2,\"'+SUM(1,1)\",'-危险公式");
+        assertThat(csv).contains("2026-09-23,支出,23.40,Kevin,餐饮,'@HYPERLINK,'\t制表符公式,普通备注");
+    }
+
+    @Test
+    void exportWithInvalidCategoryIdReturnsFieldValidationError() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/export.csv")
+                        .session(session)
+                        .param("categoryId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.error.code")
+                        .value("VALIDATION_ERROR"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.error.fields.categoryId")
+                        .value("参数必须是数字"));
+    }
+
     private MockHttpSession login() throws Exception {
         MvcResult login = mvc.perform(post("/api/auth/login")
                         .with(csrf())

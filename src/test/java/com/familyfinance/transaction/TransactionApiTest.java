@@ -191,6 +191,18 @@ class TransactionApiTest {
     }
 
     @Test
+    void listWithInvalidMemberIdReturnsFieldValidationError() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/transactions")
+                        .session(session)
+                        .param("memberId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.memberId").value("参数必须是数字"));
+    }
+
+    @Test
     void transactionFromAnotherHouseholdReturnsNotFound() throws Exception {
         MockHttpSession session = login();
         Household outsider = householdRepository.save(new Household("其他家庭", TEST_TIME));

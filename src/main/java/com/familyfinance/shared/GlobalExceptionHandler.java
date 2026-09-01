@@ -9,6 +9,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.exc.ValueInstantiationException;
@@ -30,6 +31,16 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleRequestValidation(RequestValidationException exception) {
         return ResponseEntity.badRequest()
                 .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查输入内容", exception.fields())));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        String message = Number.class.isAssignableFrom(exception.getRequiredType())
+                ? "参数必须是数字"
+                : "参数格式不正确";
+        Map<String, String> fields = Map.of(exception.getName(), message);
+        return ResponseEntity.badRequest()
+                .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查输入内容", fields)));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

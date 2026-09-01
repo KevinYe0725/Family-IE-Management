@@ -49,11 +49,22 @@ public class CsvExportService {
         if (value == null) {
             return "";
         }
-        boolean mustQuote = value.indexOf(',') >= 0
-                || value.indexOf('"') >= 0
-                || value.indexOf('\n') >= 0
-                || value.indexOf('\r') >= 0;
-        String escaped = value.replace("\"", "\"\"");
+        String safeValue = neutralizeFormula(value);
+        boolean mustQuote = safeValue.indexOf(',') >= 0
+                || safeValue.indexOf('"') >= 0
+                || safeValue.indexOf('\n') >= 0
+                || safeValue.indexOf('\r') >= 0;
+        String escaped = safeValue.replace("\"", "\"\"");
         return mustQuote ? "\"" + escaped + "\"" : escaped;
+    }
+
+    private static String neutralizeFormula(String value) {
+        if (value.isEmpty()) {
+            return value;
+        }
+        return switch (value.charAt(0)) {
+            case '=', '+', '-', '@', '\t' -> "'" + value;
+            default -> value;
+        };
     }
 }
