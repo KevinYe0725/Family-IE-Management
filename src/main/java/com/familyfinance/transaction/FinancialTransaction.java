@@ -140,6 +140,28 @@ public class FinancialTransaction {
         return updatedAt;
     }
 
+    void updateDetails(
+            FamilyMember member,
+            Category category,
+            TransactionKind kind,
+            Long amountCents,
+            LocalDate occurredOn,
+            String merchant,
+            String location,
+            String note,
+            Instant updatedAt) {
+        requireValidTransactionScope(household, member, category, kind);
+        this.member = member;
+        this.category = category;
+        this.kind = kind;
+        this.amountCents = amountCents;
+        this.occurredOn = occurredOn;
+        this.merchant = merchant;
+        this.location = location;
+        this.note = note;
+        this.updatedAt = updatedAt;
+    }
+
     private static void requireValidTransactionScope(
             Household household,
             FamilyMember member,
