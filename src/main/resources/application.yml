@@ -1,0 +1,27 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+
+spring:
+  application:
+    name: family-finance
+  datasource:
+    url: jdbc:h2:file:./data/family-finance
+    username: sa
+    password:
+  jackson:
+    time-zone: UTC
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+
+app:
+  seed:
+    enabled: true
