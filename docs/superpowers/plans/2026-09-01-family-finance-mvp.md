@@ -1,604 +1,543 @@
-# Family Finance MVP Implementation Plan
+# Family Finance Spring Boot MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a locally runnable family finance web application with authentication, SQLite persistence, member/category/transaction management, filtering, dashboard statistics, rule-based analysis, CSV export, and a responsive browser UI.
+**Goal:** Build a Java 17 + Spring Boot 4.1.1 family finance web application with secure login, H2 persistence, household-scoped CRUD, dashboard statistics, rule analysis, CSV export, and a responsive browser UI.
 
-**Architecture:** A zero-external-runtime-dependency Node.js 22 monolith serves both REST APIs and a static ES-module SPA. SQLite queries are always scoped by `household_id`; pure security, analytics, and UI state functions are isolated for unit testing, while HTTP behavior is exercised against a real ephemeral server and temporary database.
+**Architecture:** A Spring Boot MVC monolith serves REST APIs and a static ES-module SPA. Spring Security owns session authentication and CSRF protection, Spring Data JPA owns household-scoped persistence, application services enforce business rules, and pure reporting/UI helpers make calculations independently testable.
 
-**Tech Stack:** Node.js 22 (`node:http`, `node:sqlite`, `node:crypto`, `node:test`), SQLite, semantic HTML, CSS, native browser ES modules, SVG.
+**Tech Stack:** Java 17, Spring Boot 4.1.1, Maven Wrapper 3.9.x, Spring Web MVC, Spring Data JPA, Spring Security, Bean Validation, H2, JUnit 5, AssertJ, MockMvc, native HTML/CSS/JavaScript/SVG.
 
 **Spec:** `docs/superpowers/specs/2026-09-01-family-finance-mvp-design.md`
 
 ## Global Constraints
 
-- Runtime floor is Node.js 22; production and tests must run without `npm install` or third-party packages.
-- Start command is `npm start`; default bind is `127.0.0.1:4173`.
-- Production database defaults to `data/family-finance.db`; tests use fresh temporary databases and remove them after each test.
-- All money is stored as integer cents; public JSON transaction amounts are canonical strings with two decimals.
-- Every member, category, transaction, dashboard, analysis, and export query is scoped by authenticated `household_id`.
-- API success shape is `{ "data": ... }`; API error shape is `{ "error": { "code", "message", "fields"? } }`.
-- Cookie session tokens are HttpOnly and SameSite=Lax; only a SHA-256 token hash is persisted.
-- The seeded local demonstration account is `demo / demo1234`; the database stores only its scrypt hash.
-- The browser must remain usable at 390 px and 1440 px widths, expose visible keyboard focus, and respect reduced motion.
-- No budgets, assets, investments, OCR, external APIs, public registration, or complex roles in Sprint 1.
+- All backend production code uses Java 17 and Spring Boot 4.1.1 under base package `com.familyfinance`.
+- Build and run through committed Maven Wrapper files; local Maven installation is not assumed.
+- Default run command is `./mvnw spring-boot:run`; default URL is `http://127.0.0.1:8080`.
+- Production uses `jdbc:h2:file:./data/family-finance`; tests use a random in-memory H2 database and never touch `./data`.
+- Money is stored as positive integer cents and serialized to clients as canonical two-decimal strings.
+- Every member, category, transaction, dashboard, analysis, and export operation is scoped by the authenticated principal's `householdId`.
+- API success shape is `{"data":...}`; API error shape is `{"error":{"code","message","fields"?}}`.
+- Spring Security session login, BCrypt password hashing, SameSite=Lax HttpOnly JSESSIONID, and Cookie CSRF protection are required.
+- Seeded local demo login is `demo / demo1234`; only its BCrypt hash is persisted.
+- No public registration, roles, budget, asset, OCR, payment sync, external API, or third-party frontend runtime dependency in Sprint 1.
+- New behavior follows RED → GREEN → REFACTOR. Each task report includes commands and observed outputs.
 
 ---
 
-### Task 1: Runtime, security, schema, and deterministic demo seed
+### Task 1: Spring Boot build, application shell, and environment isolation
 
 **Files:**
-- Create: `package.json`
-- Create: `src/config.js`
-- Create: `src/security.js`
-- Create: `src/database.js`
-- Create: `tests/helpers.js`
-- Test: `tests/security.test.js`
-- Test: `tests/database.test.js`
+- Create: `pom.xml`
+- Create: `mvnw`
+- Create: `mvnw.cmd`
+- Create: `.mvn/wrapper/maven-wrapper.jar`
+- Create: `.mvn/wrapper/maven-wrapper.properties`
+- Create: `src/main/java/com/familyfinance/FamilyFinanceApplication.java`
+- Create: `src/main/resources/application.yml`
+- Create: `src/test/resources/application-test.yml`
+- Test: `src/test/java/com/familyfinance/FamilyFinanceApplicationTest.java`
 
 **Interfaces:**
-- Produces: `loadConfig(env) -> {host, port, dbPath, secureCookies}`.
-- Produces: `hashPassword(password) -> encoded`, `verifyPassword(password, encoded) -> boolean`, `newSessionToken() -> string`, `hashSessionToken(token) -> hex`.
-- Produces: `openDatabase(path) -> DatabaseSync`, `migrate(db)`, `seedDemo(db)`, `createStore(db) -> store`, `closeDatabase(db)`.
-- `store` initially exposes `findUserByUsername`, `createSession`, `findSession`, `deleteSession`, `listMembers`, and `listCategories`; later tasks extend the same object.
+- Produces a Spring Boot application context and repeatable Maven Wrapper build.
+- Production profile binds `server.address=127.0.0.1`, `server.port=8080`, file H2, and `app.seed.enabled=true`.
+- Test profile uses `jdbc:h2:mem:family-finance-${random.uuid};DB_CLOSE_DELAY=-1`, `ddl-auto=create-drop`, and `app.seed.enabled=false`.
 
-- [ ] **Step 1: Write failing security tests**
+- [ ] **Step 1: Extract only official build scaffolding**
 
-```js
-// tests/security.test.js
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { hashPassword, verifyPassword, newSessionToken, hashSessionToken } from '../src/security.js';
+Download a Spring Initializr archive for Boot 4.1.1, Java 17, Maven, dependencies `web,data-jpa,security,validation,h2` into a temporary directory. Copy only `pom.xml`, `mvnw`, `mvnw.cmd`, and `.mvn/` into the repository; do not copy generated `src/` production code. Add the `spring-security-test` test dependency.
 
-test('password hash verifies only the original password', () => {
-  const encoded = hashPassword('demo1234');
-  assert.equal(encoded.includes('demo1234'), false);
-  assert.equal(verifyPassword('demo1234', encoded), true);
-  assert.equal(verifyPassword('wrong-password', encoded), false);
-});
+- [ ] **Step 2: Write the failing context test**
 
-test('session storage uses a one-way token hash', () => {
-  const token = newSessionToken();
-  assert.match(token, /^[A-Za-z0-9_-]{40,}$/);
-  assert.match(hashSessionToken(token), /^[a-f0-9]{64}$/);
-  assert.equal(hashSessionToken(token).includes(token), false);
-});
-```
+```java
+package com.familyfinance;
 
-- [ ] **Step 2: Run the security test and verify RED**
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
-Run: `node --no-warnings --test tests/security.test.js`
-
-Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `src/security.js`.
-
-- [ ] **Step 3: Implement the minimal security module and package scripts**
-
-Use `scryptSync` with a random 16-byte salt and `timingSafeEqual`. Encode hashes as `scrypt$<salt-hex>$<hash-hex>`. Generate session tokens with `randomBytes(32).toString('base64url')` and hash them with SHA-256.
-
-```json
-{
-  "name": "family-finance-mvp",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "engines": { "node": ">=22" },
-  "scripts": {
-    "start": "node --no-warnings src/server.js",
-    "test": "node --no-warnings --test --test-concurrency=1"
-  }
+@ActiveProfiles("test")
+@SpringBootTest
+class FamilyFinanceApplicationTest {
+    @Test
+    void applicationContextStarts() {
+    }
 }
 ```
 
-- [ ] **Step 4: Run the security test and verify GREEN**
+- [ ] **Step 3: Run the test and verify RED**
 
-Run: `node --no-warnings --test tests/security.test.js`
+Run: `./mvnw -q -Dtest=FamilyFinanceApplicationTest test`
 
-Expected: 2 tests pass, 0 fail.
+Expected: compilation fails because `FamilyFinanceApplication` does not exist.
 
-- [ ] **Step 5: Write failing schema and seed tests**
+- [ ] **Step 4: Add the minimal application class and profile configuration**
 
-```js
-// tests/database.test.js
-test('migration and demo seed are idempotent and store no plaintext password', () => {
-  const { db, cleanup } = createTestDatabase();
-  migrate(db); seedDemo(db); seedDemo(db);
-  const user = db.prepare('select username, password_hash from users').get();
-  assert.equal(user.username, 'demo');
-  assert.equal(user.password_hash.includes('demo1234'), false);
-  assert.equal(db.prepare('select count(*) as count from households').get().count, 1);
-  assert.ok(db.prepare('select count(*) as count from transactions').get().count >= 12);
-  cleanup();
-});
+```java
+package com.familyfinance;
 
-test('store lists only reference data in the requested household', () => {
-  const { db, cleanup } = createSeededTestDatabase();
-  const store = createStore(db);
-  const demo = store.findUserByUsername('demo');
-  assert.ok(store.listMembers(demo.householdId).every((row) => row.householdId === demo.householdId));
-  assert.ok(store.listCategories(demo.householdId).every((row) => row.householdId === demo.householdId));
-  cleanup();
-});
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class FamilyFinanceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(FamilyFinanceApplication.class, args);
+    }
+}
 ```
 
-`tests/helpers.js` must create a unique directory with `mkdtempSync(join(tmpdir(), 'family-finance-'))`, open `<dir>/test.db`, and expose a cleanup that closes the database before `rmSync(dir, {recursive:true, force:true})`.
+Set H2 dialect automatically, `spring.jpa.open-in-view=false`, timezone UTC for JSON, and session cookie HttpOnly/SameSite=Lax. Keep SQL logging off by default.
 
-- [ ] **Step 6: Run database tests and verify RED**
+- [ ] **Step 5: Run Task 1 test and verify GREEN**
 
-Run: `node --no-warnings --test tests/database.test.js`
+Run: `./mvnw -q -Dtest=FamilyFinanceApplicationTest test`
 
-Expected: FAIL because `src/database.js` and test helpers do not exist.
+Expected: 1 test passes, 0 failures, 0 errors.
 
-- [ ] **Step 7: Implement config, schema, store, and deterministic seed**
-
-Enable `PRAGMA foreign_keys = ON` and `PRAGMA journal_mode = WAL`. Create the six tables and indexes from the spec. `seedDemo` must run in a transaction, check for username `demo`, and insert one household, five named family members, default income/expense categories, and deterministic June–September 2026 transactions. Use fixed dates and amounts so later dashboard tests have literal expected totals.
-
-- [ ] **Step 8: Run Task 1 tests and verify GREEN**
-
-Run: `node --no-warnings --test tests/security.test.js tests/database.test.js`
-
-Expected: all tests pass with no warnings.
-
-- [ ] **Step 9: Commit Task 1**
+- [ ] **Step 6: Commit Task 1**
 
 ```bash
-git add package.json src/config.js src/security.js src/database.js tests/helpers.js tests/security.test.js tests/database.test.js
-git commit -m "feat: add secure SQLite foundation"
+git add pom.xml mvnw mvnw.cmd .mvn src/main/java/com/familyfinance/FamilyFinanceApplication.java src/main/resources/application.yml src/test/resources/application-test.yml src/test/java/com/familyfinance/FamilyFinanceApplicationTest.java
+git commit -m "build: bootstrap Spring Boot application"
 ```
 
 ---
 
-### Task 2: HTTP shell, authentication, members, and categories
+### Task 2: Domain schema, deterministic seed, and secure session authentication
 
 **Files:**
-- Create: `src/http.js`
-- Create: `src/app.js`
-- Create: `src/server.js`
-- Modify: `src/database.js`
-- Modify: `tests/helpers.js`
-- Test: `tests/api-auth.test.js`
-- Test: `tests/api-reference.test.js`
+- Create: `src/main/java/com/familyfinance/shared/ApiEnvelope.java`
+- Create: `src/main/java/com/familyfinance/shared/ApiError.java`
+- Create: `src/main/java/com/familyfinance/shared/GlobalExceptionHandler.java`
+- Create: `src/main/java/com/familyfinance/household/Household.java`
+- Create: `src/main/java/com/familyfinance/household/AppUser.java`
+- Create: `src/main/java/com/familyfinance/household/FamilyMember.java`
+- Create: `src/main/java/com/familyfinance/category/Category.java`
+- Create: `src/main/java/com/familyfinance/category/TransactionKind.java`
+- Create: `src/main/java/com/familyfinance/transaction/FinancialTransaction.java`
+- Create: repositories beside each aggregate
+- Create: `src/main/java/com/familyfinance/auth/FamilyUserPrincipal.java`
+- Create: `src/main/java/com/familyfinance/auth/DatabaseUserDetailsService.java`
+- Create: `src/main/java/com/familyfinance/auth/AuthController.java`
+- Create: `src/main/java/com/familyfinance/config/SecurityConfig.java`
+- Create: `src/main/java/com/familyfinance/config/DemoDataInitializer.java`
+- Test: `src/test/java/com/familyfinance/config/DemoDataInitializerTest.java`
+- Test: `src/test/java/com/familyfinance/auth/AuthenticationApiTest.java`
 
 **Interfaces:**
-- Consumes: Task 1 security and store functions.
-- Produces: `createApp({db, staticDir, logger, secureCookies, now}) -> async (req, res) => void`.
-- Produces test helper `startTestServer() -> {baseUrl, db, request, close}` where `request(path, options)` retains the session cookie.
-- Extends store with `createMember`, `updateMember`, `deleteMember`, `createCategory`, `updateCategory`, `deleteCategory`.
+- Produces JPA entities/tables from the spec and repositories.
+- Produces `FamilyUserPrincipal(Long userId, Long householdId, String username, String passwordHash)`.
+- Produces `GET /api/csrf`, `GET /api/session`, Spring Security processing at `POST /api/auth/login`, and logout at `POST /api/auth/logout`.
+- Produces deterministic demo household, user, five family members, default categories, and June–September 2026 transactions.
 
-- [ ] **Step 1: Write failing authentication API tests**
+- [ ] **Step 1: Write failing seed persistence test**
 
-```js
-test('protected API rejects anonymous requests with the standard error shape', async () => {
-  const app = await startTestServer();
-  const response = await fetch(`${app.baseUrl}/api/members`);
-  assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), {
-    error: { code: 'AUTH_REQUIRED', message: '请先登录' }
-  });
-  await app.close();
-});
+```java
+@ActiveProfiles("test")
+@SpringBootTest(properties = "app.seed.enabled=true")
+class DemoDataInitializerTest {
+    @Autowired AppUserRepository users;
+    @Autowired HouseholdRepository households;
+    @Autowired FamilyMemberRepository members;
+    @Autowired CategoryRepository categories;
+    @Autowired FinancialTransactionRepository transactions;
 
-test('demo login establishes and logout clears an HttpOnly session', async () => {
-  const app = await startTestServer();
-  const login = await app.request('/api/auth/login', {
-    method: 'POST', body: { username: 'demo', password: 'demo1234' }
-  });
-  assert.equal(login.status, 200);
-  assert.match(login.headers.get('set-cookie'), /HttpOnly; SameSite=Lax/);
-  assert.equal((await app.request('/api/session')).status, 200);
-  assert.equal((await app.request('/api/auth/logout', {method: 'POST'})).status, 204);
-  assert.equal((await app.request('/api/session')).status, 401);
-  await app.close();
-});
+    @Test
+    void seedIsIdempotentAndStoresOnlyEncodedPassword() throws Exception {
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(households.count()).isEqualTo(1);
+        assertThat(members.count()).isEqualTo(5);
+        assertThat(categories.count()).isGreaterThanOrEqualTo(8);
+        assertThat(transactions.count()).isGreaterThanOrEqualTo(12);
+        AppUser demo = users.findByUsername("demo").orElseThrow();
+        assertThat(demo.getPasswordHash()).startsWith("$2");
+        assertThat(demo.getPasswordHash()).doesNotContain("demo1234");
+    }
+}
 ```
 
-- [ ] **Step 2: Run auth tests and verify RED**
+- [ ] **Step 2: Run seed test and verify RED**
 
-Run: `node --no-warnings --test tests/api-auth.test.js`
+Run: `./mvnw -q -Dtest=DemoDataInitializerTest test`
 
-Expected: FAIL because the HTTP application does not exist.
+Expected: test compilation fails because domain classes and repositories do not exist.
 
-- [ ] **Step 3: Implement HTTP helpers, auth routes, and server entry point**
+- [ ] **Step 3: Implement entities, repositories, and deterministic initializer**
 
-`src/http.js` must parse JSON with a 1 MiB maximum, parse cookies, write JSON/errors, and assign a request ID. `src/app.js` authenticates by hashing the Cookie token and loading an unexpired session. `src/server.js` opens, migrates, and seeds the configured database before listening, logs the local URL, and closes on SIGINT/SIGTERM.
+Use `GenerationType.IDENTITY`, `Instant` timestamps, `LocalDate` transaction date, unique `app_users.username`, unique category name per household/kind, and positive `amount_cents`. The initializer checks for username `demo` inside a transaction before inserting anything. Use `PasswordEncoder`, never a literal hash.
 
-- [ ] **Step 4: Run auth tests and verify GREEN**
+- [ ] **Step 4: Run seed test and verify GREEN**
 
-Run: `node --no-warnings --test tests/api-auth.test.js`
+Run: `./mvnw -q -Dtest=DemoDataInitializerTest test`
 
-Expected: all auth tests pass.
+Expected: 1 test passes.
 
-- [ ] **Step 5: Write failing members and categories API tests**
+- [ ] **Step 5: Write failing authentication integration tests**
 
-Cover these literal behaviors with real HTTP calls after login:
+```java
+@ActiveProfiles("test")
+@SpringBootTest(properties = "app.seed.enabled=true")
+@AutoConfigureMockMvc
+class AuthenticationApiTest {
+    @Autowired MockMvc mvc;
 
-```js
-test('member CRUD stays inside the authenticated household', async () => {
-  const app = await loggedInTestServer();
-  const created = await app.request('/api/members', {method:'POST', body:{name:'奶奶', roleLabel:'长辈'}});
-  assert.equal(created.status, 201);
-  const member = (await created.json()).data;
-  assert.equal(member.name, '奶奶');
-  assert.equal((await app.request(`/api/members/${member.id}`, {method:'PATCH', body:{name:'外婆', roleLabel:'长辈'}})).status, 200);
-  assert.equal((await app.request(`/api/members/${member.id}`, {method:'DELETE'})).status, 204);
-  await app.close();
-});
+    @Test
+    void anonymousApiRequestUsesStandard401Shape() throws Exception {
+        mvc.perform(get("/api/session"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error.code").value("AUTH_REQUIRED"))
+            .andExpect(jsonPath("$.error.message").value("请先登录"));
+    }
 
-test('category validation rejects an unsupported kind', async () => {
-  const app = await loggedInTestServer();
-  const response = await app.request('/api/categories', {method:'POST', body:{kind:'transfer', name:'转账'}});
-  assert.equal(response.status, 422);
-  assert.equal((await response.json()).error.fields.kind, '类型只能是收入或支出');
-  await app.close();
-});
+    @Test
+    void demoLoginCreatesSessionAndLogoutInvalidatesIt() throws Exception {
+        MvcResult login = mvc.perform(post("/api/auth/login")
+                .with(csrf())
+                .param("username", "demo")
+                .param("password", "demo1234"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.username").value("demo"))
+            .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+        mvc.perform(get("/api/session").session(session))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/auth/logout").session(session).with(csrf()))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/session").session(session))
+            .andExpect(status().isUnauthorized());
+    }
+}
 ```
 
-Also create referenced member/category records and assert deletion returns `409` with code `RESOURCE_IN_USE`.
+- [ ] **Step 6: Run auth test and verify RED**
 
-- [ ] **Step 6: Run reference-data tests and verify RED**
+Run: `./mvnw -q -Dtest=AuthenticationApiTest test`
 
-Run: `node --no-warnings --test tests/api-reference.test.js`
+Expected: 401 shape/login assertions fail because security/API configuration is missing.
 
-Expected: FAIL with 404 for missing routes.
+- [ ] **Step 7: Implement SecurityConfig and auth API**
 
-- [ ] **Step 7: Implement members/categories store methods and routes**
-
-Trim names, require 1–30 characters, require category `kind` to be `income` or `expense`, validate colors as `#[0-9A-Fa-f]{6}`, and return rows as camelCase. Every `UPDATE`, `DELETE`, and reference lookup includes both `id` and `household_id`.
+Configure `CookieCsrfTokenRepository.withHttpOnlyFalse()`, permit static assets, `/api/csrf`, and login, authenticate every other `/api/**`, and return JSON handlers for success/failure/access denied. Use a repository-backed `UserDetailsService`, BCrypt, session fixation protection, maximum one active session disabled (no session registry complexity), and `SessionCreationPolicy.IF_REQUIRED`.
 
 - [ ] **Step 8: Run Task 2 tests and verify GREEN**
 
-Run: `node --no-warnings --test tests/api-auth.test.js tests/api-reference.test.js`
+Run: `./mvnw -q -Dtest=DemoDataInitializerTest,AuthenticationApiTest test`
 
-Expected: all tests pass.
+Expected: all Task 2 tests pass.
 
 - [ ] **Step 9: Commit Task 2**
 
 ```bash
-git add src/http.js src/app.js src/server.js src/database.js tests/helpers.js tests/api-auth.test.js tests/api-reference.test.js
-git commit -m "feat: add authentication and household reference APIs"
+git add src/main/java/com/familyfinance src/test/java/com/familyfinance/config src/test/java/com/familyfinance/auth
+git commit -m "feat: add domain seed and secure authentication"
 ```
 
 ---
 
-### Task 3: Transaction CRUD, filters, and CSV export
+### Task 3: Household members and categories APIs
 
 **Files:**
-- Modify: `src/database.js`
-- Modify: `src/app.js`
-- Test: `tests/api-transactions.test.js`
-- Test: `tests/api-export.test.js`
+- Create: `src/main/java/com/familyfinance/household/MemberService.java`
+- Create: `src/main/java/com/familyfinance/household/MemberController.java`
+- Create: member request/response DTO records
+- Create: `src/main/java/com/familyfinance/category/CategoryService.java`
+- Create: `src/main/java/com/familyfinance/category/CategoryController.java`
+- Create: category request/response DTO records
+- Create: `src/main/java/com/familyfinance/shared/CurrentHousehold.java`
+- Modify: member/category/transaction repositories as needed
+- Test: `src/test/java/com/familyfinance/household/MemberApiTest.java`
+- Test: `src/test/java/com/familyfinance/category/CategoryApiTest.java`
 
 **Interfaces:**
-- Extends store with `listTransactions`, `getTransaction`, `createTransaction`, `updateTransaction`, `deleteTransaction`.
-- Filter shape: `{month, from, to, kind, memberId, categoryId, q}`.
-- JSON transaction shape: `{id, kind, amount, occurredOn, member:{id,name}, category:{id,name,color}, merchant, location, note}`.
+- Produces authenticated `GET|POST /api/members`, `PATCH|DELETE /api/members/{id}`.
+- Produces authenticated `GET|POST /api/categories`, `PATCH|DELETE /api/categories/{id}`.
+- `CurrentHousehold.id(Authentication) -> long` is the only web-layer path to the current household.
 
-- [ ] **Step 1: Write failing transaction behavior tests**
+- [ ] **Step 1: Write failing member API tests**
 
-```js
-test('creates a decimal amount as integer cents and returns canonical money', async () => {
-  const app = await loggedInTestServer();
-  const refs = await app.referenceData();
-  const response = await app.request('/api/transactions', {
-    method:'POST',
-    body:{kind:'expense', amount:'12.30', occurredOn:'2026-09-01', memberId:refs.memberId,
-          categoryId:refs.expenseCategoryId, merchant:'菜场', location:'城西', note:'晚餐食材'}
-  });
-  assert.equal(response.status, 201);
-  assert.equal((await response.json()).data.amount, '12.30');
-  assert.equal(app.db.prepare('select amount_cents from transactions where merchant=?').get('菜场').amount_cents, 1230);
-  await app.close();
-});
+After login with MockMvc, assert listing returns exactly the five seeded members, create trims `"  奶奶  "` to `"奶奶"`, patch changes the role label, and delete returns 204. Create a transaction referencing a seeded member directly through the repository and assert delete returns 409 with `RESOURCE_IN_USE`. Insert a second household/member and assert the demo session receives 404 when addressing its ID.
 
-test('rejects a category whose kind does not match the transaction', async () => {
-  const app = await loggedInTestServer();
-  const refs = await app.referenceData();
-  const response = await app.request('/api/transactions', {
-    method:'POST', body:{kind:'expense', amount:'10.00', occurredOn:'2026-09-01',
-      memberId:refs.memberId, categoryId:refs.incomeCategoryId}
-  });
-  assert.equal(response.status, 422);
-  assert.equal((await response.json()).error.fields.categoryId, '分类与收支类型不一致');
-  await app.close();
-});
-```
+- [ ] **Step 2: Run member tests and verify RED**
 
-Add tests for edit, delete, 404 outside household, and combined filters `month=2026-09&kind=expense&q=餐` returning only literal expected seed rows.
+Run: `./mvnw -q -Dtest=MemberApiTest test`
 
-- [ ] **Step 2: Run transaction tests and verify RED**
+Expected: 404 for missing member routes.
 
-Run: `node --no-warnings --test tests/api-transactions.test.js`
+- [ ] **Step 3: Implement household-scoped member service and controller**
 
-Expected: FAIL with 404 for transaction routes.
+Validate name length 1–30 and role label length 0–30. Repository update/delete lookups use `id AND householdId`. Convert `DataIntegrityViolationException` or an explicit reference count into 409 `RESOURCE_IN_USE`.
 
-- [ ] **Step 3: Implement money/date validation, store queries, and routes**
+- [ ] **Step 4: Run member tests and verify GREEN**
 
-Parse money with `/^\d{1,9}(?:\.\d{1,2})?$/`, convert by string manipulation, require amount cents > 0, validate calendar dates by round-tripping UTC components, and cap free-text fields at 100/100/500 characters. Build SQL filters from an allowlisted array of clauses and bound parameters; never interpolate user values.
+Run: `./mvnw -q -Dtest=MemberApiTest test`
 
-- [ ] **Step 4: Run transaction tests and verify GREEN**
+Expected: all member tests pass.
 
-Run: `node --no-warnings --test tests/api-transactions.test.js`
+- [ ] **Step 5: Write failing category API tests**
 
-Expected: all transaction tests pass.
+Assert income/expense listing, create with `kind:"expense"`, invalid `kind:"transfer"` returns field error, invalid color returns field error, cross-household ID returns 404, and referenced category deletion returns 409.
 
-- [ ] **Step 5: Write failing CSV export test**
+- [ ] **Step 6: Run category tests and verify RED**
 
-```js
-test('CSV export follows filters and preserves Chinese in UTF-8', async () => {
-  const app = await loggedInTestServer();
-  const response = await app.request('/api/export.csv?month=2026-09&kind=expense');
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /^text\/csv; charset=utf-8/);
-  const csv = await response.text();
-  assert.ok(csv.startsWith('\uFEFF日期,类型,金额,成员,分类,商家,地点,备注\r\n'));
-  assert.match(csv, /支出/);
-  assert.doesNotMatch(csv, /工资/);
-  await app.close();
-});
-```
+Run: `./mvnw -q -Dtest=CategoryApiTest test`
 
-- [ ] **Step 6: Run export test and verify RED**
+Expected: 404 for missing category routes.
 
-Run: `node --no-warnings --test tests/api-export.test.js`
+- [ ] **Step 7: Implement category service and controller**
 
-Expected: FAIL with 404 for `/api/export.csv`.
-
-- [ ] **Step 7: Implement safe CSV export**
-
-Reuse `listTransactions` filters. Escape fields containing quote/comma/newline by doubling quotes and surrounding the field with quotes. Prefix UTF-8 BOM and return `Content-Disposition: attachment; filename="family-finance.csv"`.
+Use enum values `income` and `expense` in JSON via `@JsonValue/@JsonCreator`. Validate name 1–30, color `#[0-9A-Fa-f]{6}`, and uniqueness within household/kind. Default categories may be renamed but not changed to another kind when referenced.
 
 - [ ] **Step 8: Run Task 3 tests and verify GREEN**
 
-Run: `node --no-warnings --test tests/api-transactions.test.js tests/api-export.test.js`
+Run: `./mvnw -q -Dtest=MemberApiTest,CategoryApiTest test`
 
-Expected: all tests pass.
+Expected: all Task 3 tests pass.
 
 - [ ] **Step 9: Commit Task 3**
 
 ```bash
-git add src/database.js src/app.js tests/api-transactions.test.js tests/api-export.test.js
+git add src/main/java/com/familyfinance/household src/main/java/com/familyfinance/category src/main/java/com/familyfinance/shared src/test/java/com/familyfinance/household src/test/java/com/familyfinance/category
+git commit -m "feat: add family member and category APIs"
+```
+
+---
+
+### Task 4: Transaction CRUD, filters, and CSV export
+
+**Files:**
+- Create: `src/main/java/com/familyfinance/transaction/TransactionService.java`
+- Create: `src/main/java/com/familyfinance/transaction/TransactionController.java`
+- Create: transaction request/response/filter DTOs
+- Create: `src/main/java/com/familyfinance/shared/Money.java`
+- Create: `src/main/java/com/familyfinance/reporting/CsvExportService.java`
+- Create: `src/main/java/com/familyfinance/reporting/ExportController.java`
+- Modify: `FinancialTransactionRepository.java`
+- Test: `src/test/java/com/familyfinance/transaction/TransactionApiTest.java`
+- Test: `src/test/java/com/familyfinance/reporting/CsvExportApiTest.java`
+
+**Interfaces:**
+- Produces `GET|POST /api/transactions`, `GET|PATCH|DELETE /api/transactions/{id}`.
+- Filter query: `month, from, to, kind, memberId, categoryId, q`.
+- Response amount is a two-decimal string; request amount accepts a decimal string with at most two fractional digits.
+- Produces `GET /api/export.csv` using the identical filter object.
+
+- [ ] **Step 1: Write failing money and transaction API tests**
+
+Create `MoneyTest` first with literals: `"12.30" -> 1230L`, `1230L -> "12.30"`, reject zero, negative, exponent, more than two decimals, and values over 999,999,999.99.
+
+Then write MockMvc integration tests that:
+
+- create an expense `12.30` and verify repository stores `1230`;
+- reject mismatched category kind;
+- patch merchant/note and preserve other fields;
+- filter September expenses by keyword;
+- return 404 for another household's transaction;
+- delete and confirm absence.
+
+- [ ] **Step 2: Run tests and verify RED**
+
+Run: `./mvnw -q -Dtest=MoneyTest,TransactionApiTest test`
+
+Expected: compilation fails because money and transaction API classes are missing.
+
+- [ ] **Step 3: Implement money utility, JPA Specification filters, service, and controller**
+
+Use string parsing for cents rather than `double`. Validate ISO dates, free-text limits merchant/location 100 and note 500, member/category household ownership, and category-kind match. The repository extends `JpaSpecificationExecutor<FinancialTransaction>`; every specification begins with household equality and binds values.
+
+- [ ] **Step 4: Run transaction tests and verify GREEN**
+
+Run: `./mvnw -q -Dtest=MoneyTest,TransactionApiTest test`
+
+Expected: all transaction tests pass.
+
+- [ ] **Step 5: Write failing CSV API test**
+
+Authenticate and request `/api/export.csv?month=2026-09&kind=expense`. Assert content type `text/csv;charset=UTF-8`, UTF-8 BOM, header `日期,类型,金额,成员,分类,商家,地点,备注`, Chinese expense rows, absence of income rows, and RFC-style quote escaping.
+
+- [ ] **Step 6: Run CSV test and verify RED**
+
+Run: `./mvnw -q -Dtest=CsvExportApiTest test`
+
+Expected: 404 for export route.
+
+- [ ] **Step 7: Implement CSV export using the same service filter**
+
+Never duplicate query rules. Escape quote/comma/CR/LF fields and return `Content-Disposition: attachment; filename="family-finance.csv"`.
+
+- [ ] **Step 8: Run Task 4 tests and verify GREEN**
+
+Run: `./mvnw -q -Dtest=MoneyTest,TransactionApiTest,CsvExportApiTest test`
+
+Expected: all Task 4 tests pass.
+
+- [ ] **Step 9: Commit Task 4**
+
+```bash
+git add src/main/java/com/familyfinance/transaction src/main/java/com/familyfinance/reporting src/main/java/com/familyfinance/shared/Money.java src/test/java/com/familyfinance/transaction src/test/java/com/familyfinance/reporting
 git commit -m "feat: add transaction workflows and CSV export"
 ```
 
 ---
 
-### Task 4: Dashboard aggregation and rule-based analysis
+### Task 5: Dashboard statistics and rule-based analysis
 
 **Files:**
-- Create: `src/analytics.js`
-- Modify: `src/database.js`
-- Modify: `src/app.js`
-- Test: `tests/analytics.test.js`
-- Test: `tests/api-dashboard.test.js`
+- Create: `src/main/java/com/familyfinance/reporting/DashboardService.java`
+- Create: `src/main/java/com/familyfinance/reporting/AnalysisService.java`
+- Create: reporting DTO records
+- Create: `src/main/java/com/familyfinance/reporting/ReportingController.java`
+- Modify: `FinancialTransactionRepository.java`
+- Test: `src/test/java/com/familyfinance/reporting/DashboardServiceTest.java`
+- Test: `src/test/java/com/familyfinance/reporting/AnalysisServiceTest.java`
+- Test: `src/test/java/com/familyfinance/reporting/ReportingApiTest.java`
 
 **Interfaces:**
-- Produces: `buildDashboard({month, transactions, members, categories}) -> dashboard`.
-- Produces: `buildAnalysis({month, currentTransactions, historicalMonthlyExpenses}) -> {insights, historyStatus}`.
-- Adds `GET /api/dashboard?month=YYYY-MM` and `GET /api/analysis?month=YYYY-MM`.
+- Produces `GET /api/dashboard?month=YYYY-MM`.
+- Produces `GET /api/analysis?month=YYYY-MM`.
+- Dashboard response contains `summary`, `daily`, `expenseByCategory`, and `expenseByMember`.
+- Analysis response contains at most three ordered insights plus `historyStatus`.
 
-- [ ] **Step 1: Write failing pure analytics tests with hand-calculated literals**
+- [ ] **Step 1: Write failing dashboard service test with hand-calculated values**
 
-```js
-test('dashboard totals, daily trend, category shares, and member totals reconcile', () => {
-  const dashboard = buildDashboard({
-    month:'2026-09',
-    transactions:[
-      tx('income', 500000, '2026-09-01', 1, 10),
-      tx('expense', 12000, '2026-09-02', 1, 20),
-      tx('expense', 8000, '2026-09-02', 2, 21)
-    ],
-    members:[{id:1,name:'叶凯文'},{id:2,name:'周崇浩'}],
-    categories:[{id:20,name:'餐饮',color:'#D8664B'},{id:21,name:'交通',color:'#3B7A72'}]
-  });
-  assert.deepEqual(dashboard.summary, {income:'5000.00', expense:'200.00', balance:'4800.00'});
-  assert.deepEqual(dashboard.daily, [
-    {date:'2026-09-01', income:'5000.00', expense:'0.00'},
-    {date:'2026-09-02', income:'0.00', expense:'200.00'}
-  ]);
-  assert.equal(dashboard.expenseByCategory[0].share, 60);
-});
+Persist three controlled transactions: income 500000 cents, expenses 12000 and 8000 cents. Assert summary strings `5000.00`, `200.00`, `4800.00`; daily trend in date order; category shares 60.0 and 40.0; member totals descending. Use a test household, never seed-derived computed expectations.
 
-test('analysis reports a 50 percent increase over three-month average', () => {
-  const result = buildAnalysis({
-    month:'2026-09',
-    currentTransactions:[tx('expense', 150000, '2026-09-01', 1, 20)],
-    historicalMonthlyExpenses:[100000, 90000, 110000]
-  });
-  assert.equal(result.insights[0].code, 'MONTHLY_INCREASE');
-  assert.equal(result.insights[0].metric, '50.0%');
-});
-```
+- [ ] **Step 2: Run dashboard test and verify RED**
 
-- [ ] **Step 2: Run pure analytics tests and verify RED**
+Run: `./mvnw -q -Dtest=DashboardServiceTest test`
 
-Run: `node --no-warnings --test tests/analytics.test.js`
+Expected: compilation fails because DashboardService is missing.
 
-Expected: FAIL because `src/analytics.js` is missing.
+- [ ] **Step 3: Implement dashboard aggregation**
 
-- [ ] **Step 3: Implement pure dashboard and analysis functions**
+Use repository reads scoped by household/month, accumulate integer cents, and convert only at DTO boundary. Sort daily dates ascending and category/member totals descending with stable ID tie-breaks.
 
-Sort trend dates ascending, category/member totals descending, and round shares to one decimal. Analysis must emit at most three ordered insights: monthly comparison, top category, and largest single expense. If fewer than two historical months exist, set `historyStatus:'insufficient'` and omit the comparison insight.
+- [ ] **Step 4: Run dashboard test and verify GREEN**
 
-- [ ] **Step 4: Run pure analytics tests and verify GREEN**
+Run: `./mvnw -q -Dtest=DashboardServiceTest test`
 
-Run: `node --no-warnings --test tests/analytics.test.js`
+Expected: dashboard test passes.
 
-Expected: all pure analytics tests pass.
+- [ ] **Step 5: Write failing analysis service tests**
 
-- [ ] **Step 5: Write failing dashboard API tests**
+Assert current 150000 cents against history 100000/90000/110000 yields `MONTHLY_INCREASE` metric `50.0%`. Assert top category and largest expense insights. Assert fewer than two historical months yields `historyStatus:"insufficient"` and no monthly comparison.
 
-Login, request September 2026, and assert API summary values equal a direct literal sum of the deterministic seed fixture. Assert invalid `month=2026-13` returns `422`, and an empty month returns zero totals with `historyStatus` rather than a fabricated increase.
+- [ ] **Step 6: Run analysis tests and verify RED**
 
-- [ ] **Step 6: Run dashboard API tests and verify RED**
+Run: `./mvnw -q -Dtest=AnalysisServiceTest test`
 
-Run: `node --no-warnings --test tests/api-dashboard.test.js`
+Expected: compilation fails because AnalysisService is missing.
 
-Expected: FAIL with 404 for dashboard and analysis routes.
+- [ ] **Step 7: Implement analysis rules**
 
-- [ ] **Step 7: Implement aggregate store reads and API routes**
+Return no more than three insights in order: monthly comparison, top category, largest single expense. Do not emit an insight for zero/current-empty data. Use `BigDecimal` only for percentage division and round one decimal HALF_UP.
 
-The route loads only the authenticated household's rows, passes them into pure functions, and returns `{data: dashboard}` or `{data: analysis}`. Do not duplicate aggregation logic inside HTTP handlers.
+- [ ] **Step 8: Write and satisfy reporting API tests**
 
-- [ ] **Step 8: Run Task 4 tests and verify GREEN**
+MockMvc tests authenticate, request September 2026, assert known deterministic seed totals, reject `month=2026-13` with field error, and request an empty month without fabricated conclusions.
 
-Run: `node --no-warnings --test tests/analytics.test.js tests/api-dashboard.test.js`
+Run RED: `./mvnw -q -Dtest=ReportingApiTest test` before the controller exists.
 
-Expected: all tests pass.
+Implement the controller and run GREEN:
+`./mvnw -q -Dtest=DashboardServiceTest,AnalysisServiceTest,ReportingApiTest test`.
 
-- [ ] **Step 9: Commit Task 4**
+- [ ] **Step 9: Commit Task 5**
 
 ```bash
-git add src/analytics.js src/database.js src/app.js tests/analytics.test.js tests/api-dashboard.test.js
-git commit -m "feat: add dashboard statistics and financial analysis"
+git add src/main/java/com/familyfinance/reporting src/main/java/com/familyfinance/transaction/FinancialTransactionRepository.java src/test/java/com/familyfinance/reporting
+git commit -m "feat: add household statistics and analysis"
 ```
 
 ---
 
-### Task 5: Responsive SPA and real browser workflow
+### Task 6: Responsive SPA, full-system acceptance, and handoff
 
 **Files:**
-- Create: `public/index.html`
-- Create: `public/styles.css`
-- Create: `public/ui-state.js`
-- Create: `public/app.js`
-- Modify: `src/app.js`
-- Test: `tests/ui-state.test.js`
-- Test: `tests/static-app.test.js`
-
-**Interfaces:**
-- Consumes all Task 2–4 APIs.
-- Produces pure browser helpers `formatMoney`, `buildTransactionQuery`, `buildDailyPath`, and `formToTransactionPayload` from `public/ui-state.js`.
-- Produces views identified by `[data-view="dashboard"]`, `[data-view="transactions"]`, `[data-view="analysis"]`, and `[data-view="settings"]`.
-
-- [ ] **Step 1: Write failing UI-state tests**
-
-```js
-test('buildTransactionQuery omits empty filters and encodes Chinese search', () => {
-  assert.equal(buildTransactionQuery({month:'2026-09', kind:'expense', q:'晚餐', memberId:''}),
-    '?month=2026-09&kind=expense&q=%E6%99%9A%E9%A4%90');
-});
-
-test('form payload normalizes optional text without changing decimal amount', () => {
-  assert.deepEqual(formToTransactionPayload({
-    kind:'expense', amount:'12.30', occurredOn:'2026-09-01', memberId:'2', categoryId:'5',
-    merchant:'  菜场 ', location:' ', note:' 晚餐 '
-  }), {kind:'expense', amount:'12.30', occurredOn:'2026-09-01', memberId:2, categoryId:5,
-       merchant:'菜场', location:'', note:'晚餐'});
-});
-```
-
-Add a `buildDailyPath` test with literal SVG path output for three daily points and a `formatMoney('1234.50') === '¥1,234.50'` test.
-
-- [ ] **Step 2: Run UI-state tests and verify RED**
-
-Run: `node --no-warnings --test tests/ui-state.test.js`
-
-Expected: FAIL because `public/ui-state.js` is missing.
-
-- [ ] **Step 3: Implement pure UI-state helpers**
-
-Keep the module browser-compatible and free of DOM globals so Node can import it. Encode query keys in stable order: month, from, to, kind, memberId, categoryId, q.
-
-- [ ] **Step 4: Run UI-state tests and verify GREEN**
-
-Run: `node --no-warnings --test tests/ui-state.test.js`
-
-Expected: all helper tests pass.
-
-- [ ] **Step 5: Write failing static/runtime shell test**
-
-Start the real test server and assert `GET /` returns HTML, `GET /styles.css` returns CSS, and `GET /app.js` returns JavaScript. Then assert a path such as `/transactions` returns the SPA HTML while `/api/unknown` remains JSON 404. These are application boundary behaviors, not source-text assertions.
-
-- [ ] **Step 6: Run static app test and verify RED**
-
-Run: `node --no-warnings --test tests/static-app.test.js`
-
-Expected: FAIL with 404 for `/`.
-
-- [ ] **Step 7: Build the semantic HTML and visual system**
-
-Use the exact palette and typography from the spec. Create a login panel, app shell, ledger-style navigation, month picker, summary strip, cashflow SVG, category/member bars, analysis insight list, transaction filter/list, transaction modal form, and settings panels for members/categories. Include a persistent status region with `role="status"`, modal focus management, visible labels, and explicit empty/error messages.
-
-- [ ] **Step 8: Implement browser state and API workflows**
-
-`public/app.js` must handle session boot, login/logout, navigation, loading states, month changes, transaction CRUD, filters, CSV download, member/category CRUD, and modal close on Escape. After any write, refresh the current view from the API rather than mutating guessed totals locally.
-
-- [ ] **Step 9: Implement safe static serving and SPA fallback**
-
-Serve only files resolved inside `public/`, set content types, use `Cache-Control: no-store` for HTML and API, and return `index.html` only for extensionless non-API GET paths. Block `..` traversal.
-
-- [ ] **Step 10: Run Task 5 tests and verify GREEN**
-
-Run: `node --no-warnings --test tests/ui-state.test.js tests/static-app.test.js`
-
-Expected: all tests pass.
-
-- [ ] **Step 11: Commit Task 5**
-
-```bash
-git add public src/app.js tests/ui-state.test.js tests/static-app.test.js
-git commit -m "feat: add responsive household ledger interface"
-```
-
----
-
-### Task 6: Full-system acceptance, operations, and handoff
-
-**Files:**
-- Create: `tests/smoke.test.js`
+- Create: `src/main/resources/static/index.html`
+- Create: `src/main/resources/static/styles.css`
+- Create: `src/main/resources/static/ui-state.js`
+- Create: `src/main/resources/static/app.js`
+- Create: `src/main/java/com/familyfinance/config/SpaRoutingConfig.java`
+- Test: `src/test/java/com/familyfinance/web/StaticApplicationTest.java`
+- Test: `src/test/java/com/familyfinance/acceptance/SprintOneSmokeTest.java`
 - Create: `README.md`
 - Create: `docs/acceptance/sprint-1-checklist.md`
-- Modify: `package.json`
 
 **Interfaces:**
-- Consumes the complete server and SPA.
-- Produces `npm run smoke`, which runs a real HTTP workflow against a temporary database.
+- Consumes all REST APIs from Tasks 2–5.
+- Produces browser views `dashboard`, `transactions`, `analysis`, and `settings`.
+- Produces real smoke workflow covering login, CRUD, filter, dashboard, analysis, export, logout, and persistence.
 
-- [ ] **Step 1: Write failing smoke test**
+- [ ] **Step 1: Write failing static application test**
 
-The test must execute this real sequence against a fresh server:
+With MockMvc, assert `GET /` returns HTML, `GET /styles.css` returns CSS, `GET /app.js` returns JavaScript, an extensionless route `/transactions` forwards to the SPA, and `/api/unknown` remains JSON 404.
 
-1. Login as demo.
-2. Read members and categories.
-3. Create a `¥88.60` expense on `2026-09-10` with Chinese merchant/location/note.
-4. Fetch it through combined month/kind/keyword filters.
-5. Verify dashboard expense increases by exactly `88.60`.
-6. Verify analysis returns an insight array.
-7. Export CSV and find the created row.
-8. Close and reopen the same database, login again, and verify the row persisted.
-9. Delete the row and verify it is absent.
+- [ ] **Step 2: Run static test and verify RED**
 
-- [ ] **Step 2: Run smoke test and verify RED**
+Run: `./mvnw -q -Dtest=StaticApplicationTest test`
 
-Run: `node --no-warnings --test tests/smoke.test.js`
+Expected: missing static resources/SPA route fail.
 
-Expected: FAIL on the first incomplete integration behavior, with the failure naming the broken workflow.
+- [ ] **Step 3: Build the browser UI**
 
-- [ ] **Step 3: Make only the minimal integration corrections required for GREEN**
+Use exact visual tokens from the spec. Provide:
 
-Do not add scope. Fix contract mismatches, restart behavior, or response handling exposed by the smoke test, and add a regression assertion for each correction inside the same smoke test or the owning focused test.
+- login panel showing the local demo account;
+- ledger-style navigation and month selector;
+- income/expense/balance summary;
+- accessible SVG cashflow ledger track;
+- category/member bars;
+- analysis insight list;
+- filterable transaction table/cards;
+- create/edit modal with member/category choices;
+- member and category settings;
+- CSV download and logout;
+- role=status messages, labeled inputs, Escape modal close, visible focus, reduced motion, and responsive 390/1440 layouts.
 
-- [ ] **Step 4: Run the complete automated suite**
+All write requests first load `/api/csrf` and send `X-XSRF-TOKEN`. After writes, refetch authoritative server state.
 
-Run: `npm test`
+- [ ] **Step 4: Implement SPA routing and satisfy static test**
 
-Expected: all tests pass, 0 fail, no warning output.
+Forward only extensionless non-API routes to `index.html`; preserve Spring's API 404 JSON. Run `./mvnw -q -Dtest=StaticApplicationTest test` and expect GREEN.
 
-- [ ] **Step 5: Write the operator README and acceptance checklist**
+- [ ] **Step 5: Write failing full smoke test**
 
-README must include prerequisites, `npm start`, local URL, demo account, data path, test commands, reset instructions that move the database aside rather than deleting silently, API overview, project structure, and Sprint 1 exclusions. The checklist must map each spec acceptance criterion to an automated command or browser action.
+Use `@SpringBootTest(webEnvironment = RANDOM_PORT)` with a temporary file H2 URL. Drive real HTTP with `java.net.http.HttpClient` and CookieManager:
 
-- [ ] **Step 6: Run real browser acceptance at desktop and mobile widths**
+1. get CSRF and login;
+2. list members/categories;
+3. create an 88.60 expense on 2026-09-10;
+4. find it with month/kind/keyword filters;
+5. verify dashboard expense increases exactly 88.60;
+6. verify analysis has an insight array;
+7. export CSV and find the row;
+8. verify logout blocks session.
 
-Use Playwright against a running `npm start` process. Verify login, dashboard, create/edit/filter/delete transaction, analysis, member/category settings, CSV request, logout, keyboard focus, no horizontal overflow at 1440×900 and 390×844, and no uncaught console errors. Capture screenshots only as QA evidence, not deliverables.
+The test must fail before any integration corrections.
 
-- [ ] **Step 7: Run persistence restart acceptance**
+- [ ] **Step 6: Make minimal corrections and run the complete suite**
 
-Create a uniquely named transaction through the browser, stop and restart the server using the same production database, and verify the transaction remains. Remove only the test transaction afterward through the UI.
+Run: `./mvnw test`
 
-- [ ] **Step 8: Commit Task 6**
+Expected: all tests pass, 0 failures, 0 errors. Keep Surefire output free of stack traces and unexpected warnings.
+
+- [ ] **Step 7: Write README and acceptance checklist**
+
+README includes Java 17 prerequisite, `./mvnw spring-boot:run`, local URL, demo account, H2 data path, test command, safe reset by moving the database aside, project structure, API summary, and Sprint exclusions. Checklist maps all nine spec acceptance criteria to an automated test or browser action.
+
+- [ ] **Step 8: Run real browser acceptance**
+
+Use Playwright CLI against the running application at 1440×900 and 390×844. Verify login, dashboard, create/edit/filter/delete transaction, analysis, settings, CSV request, logout, keyboard focus, no horizontal overflow, and no uncaught console errors. Capture screenshots under `output/playwright/` as QA evidence only.
+
+- [ ] **Step 9: Verify file-database restart persistence**
+
+Create a uniquely named transaction in the browser, stop and restart Spring Boot using the same file H2 database, log in, and verify the row remains. Delete only that test row through the UI.
+
+- [ ] **Step 10: Commit Task 6**
 
 ```bash
-git add package.json tests/smoke.test.js README.md docs/acceptance/sprint-1-checklist.md
-git commit -m "test: certify Sprint 1 family finance workflow"
+git add src/main/resources/static src/main/java/com/familyfinance/config/SpaRoutingConfig.java src/test/java/com/familyfinance/web src/test/java/com/familyfinance/acceptance README.md docs/acceptance/sprint-1-checklist.md
+git commit -m "feat: deliver Spring Boot Sprint 1 application"
 ```
 
