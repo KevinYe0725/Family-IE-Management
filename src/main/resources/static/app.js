@@ -1,6 +1,9 @@
+import { RefreshGate } from './refresh-gate.js';
+
 (function () {
   const state = window.FamilyLedgerState;
   const app = document.getElementById('app');
+  const refreshGate = new RefreshGate();
   const routeNames = { dashboard: '总览', transactions: '收支明细', analysis: '账目分析', settings: '家庭设置' };
   const money = value => `¥${Number(value || 0).toFixed(2)}`;
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[c]);
@@ -51,8 +54,7 @@
 
   async function refreshSafely(context) {
     try {
-      await refresh();
-      return true;
+      return (await refresh()).current;
     } catch (error) {
       showRefreshFailure(context);
       return false;
@@ -69,12 +71,16 @@
 
   async function refresh() {
     const filter = { month: state.month, ...state.filters };
-    const [members, categories, transactions, dashboard, analysis] = await Promise.all([
-      api('/api/members'), api('/api/categories'), api(`/api/transactions?${query(filter)}`),
-      api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
-    ]);
-    Object.assign(state.data, { members, categories, transactions, dashboard, analysis });
-    render();
+    return refreshGate.run(
+      () => Promise.all([
+        api('/api/members'), api('/api/categories'), api(`/api/transactions?${query(filter)}`),
+        api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
+      ]),
+      ([members, categories, transactions, dashboard, analysis]) => {
+        Object.assign(state.data, { members, categories, transactions, dashboard, analysis });
+        render();
+      }
+    );
   }
 
   async function boot() {
@@ -86,7 +92,7 @@
       state.data.session = await api('/api/session');
       await refreshSafely('会话已恢复');
     } catch (error) {
-      if (error.status === 401) renderLogin();
+      if (error.status === 401) { refreshGate.invalidate(); renderLogin(); }
       else { app.innerHTML = `<main class="login-stage"><section class="login-card"><h1>无法连接账本</h1><p>${esc(error.message)}</p><button class="button" id="retry">重新连接</button></section></main>`; document.getElementById('retry').onclick = boot; }
     }
   }
@@ -102,6 +108,7 @@
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       try {
+        refreshGate.invalidate();
         const headers = await csrfHeaders();
         const payload = new URLSearchParams({ username: form.get('username'), password: form.get('password') });
         await api('/api/auth/login', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: payload });
@@ -175,7 +182,7 @@
   async function removeResource(base, id, label) { if (!window.confirm(`删除这位${label}？被账目使用时系统会说明原因。`)) return; try { await write(`${base}/${id}`, 'DELETE', undefined, `${label}已删除`); notice(`${label}已删除`); } catch (problem) { notice(problem.message, 'error'); } }
   async function removeTransaction(id) { if (!window.confirm('删除这笔收支？此操作不能撤销。')) return; try { await write(`/api/transactions/${id}`, 'DELETE', undefined, '收支已删除'); notice('收支已删除'); } catch (problem) { notice(problem.message, 'error'); } }
   async function downloadCsv() { try { const response = await fetch(`/api/export.csv?${query({ month: state.month, ...state.filters })}`, { credentials: 'same-origin' }); if (!response.ok) throw new Error('导出失败'); const url = URL.createObjectURL(await response.blob()); const link = Object.assign(document.createElement('a'), { href: url, download: 'family-finance.csv' }); link.click(); URL.revokeObjectURL(url); notice('CSV 已开始下载'); } catch (problem) { notice(problem.message, 'error'); } }
-  async function logout() { try { await api('/api/auth/logout', { method: 'POST', headers: await csrfHeaders() }); } catch (problem) { notice(problem.message, 'error'); return; } sessionStorage.removeItem('family-ledger-authenticated'); state.data.session = null; state.flash = null; renderLogin(); }
+  async function logout() { refreshGate.invalidate(); try { await api('/api/auth/logout', { method: 'POST', headers: await csrfHeaders() }); } catch (problem) { notice(problem.message, 'error'); return; } sessionStorage.removeItem('family-ledger-authenticated'); state.data.session = null; state.flash = null; renderLogin(); }
   function go(route) { state.route = route; history.pushState({}, '', route === 'dashboard' ? '/' : `/${route}`); render(); document.getElementById('main')?.focus(); }
   window.addEventListener('popstate', () => { const route = location.pathname.slice(1) || 'dashboard'; state.route = routeNames[route] ? route : 'dashboard'; render(); });
   const initial = location.pathname.slice(1) || 'dashboard'; state.route = routeNames[initial] ? initial : 'dashboard'; boot();

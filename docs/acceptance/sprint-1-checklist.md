@@ -12,4 +12,9 @@
 | 8. CSV 含当前筛选且中文可读 | `CsvExportApiTest`、`SprintOneSmokeTest`；浏览器应用筛选后点击“下载 CSV”。 |
 | 9. 桌面与移动真实可操作 | Playwright CLI 在 **1440×900** 执行登录、看板与退出；在 **390×844** 执行登录、看板、收支新增/编辑/筛选/删除、分析、设置、CSV 请求、退出、Escape/保存后的键盘焦点和水平溢出检查；截图保存在 `output/playwright/`。 |
 
+### 浏览器控制台检查
+
+- [ ] 正常流程控制台清洁：完成登录、收支操作和退出后运行 Playwright CLI `console`，确认 `Total messages: 0 (Errors: 0, Warnings: 0)`，并保存到 `output/playwright/task6r2-normal-console.log`。
+- [ ] 负向网络路径单独记录：仅在故意停止服务时观察连接失败；不把它计入正常流程控制台结果。证据文件为 `output/playwright/task6r2-negative-stopped-server-console.log`。
+
 验收时，若有写操作失败，先检查浏览器是否先请求了 `/api/csrf` 并发送 `X-XSRF-TOKEN`。登录后 Spring Security 会更新会话，因此后续写入应重新取得令牌。
