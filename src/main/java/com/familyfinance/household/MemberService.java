@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,7 +62,12 @@ public class MemberService {
         if (transactionRepository.existsByHouseholdIdAndMemberId(householdId, memberId)) {
             throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被收支记录使用，无法删除");
         }
-        memberRepository.delete(member);
+        try {
+            memberRepository.delete(member);
+            memberRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被收支记录使用，无法删除");
+        }
     }
 
     private String normalizeName(String rawName) {

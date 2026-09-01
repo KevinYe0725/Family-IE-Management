@@ -45,7 +45,7 @@ public class CategoryService {
         String color = normalizeColor(request.color());
         validateUnique(householdId, request.kind(), name, null);
         try {
-            Category category = categoryRepository.save(new Category(
+            Category category = categoryRepository.saveAndFlush(new Category(
                     household,
                     request.kind(),
                     name,
@@ -71,6 +71,7 @@ public class CategoryService {
         validateUnique(householdId, request.kind(), name, categoryId);
         try {
             category.update(request.kind(), name, color);
+            categoryRepository.flush();
             return CategoryResponse.from(category);
         } catch (DataIntegrityViolationException exception) {
             throw duplicateName();
@@ -84,7 +85,12 @@ public class CategoryService {
         if (transactionRepository.existsByHouseholdIdAndCategoryId(householdId, categoryId)) {
             throw new ResourceConflictException("RESOURCE_IN_USE", "该分类已被收支记录使用，无法删除");
         }
-        categoryRepository.delete(category);
+        try {
+            categoryRepository.delete(category);
+            categoryRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new ResourceConflictException("RESOURCE_IN_USE", "该分类已被收支记录使用，无法删除");
+        }
     }
 
     private void validateUnique(long householdId, TransactionKind kind, String name, Long categoryId) {

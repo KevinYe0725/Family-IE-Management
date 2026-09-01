@@ -195,6 +195,49 @@ class CategoryApiTest {
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"));
     }
 
+    @Test
+    void duplicateNameWithinSameHouseholdAndKindReturnsConflict() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(post("/api/categories")
+                        .session(session)
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "kind": "expense",
+                                  "name": "餐饮",
+                                  "color": "#112233"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"))
+                .andExpect(jsonPath("$.error.message").value("同一收支类型下的分类名称不能重复"));
+    }
+
+    @Test
+    void changingReferencedCategoryKindReturnsResourceInUse() throws Exception {
+        MockHttpSession session = login();
+        Category category = categoryRepository.findByHouseholdOrderById(householdRepository.findAll().get(0)).stream()
+                .filter(saved -> saved.getName().equals("餐饮"))
+                .findFirst()
+                .orElseThrow();
+
+        mvc.perform(patch("/api/categories/{id}", category.getId())
+                        .session(session)
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "kind": "income",
+                                  "name": "餐饮",
+                                  "color": "#D8664B"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"));
+    }
+
     private MockHttpSession login() throws Exception {
         MvcResult login = mvc.perform(post("/api/auth/login")
                         .with(csrf())
