@@ -540,4 +540,3 @@ Create a uniquely named transaction in the browser, stop and restart Spring Boot
 git add src/main/resources/static src/main/java/com/familyfinance/config/SpaRoutingConfig.java src/test/java/com/familyfinance/web src/test/java/com/familyfinance/acceptance README.md docs/acceptance/sprint-1-checklist.md
 git commit -m "feat: deliver Spring Boot Sprint 1 application"
 ```
-
