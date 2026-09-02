@@ -58,6 +58,22 @@ class RegistrationRequestBodyLimitIntegrationTest {
         assertRequestBodyValidation(send(chunkedOversizedRequest("/api/auth/%72egister")));
     }
 
+    @Test
+    void encodedApiSegmentStillAppliesChunkedBodyLimitAndCorrelation() throws Exception {
+        assertRequestBodyValidation(send(chunkedOversizedRequest("/a%70i/auth/register")));
+    }
+
+    @Test
+    void correlationAppliesToCanonicalApiRoutesButNotNonApiRoutes() throws Exception {
+        HttpResponse<String> api = send(HttpRequest.newBuilder(uri("/api/csrf")).GET().build());
+        HttpResponse<String> nonApi = send(HttpRequest.newBuilder(uri("/")).GET().build());
+
+        assertThat(api.statusCode()).isEqualTo(200);
+        assertThat(api.headers().firstValue("X-Request-ID")).isPresent();
+        assertThat(nonApi.statusCode()).isEqualTo(200);
+        assertThat(nonApi.headers().firstValue("X-Request-ID")).isEmpty();
+    }
+
     private HttpRequest chunkedOversizedRequest(String path) {
         byte[] body = """
                 {"email":"%s","displayName":"大请求","password":"family-pass-2026","mode":"CREATE","householdName":"大请求家庭"}

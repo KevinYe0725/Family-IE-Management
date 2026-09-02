@@ -11,6 +11,9 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ServletRequestPathUtils;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -19,6 +22,7 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
     static final String HEADER_NAME = "X-Request-ID";
     private static final String ATTRIBUTE_NAME = RequestCorrelationFilter.class.getName() + ".requestId";
     private static final Pattern SAFE_REQUEST_ID = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    private static final PathPattern API_PATH = new PathPatternParser().parse("/api/**");
 
     @Override
     protected void doFilterInternal(
@@ -33,12 +37,7 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String requestUri = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        String applicationPath = requestUri.startsWith(contextPath)
-                ? requestUri.substring(contextPath.length())
-                : requestUri;
-        return !applicationPath.startsWith("/api/");
+        return !API_PATH.matches(ServletRequestPathUtils.parse(request).pathWithinApplication());
     }
 
     static String requestId(HttpServletRequest request) {

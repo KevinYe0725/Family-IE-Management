@@ -49,11 +49,11 @@ class RegistrationRequestBodyLimitContextPathIntegrationTest {
     }
 
     @Test
-    void contextPathRegistrationRouteStillAppliesChunkedBodyLimit() throws Exception {
+    void contextPathWithEncodedApiSegmentStillAppliesChunkedBodyLimit() throws Exception {
         byte[] body = """
                 {"email":"%s","displayName":"大请求","password":"family-pass-2026","mode":"CREATE","householdName":"大请求家庭"}
                 """.formatted("a".repeat(5_000)).getBytes(StandardCharsets.UTF_8);
-        HttpRequest request = HttpRequest.newBuilder(uri("/family/api/auth/register"))
+        HttpRequest request = HttpRequest.newBuilder(uri("/family/a%70i/auth/register"))
                 .version(HttpClient.Version.HTTP_1_1)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header(csrfHeader, csrfToken)
