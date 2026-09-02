@@ -6,12 +6,12 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-final class StageOneDatabaseFixture {
+public final class StageOneDatabaseFixture {
 
     private StageOneDatabaseFixture() {
     }
 
-    static Path create(Path database) {
+    public static Path create(Path database) {
         return create(database, false);
     }
 
@@ -51,5 +51,10 @@ final class StageOneDatabaseFixture {
             statement.execute("insert into financial_transactions (household_id, member_id, category_id, kind, amount_cents, occurred_on, created_at, updated_at) values (1, 1, 1, 'EXPENSE', "
                     + number + ", date '2026-09-01', timestamp with time zone '2026-09-01 00:00:00+00', timestamp with time zone '2026-09-01 00:00:00+00')");
         }
+        statement.execute("alter table households alter column id restart with 2");
+        statement.execute("alter table app_users alter column id restart with 2");
+        statement.execute("alter table family_members alter column id restart with 2");
+        statement.execute("alter table categories alter column id restart with 2");
+        statement.execute("alter table financial_transactions alter column id restart with 13");
     }
 }

@@ -59,6 +59,106 @@ function Test-PortInUse {
     return $null -ne $Connection
 }
 
+function Get-FamilyFinanceDatabaseFiles([string]$DataDirectory) {
+    if (-not (Test-Path -LiteralPath $DataDirectory -PathType Container)) {
+        return @()
+    }
+    return @(Get-ChildItem -LiteralPath $DataDirectory -File |
+            Where-Object { $_.Name -like 'family-finance.*.db' -and $_.Length -gt 0 })
+}
+
+function Get-H2Jar {
+    $MavenHome = if ([string]::IsNullOrWhiteSpace($env:MAVEN_USER_HOME)) {
+        Join-Path $env:USERPROFILE '.m2'
+    }
+    else {
+        $env:MAVEN_USER_HOME
+    }
+    $H2Repository = Join-Path $MavenHome 'repository\com\h2database\h2'
+    $H2Jar = Get-ChildItem -LiteralPath $H2Repository -Filter 'h2-*.jar' -File -Recurse -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if ($null -eq $H2Jar) {
+        Write-Step 'Preparing the local H2 inspection tool for the migration safety check...'
+        & $MavenWrapper -q dependency:go-offline
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Could not prepare the H2 inspection tool. The application was not started and the database was left unchanged.'
+        }
+        $H2Jar = Get-ChildItem -LiteralPath $H2Repository -Filter 'h2-*.jar' -File -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+    }
+    if ($null -eq $H2Jar) {
+        throw 'Could not locate the H2 inspection tool. The application was not started and the database was left unchanged.'
+    }
+    return $H2Jar.FullName
+}
+
+function Test-FlywayHistoryPresent([string]$DatabaseBasePath) {
+    $H2Jar = Get-H2Jar
+    $JdbcPath = $DatabaseBasePath.Replace('\', '/')
+    $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE"
+    $Sql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end"
+    $Command = "`"java`" -cp `"$H2Jar`" org.h2.tools.Shell -url `"$JdbcUrl`" -user sa -password `"`" -sql `"$Sql`" 2>&1"
+    $Output = & $env:ComSpec /d /s /c $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not inspect the existing H2 database for Flyway history. The application was not started and the database was left unchanged.'
+    }
+    $Text = [string]::Join("`n", @($Output))
+    if ($Text -match 'FLYWAY_HISTORY_PRESENT') {
+        return $true
+    }
+    if ($Text -match 'FLYWAY_HISTORY_ABSENT') {
+        return $false
+    }
+    throw 'Could not determine whether the existing H2 database has Flyway history. The application was not started and the database was left unchanged.'
+}
+
+function New-LegacyDatabaseBackup([System.IO.FileInfo[]]$DatabaseFiles, [string]$BackupRoot) {
+    New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
+    $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $Attempt = 0
+    while ($true) {
+        $Suffix = if ($Attempt -eq 0) { '' } else { "-$Attempt" }
+        $Destination = Join-Path $BackupRoot "$Timestamp$Suffix"
+        $PartialDestination = "$Destination.partial"
+        if ((Test-Path -LiteralPath $Destination) -or (Test-Path -LiteralPath $PartialDestination)) {
+            $Attempt++
+            continue
+        }
+        try {
+            New-Item -ItemType Directory -Path $PartialDestination -ErrorAction Stop | Out-Null
+            break
+        }
+        catch [System.IO.IOException] {
+            $Attempt++
+        }
+    }
+
+    try {
+        $Manifest = @(
+            'Family Finance pre-migration H2 backup',
+            "Created: $((Get-Date).ToString('o'))",
+            'Restore only while the application is stopped: copy every database file in this folder back to data/.',
+            'SHA256  File'
+        )
+        foreach ($DatabaseFile in $DatabaseFiles) {
+            $Copy = Join-Path $PartialDestination $DatabaseFile.Name
+            Copy-Item -LiteralPath $DatabaseFile.FullName -Destination $Copy -ErrorAction Stop
+            $SourceHash = (Get-FileHash -LiteralPath $DatabaseFile.FullName -Algorithm SHA256).Hash
+            $CopyHash = (Get-FileHash -LiteralPath $Copy -Algorithm SHA256).Hash
+            if ($SourceHash -ne $CopyHash) {
+                throw "Verification failed for $($DatabaseFile.Name)."
+            }
+            $Manifest += "$SourceHash  $($DatabaseFile.Name)"
+        }
+        Set-Content -LiteralPath (Join-Path $PartialDestination 'RESTORE.txt') -Value $Manifest -Encoding UTF8 -ErrorAction Stop
+        Move-Item -LiteralPath $PartialDestination -Destination $Destination -ErrorAction Stop
+        return $Destination
+    }
+    catch {
+        throw "The migration backup did not finish. The partial copy was kept at $PartialDestination for inspection; the application was not started. $($_.Exception.Message)"
+    }
+}
+
 function Wait-ForApplication([System.Diagnostics.Process]$Process) {
     $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $Deadline) {
@@ -106,8 +206,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot 'data') | Out-
 Set-Location $ProjectRoot
 
 if ($Smoke) {
+    $SmokeDirectory = Join-Path $ProjectRoot 'target'
+    New-Item -ItemType Directory -Force -Path $SmokeDirectory | Out-Null
+    $SmokeDatabase = Join-Path $SmokeDirectory ("windows-startup-smoke-" + [guid]::NewGuid().ToString('N'))
+    $SmokeJdbcUrl = "jdbc:h2:file:$($SmokeDatabase.Replace('\', '/'));DB_CLOSE_ON_EXIT=FALSE"
     Write-Step "Starting the Windows smoke instance on port $Port..."
-    $Command = "`"$MavenWrapper`" -q spring-boot:run -Dspring-boot.run.arguments=--server.port=$Port"
+    $Command = "`"$MavenWrapper`" -q spring-boot:run `"-Dspring-boot.run.arguments=--server.port=$Port --spring.datasource.url=$SmokeJdbcUrl`""
     $Process = Start-Process -FilePath $env:ComSpec -ArgumentList '/d', '/s', '/c', $Command `
         -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow
     try {
@@ -126,6 +230,19 @@ if ($Smoke) {
         }
     }
     exit 0
+}
+
+$DataDirectory = Join-Path $ProjectRoot 'data'
+$DatabaseFiles = Get-FamilyFinanceDatabaseFiles $DataDirectory
+if ($DatabaseFiles.Count -gt 0) {
+    $DatabaseBasePath = Join-Path $DataDirectory 'family-finance'
+    if (-not (Test-FlywayHistoryPresent $DatabaseBasePath)) {
+        $BackupPath = New-LegacyDatabaseBackup $DatabaseFiles (Join-Path $ProjectRoot 'data-backups')
+        Write-Step "Created a verified pre-migration backup at $BackupPath"
+    }
+    else {
+        Write-Step 'Existing database already has Flyway history; no migration backup is required.'
+    }
 }
 
 Write-Step "Starting Spring Boot at $AppUrl"

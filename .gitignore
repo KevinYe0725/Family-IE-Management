@@ -9,4 +9,5 @@ output/
 target/
 data/*.db
 data/*.db-*
+data-backups/
 tmp/

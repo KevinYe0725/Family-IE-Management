@@ -19,3 +19,5 @@
 - [ ] 最终复核：正常桌面和移动会话均为 `0 errors / 0 warnings`；过期会话写入的唯一错误是预期的 `POST /api/transactions => 401`。证据保存在 `output/playwright/final-fix/*-console.log`、`expired-write-network.log` 和 `expired-write-state.log`。
 
 验收时，若有写操作失败，先检查浏览器是否先请求了 `/api/csrf` 并发送 `X-XSRF-TOKEN`。登录后 Spring Security 会更新会话，因此后续写入应重新取得令牌。
+
+> 第一阶段演示数据升级到第二阶段后，请使用 `docs/acceptance/stage-2-foundation-checklist.md` 完成邮箱、家庭角色与启动备份验收；不要把升级备份当作普通重置操作。
