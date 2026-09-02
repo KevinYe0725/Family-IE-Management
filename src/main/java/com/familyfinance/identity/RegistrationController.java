@@ -25,7 +25,9 @@ public class RegistrationController {
         if (!rateLimiter.tryAcquire(request.email(), servletRequest.getRemoteAddr())) {
             throw new RegistrationRateLimitedException();
         }
-        RegisterResponse response = registrationService.register(registrationService.validateCreate(request));
+        RegisterResponse response = "JOIN".equals(request.mode())
+                ? registrationService.join(registrationService.validateJoin(request))
+                : registrationService.register(registrationService.validateCreate(request));
         return ApiEnvelope.data(response);
     }
 }

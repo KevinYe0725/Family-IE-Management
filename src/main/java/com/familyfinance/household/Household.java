@@ -22,6 +22,12 @@ public class Household {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(nullable = false, length = 16)
+    private String status = "ACTIVE";
+
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     protected Household() {
     }
 
@@ -41,4 +47,12 @@ public class Household {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public String getStatus() { return status; }
+
+    public Instant getArchivedAt() { return archivedAt; }
+
+    public void rename(String name) { this.name = name; }
+
+    public void archive(Instant archivedAt) { this.status = "ARCHIVED"; this.archivedAt = archivedAt; }
 }

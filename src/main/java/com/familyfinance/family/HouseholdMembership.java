@@ -85,4 +85,8 @@ public class HouseholdMembership {
     public void suspend() {
         status = MembershipStatus.SUSPENDED;
     }
+
+    public void changeRole(HouseholdRole role) {
+        this.role = role;
+    }
 }

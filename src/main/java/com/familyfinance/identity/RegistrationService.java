@@ -4,6 +4,8 @@ import com.familyfinance.family.HouseholdMembership;
 import com.familyfinance.family.HouseholdMembershipRepository;
 import com.familyfinance.family.HouseholdRole;
 import com.familyfinance.family.MembershipStatus;
+import com.familyfinance.family.FamilyInvite;
+import com.familyfinance.family.InviteService;
 import com.familyfinance.household.AppUser;
 import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMember;
@@ -40,6 +42,7 @@ public class RegistrationService {
     private final HouseholdMembershipRepository memberships;
     private final FamilyMemberRepository members;
     private final RegistrationDefaults defaults;
+    private final InviteService invites;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
 
@@ -49,6 +52,7 @@ public class RegistrationService {
             HouseholdMembershipRepository memberships,
             FamilyMemberRepository members,
             RegistrationDefaults defaults,
+            InviteService invites,
             PasswordEncoder passwordEncoder,
             Clock clock) {
         this.users = users;
@@ -56,6 +60,7 @@ public class RegistrationService {
         this.memberships = memberships;
         this.members = members;
         this.defaults = defaults;
+        this.invites = invites;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
@@ -86,6 +91,25 @@ public class RegistrationService {
     }
 
     @Transactional
+    public RegisterResponse join(JoinRegistration command) {
+        Instant now = clock.instant();
+        FamilyInvite invite = invites.lockValidInvite(command.inviteToken(), now);
+        if (users.findByEmail(command.email()).isPresent()) {
+            throw registrationFailed();
+        }
+        AppUser user;
+        try {
+            user = users.saveAndFlush(new AppUser(invite.getHousehold(), command.email(), command.email(),
+                    command.displayName(), passwordEncoder.encode(command.password()), now));
+        } catch (DataIntegrityViolationException exception) {
+            throw registrationFailed();
+        }
+        memberships.save(new HouseholdMembership(invite.getHousehold(), user, invite.getRole(), MembershipStatus.ACTIVE, now));
+        members.save(new FamilyMember(invite.getHousehold(), user, command.displayName(), roleLabel(invite.getRole()), now));
+        return new RegisterResponse(user.getEmail(), user.getDisplayName(), invite.getHousehold().getName(), invite.getRole());
+    }
+
+    @Transactional
     public void changePassword(long userId, String currentPassword, String newPassword) {
         validatePassword("newPassword", newPassword);
         AppUser user = users.findById(userId).orElseThrow(PasswordChangeException::new);
@@ -107,9 +131,6 @@ public class RegistrationService {
             fields.put("displayName", "显示姓名长度应为 1 到 40 个字符");
         }
         String householdName = normalize(request.householdName(), "householdName", MAX_HOUSEHOLD_NAME_INPUT_CODE_UNITS, fields);
-        if (householdName.isEmpty() || householdName.length() > 255) {
-            fields.put("householdName", "家庭名称不能为空且不能超过 255 个字符");
-        }
         validatePassword(fields, "password", request.password());
         if (request.inviteToken() != null && request.inviteToken().length() > MAX_INVITE_TOKEN_CODE_UNITS) {
             fields.put("inviteToken", "邀请码长度不能超过 512 个字符");
@@ -117,10 +138,29 @@ public class RegistrationService {
         if (!"CREATE".equals(request.mode())) {
             fields.put("mode", "当前暂不支持的注册方式");
         }
+        if (householdName.isEmpty() || householdName.length() > 255) fields.put("householdName", "家庭名称不能为空且不能超过 255 个字符");
         if (!fields.isEmpty()) {
             throw new RequestValidationException(fields);
         }
         return new CreateRegistration(email, displayName, request.password(), householdName);
+    }
+
+    public JoinRegistration validateJoin(RegisterRequest request) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        String email = normalizeEmail(request.email(), fields);
+        if (email.isEmpty() || email.length() > 254 || !email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) fields.put("email", "邮箱格式不正确");
+        String displayName = normalize(request.displayName(), "displayName", MAX_DISPLAY_NAME_INPUT_CODE_UNITS, fields);
+        if (displayName.isEmpty() || displayName.length() > 40) fields.put("displayName", "显示姓名长度应为 1 到 40 个字符");
+        validatePassword(fields, "password", request.password());
+        String inviteToken = normalize(request.inviteToken(), "inviteToken", MAX_INVITE_TOKEN_CODE_UNITS, fields);
+        if (inviteToken.isEmpty()) fields.put("inviteToken", "邀请码不能为空");
+        if (!"JOIN".equals(request.mode())) fields.put("mode", "当前暂不支持的注册方式");
+        if (!fields.isEmpty()) throw new RequestValidationException(fields);
+        return new JoinRegistration(email, displayName, request.password(), inviteToken);
+    }
+
+    private static String roleLabel(HouseholdRole role) {
+        return switch (role) { case OWNER -> "所有者"; case ADMIN -> "管理员"; case MEMBER -> "成员"; };
     }
 
     private void validatePassword(String field, String password) {
@@ -167,4 +207,5 @@ public class RegistrationService {
 
     public record CreateRegistration(String email, String displayName, String password, String householdName) {
     }
+    public record JoinRegistration(String email, String displayName, String password, String inviteToken) {}
 }
