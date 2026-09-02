@@ -1,10 +1,15 @@
-function Invoke-H2Inspection([string]$H2Jar, [string]$JdbcUrl, [string]$Sql) {
+function Invoke-H2Inspection(
+    [string]$H2Jar,
+    [string]$InspectorSource,
+    [string]$JdbcUrl,
+    [long]$LatestMigrationVersion
+) {
     $PreviousErrorActionPreference = $ErrorActionPreference
     try {
         # Windows PowerShell 5.1 can promote native stderr to NativeCommandError
         # when Stop is active. Capture both streams and the native code first.
         $ErrorActionPreference = 'Continue'
-        $Output = @(& java -cp $H2Jar org.h2.tools.Shell -url $JdbcUrl -user sa -password '' -sql $Sql 2>&1)
+        $Output = @(& java -cp $H2Jar $InspectorSource $JdbcUrl $LatestMigrationVersion 2>&1)
         $NativeExitCode = $LASTEXITCODE
     }
     finally {

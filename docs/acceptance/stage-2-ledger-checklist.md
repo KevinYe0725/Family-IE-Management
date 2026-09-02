@@ -38,7 +38,7 @@ git diff --check
 - `StageTwoFoundationSmokeTest`：第一阶段文件库升级、旧演示登录、创建/邀请加入家庭和成员越权拒绝。
 - `SprintOneSmokeTest`：第一阶段真实 HTTP 收支、筛选、看板、分析、CSV 和退出流程。
 - `FlywayFreshDatabaseTest`、`FlywayStageOneUpgradeTest`、`LedgerStageTwoMigrationTest`、`BudgetRevisionMigrationTest`、`LedgerIntegrityMigrationTest`：新库与旧库迁移以及 V1–V7 结构/数据约束和失败关闭守卫。
-- `scripts/unix-startup-gates.sh`：macOS/Linux 的 14 个隔离启动、备份、迁移状态、修复重试、恢复和失败保护场景；其中单独验证 V6 待迁移先备份、V7 当前态跳过、失败 V7 先备份再拒绝、修复数据并执行 Flyway `repair` 后无陈旧守卫地成功重试，以及真实 FUTURE/AMBIGUOUS history 备份后拒绝且保持不变。
+- `scripts/unix-startup-gates.sh`：macOS/Linux 的 14 个隔离启动、备份、迁移状态、修复重试、恢复和失败保护场景；其中单独验证 V6 待迁移先备份、V7 当前态跳过、失败 V7 先备份再拒绝、修复数据并执行 Flyway `repair` 后无陈旧守卫地成功重试，以及真实 FUTURE/AMBIGUOUS history 备份后拒绝并保持完整数据库文件哈希与 Flyway history 快照不变。
 
 Windows 启动仍必须由 Windows runner 单独执行 `scripts/windows-cmd-quote-regression.ps1` 与 `scripts/windows-startup-gates.ps1`；本机 macOS 的成功不能替代 Windows 运行证据。
 

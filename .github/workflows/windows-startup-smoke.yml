@@ -9,6 +9,7 @@ on:
     paths:
       - start-local.cmd
       - scripts/start-local.ps1
+      - scripts/FlywayStateInspector.java
       - scripts/startup-file-hashing.ps1
       - scripts/startup-h2-inspection.ps1
       - scripts/startup-output-parsing.ps1
@@ -23,6 +24,7 @@ on:
     paths:
       - start-local.cmd
       - scripts/start-local.ps1
+      - scripts/FlywayStateInspector.java
       - scripts/startup-file-hashing.ps1
       - scripts/startup-h2-inspection.ps1
       - scripts/startup-output-parsing.ps1

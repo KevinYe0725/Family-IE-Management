@@ -21,7 +21,7 @@
 /bin/sh scripts/unix-startup-gates.sh
 ```
 
-Unix 脚本的 14 个隔离场景依次验证：Java 17 与项目 Wrapper；无数据库路径；检查/H2 解析失败；复制/哈希失败；发布目标冲突；活动锁与归属未知的陈旧锁；所有者标记损坏；旧库主文件、伴随文件、清单与冲突处理；V6 待迁移备份；V7 当前态跳过；恢复后的演示登录与 12 条账目；失败 V7 的状态备份、拒绝、人工修复与无陈旧守卫重试；真实 FUTURE/AMBIGUOUS history 的备份、拒绝与不改写；以及前台退出状态传播。当前本机 macOS 运行只证明 macOS 路径；`.github/workflows/unix-startup-smoke.yml` 会在 `ubuntu-latest` 上重跑完整 Java 测试和这 14 个 Unix 场景，作为 Linux 证据。
+Unix 脚本的 14 个隔离场景依次验证：Java 17 与项目 Wrapper；无数据库路径；检查/H2 解析失败；复制/哈希失败；发布目标冲突；活动锁与归属未知的陈旧锁；所有者标记损坏；旧库主文件、伴随文件、清单与冲突处理；V6 待迁移备份；V7 当前态跳过；恢复后的演示登录与 12 条账目；失败 V7 的状态备份、拒绝、人工修复与无陈旧守卫重试；真实 FUTURE/AMBIGUOUS history 的备份、拒绝，以及前后完整数据库文件哈希和 Flyway history 快照一致；以及前台退出状态传播。当前本机 macOS 运行只证明 macOS 路径；`.github/workflows/unix-startup-smoke.yml` 会在 `ubuntu-latest` 上重跑完整 Java 测试和这 14 个 Unix 场景，作为 Linux 证据。
 
 Windows runner 需独立执行：
 
@@ -30,4 +30,4 @@ Windows runner 需独立执行：
 .\scripts\windows-startup-gates.ps1
 ```
 
-Windows 的 `cmd.exe` 引号边界和 6 个隔离启动场景只能由 Windows 实机或 `.github/workflows/windows-startup-smoke.yml` 证明；Unix 成功不能替代 Windows 证据。同样，Windows 成功也不能替代 macOS/Linux 的 shell、锁和文件发布语义。验收结论必须注明运行平台、提交 SHA 和对应工作流结果，不能把静态检查写成跨平台运行认证。
+Windows 脚本包含 7 个隔离启动场景：进程日志元数据、无生产数据 Smoke、带哨兵自定义端口 Smoke、端口占用拒绝、旧库备份/冲突/恢复、V6/V7/FAILED 修复重试及 FUTURE/AMBIGUOUS 完整快照拒绝、伴随文件锁定失败。此外还单独执行解析器回归、流式 SHA-256 回归，以及在真实 `powershell.exe` 5.1 子进程中调用生产 Java 源码检查器的六状态/错误恢复回归；检查器内部持有带引号的小写 Flyway SQL，PowerShell 不传 SQL 或空密码原生参数。这些边界只能由 Windows 实机或 `.github/workflows/windows-startup-smoke.yml` 证明；Unix 成功不能替代 Windows 证据。同样，Windows 成功也不能替代 macOS/Linux 的 shell、锁和文件发布语义。验收结论必须注明运行平台、提交 SHA 和对应工作流结果，不能把静态检查写成跨平台运行认证。

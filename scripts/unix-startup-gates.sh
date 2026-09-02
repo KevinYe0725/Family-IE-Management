@@ -75,6 +75,14 @@ sha256_file() {
     fi
 }
 
+database_hash_snapshot() {
+    database_hash_directory=$1
+    for database_hash_file in "$database_hash_directory"/family-finance.*.db; do
+        [ -f "$database_hash_file" ] || continue
+        printf '%s  %s\n' "$(sha256_file "$database_hash_file")" "${database_hash_file##*/}"
+    done | sort
+}
+
 new_scenario() {
     scenario=$session_root/$1
     assert_under_session_root "$scenario"
@@ -190,6 +198,13 @@ migration_fixture() {
         fail "Could not prepare migration state '$migration_fixture_action' in $migration_fixture_scenario"
 }
 
+migration_history_snapshot() {
+    migration_snapshot_scenario=$1
+    migration_snapshot_database_base=$migration_snapshot_scenario/data/family-finance
+    java -cp "$fixture_classpath" com.familyfinance.migration.MigrationStateFixtureCli \
+        "$migration_snapshot_database_base" print-history-snapshot 2>/dev/null
+}
+
 run_refused_history_state() {
     refused_state_name=$1
     refused_state_make_action=$2
@@ -199,6 +214,8 @@ run_refused_history_state() {
     new_stage_one_fixture "$refused_state_scenario"
     migration_fixture "$refused_state_scenario" migrate-to-6
     migration_fixture "$refused_state_scenario" "$refused_state_make_action"
+    refused_state_history_before=$(migration_history_snapshot "$refused_state_scenario")
+    refused_state_files_before=$(database_hash_snapshot "$refused_state_scenario/data")
     refused_state_marker=$refused_state_scenario/launched
     set +e
     (
@@ -216,6 +233,12 @@ run_refused_history_state() {
         "$refused_state_name refusal left partial backup evidence."
     grep -F "$refused_state_message" "$refused_state_scenario/refused.log" >/dev/null ||
         fail "$refused_state_name refusal omitted its explicit diagnostic."
+    refused_state_files_after=$(database_hash_snapshot "$refused_state_scenario/data")
+    refused_state_history_after=$(migration_history_snapshot "$refused_state_scenario")
+    assert_equal "$refused_state_files_before" "$refused_state_files_after" \
+        "$refused_state_name refusal changed the complete database companion hash snapshot."
+    assert_equal "$refused_state_history_before" "$refused_state_history_after" \
+        "$refused_state_name refusal changed the complete Flyway history snapshot."
     migration_fixture "$refused_state_scenario" "$refused_state_assert_action"
 }
 

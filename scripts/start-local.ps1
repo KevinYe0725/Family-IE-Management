@@ -108,17 +108,13 @@ function Get-LatestMigrationVersion {
 
 function Get-FlywayMigrationState([string]$DatabaseBasePath, [long]$LatestMigrationVersion) {
     $H2Jar = Get-ProjectH2Jar
+    $InspectorSource = Join-Path $PSScriptRoot 'FlywayStateInspector.java'
+    if (-not (Test-Path -LiteralPath $InspectorSource -PathType Leaf)) {
+        throw "The Flyway state inspector is missing: $InspectorSource"
+    }
     $JdbcPath = $DatabaseBasePath.Replace('\', '/')
     $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
-    $PresenceSql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'HISTORY_PRESENT' else 'NO_HISTORY' end as HISTORY_STATUS"
-    $Presence = ConvertFrom-FlywayHistoryPresenceShellOutput -Output @(
-        Invoke-H2Inspection $H2Jar $JdbcUrl $PresenceSql)
-    if ($Presence -ceq 'NO_HISTORY') {
-        return (ConvertFrom-FlywayMigrationStateShellOutput -Output @('NO_HISTORY'))
-    }
-
-    $StateSql = "select case when exists (select 1 from `"flyway_schema_history`" where `"success`" = false) then 'FAILED' when exists (select 1 from `"flyway_schema_history`" where `"version`" is not null and not regexp_like(`"version`", '^[0-9]+$')) then 'AMBIGUOUS' when not exists (select 1 from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null and regexp_like(`"version`", '^[0-9]+$')) then 'AMBIGUOUS' when exists (select 1 from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null group by `"version`" having count(*) > 1) then 'AMBIGUOUS' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) > $LatestMigrationVersion then 'FUTURE' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) = $LatestMigrationVersion then 'CURRENT' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) < $LatestMigrationVersion then 'BEHIND_CURRENT' else 'AMBIGUOUS' end as MIGRATION_STATE"
-    $StateOutput = @(Invoke-H2Inspection $H2Jar $JdbcUrl $StateSql)
+    $StateOutput = @(Invoke-H2Inspection $H2Jar $InspectorSource $JdbcUrl $LatestMigrationVersion)
     $UnsupportedStates = @($StateOutput |
             ForEach-Object { ([string]$_).Trim() } |
             Where-Object { $_ -ceq 'FUTURE' -or $_ -ceq 'AMBIGUOUS' })

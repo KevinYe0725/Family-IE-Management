@@ -2,6 +2,8 @@ package com.familyfinance.migration;
 
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 
@@ -24,6 +26,7 @@ public final class MigrationStateFixtureCli {
             case "make-ambiguous-history" -> updateHistoryVersion(url, "6", "not-numeric");
             case "assert-future-history" -> assertHistoryVersion(url, "99");
             case "assert-ambiguous-history" -> assertHistoryVersion(url, "not-numeric");
+            case "print-history-snapshot" -> printHistorySnapshot(url);
             default -> throw new IllegalArgumentException("Unknown migration fixture action: " + args[1]);
         }
     }
@@ -90,6 +93,26 @@ public final class MigrationStateFixtureCli {
                     throw new AssertionError("Expected migration history version " + expected);
                 }
             }
+        }
+    }
+
+    private static void printHistorySnapshot(String url) throws Exception {
+        String sql = "select \"installed_rank\",\"version\",\"description\",\"type\",\"script\","
+                + "\"checksum\",\"installed_by\",\"installed_on\",\"execution_time\",\"success\" "
+                + "from \"flyway_schema_history\" order by \"installed_rank\"";
+        try (var connection = DriverManager.getConnection(
+                        url + ";IFEXISTS=TRUE;ACCESS_MODE_DATA=r", "sa", "");
+                var rows = connection.createStatement().executeQuery(sql)) {
+            StringBuilder snapshot = new StringBuilder();
+            while (rows.next()) {
+                for (int column = 1; column <= 10; column++) {
+                    if (column > 1) snapshot.append('\u001f');
+                    snapshot.append(String.valueOf(rows.getObject(column)));
+                }
+                snapshot.append('\n');
+            }
+            System.out.println(Base64.getEncoder().encodeToString(
+                    snapshot.toString().getBytes(StandardCharsets.UTF_8)));
         }
     }
 

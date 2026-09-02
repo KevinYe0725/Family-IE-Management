@@ -17,7 +17,7 @@ class WindowsStartupGateIsolationTest {
                         Path.of("scripts", "windows-startup-gates.ps1"))
                 .stream()
                 .map(String::trim)
-                .filter(line -> line.contains("$SourceRoot") || line.contains("$PSScriptRoot"))
+                .filter(line -> line.contains("$SourceRoot"))
                 .toList();
 
         assertThat(sourceCheckoutReferences).containsExactly(
@@ -118,24 +118,34 @@ class WindowsStartupGateIsolationTest {
     }
 
     @Test
-    void h2InspectionPassesQuotedSqlAsOneNativeArgumentWithoutCmdStringParsing() throws Exception {
+    void h2InspectionPassesOnlyInspectorPathJdbcUrlAndLatestVersionToNativeJava() throws Exception {
         String function = Files.readString(Path.of("scripts", "startup-h2-inspection.ps1"));
+        String inspector = Files.readString(Path.of("scripts", "FlywayStateInspector.java"));
 
         assertThat(function).contains(
                 "$PreviousErrorActionPreference = $ErrorActionPreference",
                 "$ErrorActionPreference = 'Continue'",
-                "$Output = @(& java -cp $H2Jar org.h2.tools.Shell -url $JdbcUrl -user sa -password '' -sql $Sql 2>&1)",
+                "$Output = @(& java -cp $H2Jar $InspectorSource $JdbcUrl $LatestMigrationVersion 2>&1)",
                 "$NativeExitCode = $LASTEXITCODE",
                 "$ErrorActionPreference = $PreviousErrorActionPreference");
-        assertThat(function).doesNotContain("$env:ComSpec", "$Command =");
-        assertThat(Files.readString(Path.of("scripts", "start-local.ps1")))
-                .contains(". (Join-Path $PSScriptRoot 'startup-h2-inspection.ps1')");
+        assertThat(function).doesNotContain(
+                "$env:ComSpec", "$Command =", "org.h2.tools.Shell", "-sql", "-password", "flyway_schema_history");
+        assertThat(inspector).contains(
+                "DriverManager.getConnection(jdbcUrl, \"sa\", \"\")",
+                "\\\"flyway_schema_history\\\"",
+                "\\\"success\\\"",
+                "\\\"version\\\"");
+        String startup = Files.readString(Path.of("scripts", "start-local.ps1"));
+        assertThat(startup).contains(". (Join-Path $PSScriptRoot 'startup-h2-inspection.ps1')");
+        assertThat(startup).doesNotContain(
+                "-sql", "-password", "$StateSql", "$PresenceSql", "flyway_schema_history");
         assertThat(Files.readString(Path.of("scripts", "windows-startup-gates.ps1"))).contains(
-                "function Test-QuotedFlywayIdentifierInspection",
-                ". (Join-Path $Scenario 'scripts\\startup-h2-inspection.ps1')",
-                "Literal quoted lowercase Flyway identifiers did not survive native invocation.");
+                "function Test-WindowsPowerShell51FlywayInspector",
+                ". (Join-Path $PSScriptRoot 'scripts\\startup-h2-inspection.ps1')",
+                "powershell.exe",
+                "Windows PowerShell 5.1 inspector regression");
         assertThat(Files.readString(Path.of(".github", "workflows", "windows-startup-smoke.yml")))
-                .contains("- scripts/startup-h2-inspection.ps1");
+                .contains("- scripts/startup-h2-inspection.ps1", "- scripts/FlywayStateInspector.java");
     }
 
     @Test

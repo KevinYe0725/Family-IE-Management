@@ -265,21 +265,71 @@ function Test-FlywayHistoryOutputParser {
     Assert-Equal 5 $RejectedInvalidOutputs 'The migration-state parser accepted a zero, duplicate, multiple, future, or ambiguous state.'
 }
 
-function Test-QuotedFlywayIdentifierInspection {
-    $Scenario = New-Scenario 'quoted-flyway-identifiers'
-    New-StageOneFixture $Scenario | Out-Null
-    Invoke-MigrationFixture $Scenario 'migrate-to-6'
-    . (Join-Path $Scenario 'scripts\startup-h2-inspection.ps1')
-    . (Join-Path $Scenario 'scripts\startup-output-parsing.ps1')
+function Test-WindowsPowerShell51FlywayInspector {
+    $Scenario = New-Scenario 'powershell51-flyway-inspector'
     $H2Jar = @($script:FixtureClasspath.Split([System.IO.Path]::PathSeparator) |
             Where-Object { (Split-Path $_ -Leaf) -eq 'h2-2.3.232.jar' })
-    Assert-Equal 1 $H2Jar.Count 'Quoted-identifier regression did not resolve exactly one H2 jar.'
-    $DatabaseBase = Join-Path $Scenario 'data\family-finance'
-    $JdbcUrl = "jdbc:h2:file:$($DatabaseBase.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
-    $Sql = 'select case when exists (select 1 from "flyway_schema_history" where "success" = true and "version" = ''6'') then ''BEHIND_CURRENT'' else ''FAILED'' end as MIGRATION_STATE'
-    $Output = @(Invoke-H2Inspection $H2Jar[0] $JdbcUrl $Sql)
-    $State = ConvertFrom-FlywayMigrationStateShellOutput -Output $Output
-    Assert-Equal 'BEHIND_CURRENT' $State 'Literal quoted lowercase Flyway identifiers did not survive native invocation.'
+    Assert-Equal 1 $H2Jar.Count 'Windows PowerShell 5.1 inspector regression did not resolve exactly one H2 jar.'
+    Set-Content -LiteralPath (Join-Path $Scenario 'h2-path.txt') -Value $H2Jar[0] -Encoding UTF8
+
+    $PrepareDatabase = {
+        param([string]$Name, [string[]]$Actions)
+        $DatabaseBase = Join-Path $Scenario ("state-" + $Name + "\family-finance")
+        New-Item -ItemType Directory -Path (Split-Path $DatabaseBase -Parent) | Out-Null
+        & java -cp $script:FixtureClasspath com.familyfinance.migration.StageOneDatabaseFixtureCli `
+            $DatabaseBase 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not create inspector state $Name." }
+        foreach ($Action in $Actions) {
+            & java -cp $script:FixtureClasspath com.familyfinance.migration.MigrationStateFixtureCli `
+                $DatabaseBase $Action 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not apply inspector action $Action." }
+        }
+        return $DatabaseBase
+    }
+    $NoHistory = & $PrepareDatabase 'no-history' @()
+    $Normal = & $PrepareDatabase 'normal' @('migrate-to-6')
+    $Failed = & $PrepareDatabase 'failed' @('migrate-to-6', 'fail-v7-budget')
+    $Future = & $PrepareDatabase 'future' @('migrate-to-6', 'make-future-history')
+    $Ambiguous = & $PrepareDatabase 'ambiguous' @('migrate-to-6', 'make-ambiguous-history')
+    $Cases = @(
+        "NO_HISTORY|7|jdbc:h2:file:$($NoHistory.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "BEHIND_CURRENT|7|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "CURRENT|6|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "FAILED|7|jdbc:h2:file:$($Failed.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "FUTURE|7|jdbc:h2:file:$($Future.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "AMBIGUOUS|7|jdbc:h2:file:$($Ambiguous.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
+    )
+    Set-Content -LiteralPath (Join-Path $Scenario 'inspector-cases.txt') -Value $Cases -Encoding UTF8
+    $Probe = Join-Path $Scenario 'powershell51-inspector-probe.ps1'
+    Set-Content -LiteralPath $Probe -Encoding UTF8 -Value @'
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -ne 5) { exit 81 }
+. (Join-Path $PSScriptRoot 'scripts\startup-h2-inspection.ps1')
+$H2Jar = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'h2-path.txt') -Raw).Trim()
+$Inspector = Join-Path $PSScriptRoot 'scripts\FlywayStateInspector.java'
+foreach ($Case in Get-Content -LiteralPath (Join-Path $PSScriptRoot 'inspector-cases.txt')) {
+    $Parts = $Case.Split('|', 3)
+    $Before = $ErrorActionPreference
+    $Output = @(Invoke-H2Inspection $H2Jar $Inspector $Parts[2] ([long]$Parts[1]))
+    if ($Output.Count -ne 1 -or [string]$Output[0] -cne $Parts[0]) { exit 82 }
+    if ($ErrorActionPreference -cne $Before) { exit 83 }
+}
+$FailureCaught = $false
+$BeforeFailure = $ErrorActionPreference
+try {
+    $Missing = 'jdbc:h2:file:' + (Join-Path $PSScriptRoot 'missing').Replace('\', '/') + ';IFEXISTS=TRUE;ACCESS_MODE_DATA=r'
+    Invoke-H2Inspection $H2Jar $Inspector $Missing 7 | Out-Null
+}
+catch {
+    $FailureCaught = $true
+}
+if (-not $FailureCaught -or $ErrorActionPreference -cne $BeforeFailure) { exit 84 }
+Write-Output 'PS51_INSPECTOR_OK'
+'@
+    $ChildOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Probe 2>&1)
+    $ChildExitCode = $LASTEXITCODE
+    Assert-Equal 0 $ChildExitCode "Windows PowerShell 5.1 inspector regression failed: $([string]::Join(' | ', $ChildOutput))"
+    Assert-Equal 'PS51_INSPECTOR_OK' ([string]::Join('', $ChildOutput)) 'Windows PowerShell 5.1 inspector regression returned unexpected output.'
 }
 
 function Test-StartupSha256Helper {
@@ -343,6 +393,17 @@ function Invoke-MigrationFixture([string]$ScenarioRoot, [string]$Action) {
     if ($LASTEXITCODE -ne 0) {
         throw "Could not prepare migration state '$Action' in $ScenarioRoot."
     }
+}
+
+function Get-MigrationHistorySnapshot([string]$ScenarioRoot) {
+    $DatabaseBase = Join-Path $ScenarioRoot 'data\family-finance'
+    Assert-UnderSessionRoot $DatabaseBase
+    $Output = @(& java -cp $script:FixtureClasspath com.familyfinance.migration.MigrationStateFixtureCli `
+            $DatabaseBase 'print-history-snapshot' 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $Output.Count -ne 1) {
+        throw "Could not capture the complete Flyway history snapshot in $ScenarioRoot."
+    }
+    return [string]$Output[0]
 }
 
 function Get-DatabaseHashes([string]$DataDirectory) {
@@ -647,6 +708,9 @@ function Test-ExactMigrationStatesAndRecovery {
         Invoke-MigrationFixture $RefusedScenario 'migrate-to-6'
         Invoke-MigrationFixture $RefusedScenario $Case.Make
         $RefusedBackupRoot = Join-Path $RefusedScenario 'data-backups'
+        $RefusedData = Join-Path $RefusedScenario 'data'
+        $HistoryBeforeRefusal = Get-MigrationHistorySnapshot $RefusedScenario
+        $FilesBeforeRefusal = Get-DirectorySnapshot $RefusedData
         $RefusedPort = Get-FreePort
         $Refused = Start-Launcher $RefusedScenario $RefusedPort ("history-" + $Case.Name)
         Wait-ForExit $Refused 180 ("Refused " + $Case.Name + " history")
@@ -656,6 +720,8 @@ function Test-ExactMigrationStatesAndRecovery {
         Assert-Equal 1 $RefusedBackups.Count ($Case.Name + ' history did not receive the documented verified state backup.')
         $RefusedPartials = @(Get-PartialBackups $RefusedBackupRoot)
         Assert-Equal 0 $RefusedPartials.Count ($Case.Name + ' refusal left partial backup evidence.')
+        Assert-Equal $FilesBeforeRefusal (Get-DirectorySnapshot $RefusedData) ($Case.Name + ' refusal changed the complete database file snapshot.')
+        Assert-Equal $HistoryBeforeRefusal (Get-MigrationHistorySnapshot $RefusedScenario) ($Case.Name + ' refusal changed the complete Flyway history snapshot.')
         Invoke-MigrationFixture $RefusedScenario $Case.Assert
         Assert-NoScenarioProcesses $RefusedScenario
     }
@@ -690,8 +756,8 @@ try {
 
     Write-Host 'Parser regression: H2 Shell output requires one exact status line.'
     Test-FlywayHistoryOutputParser
-    Write-Host 'Native invocation regression: quoted lowercase Flyway identifiers reach H2 unchanged.'
-    Test-QuotedFlywayIdentifierInspection
+    Write-Host 'Windows PowerShell 5.1 regression: production inspector classifies all real H2 states and restores errors.'
+    Test-WindowsPowerShell51FlywayInspector
     Write-Host 'Hash regression: startup SHA-256 is independent of module autoload.'
     Test-StartupSha256Helper
     Write-Host 'Gate 0/7: Exited-process logs use immutable launch metadata.'
