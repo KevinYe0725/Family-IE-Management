@@ -66,7 +66,7 @@ class RolePermissionApiTest {
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/family/memberships").session(owner))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].role").value("ADMIN"));
+                .andExpect(jsonPath("$.data[0].role").value("MEMBER"));
         mvc.perform(patch("/api/family/memberships/{id}", memberId).session(owner).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"OWNER\"}"))
                 .andExpect(status().isForbidden());

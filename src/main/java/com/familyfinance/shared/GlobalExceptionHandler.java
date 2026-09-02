@@ -9,6 +9,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
@@ -112,6 +113,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleAccessDenied(AccessDeniedException exception) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ApiEnvelope.error(ApiError.of("FORBIDDEN", "没有权限执行此操作")));
+    }
+
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleLockFailure(PessimisticLockingFailureException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiEnvelope.error(ApiError.of("LOCK_RETRY_REQUIRED", "操作繁忙，请重试")));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

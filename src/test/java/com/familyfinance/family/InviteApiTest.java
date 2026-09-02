@@ -82,7 +82,7 @@ class InviteApiTest {
         MvcResult result = mvc.perform(get("/api/family/invites").session(session))
                 .andExpect(status().isOk()).andReturn();
         return new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString())
-                .path("data").get(0).path("id").asLong();
+                .path("data").path("items").get(0).path("id").asLong();
     }
 
     private org.springframework.test.web.servlet.ResultActions registerJoin(String email, String token) throws Exception {

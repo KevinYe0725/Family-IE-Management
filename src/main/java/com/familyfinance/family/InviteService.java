@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,19 +27,22 @@ public class InviteService {
     private final FamilyInviteRepository invites;
     private final AppUserRepository users;
     private final Clock clock;
+    private final FamilyLockService locks;
 
     InviteService(CurrentMembership currentMembership, FamilyPermissionService permissions, FamilyInviteRepository invites,
-            AppUserRepository users, Clock clock) {
+            AppUserRepository users, Clock clock, FamilyLockService locks) {
         this.currentMembership = currentMembership;
         this.permissions = permissions;
         this.invites = invites;
         this.users = users;
         this.clock = clock;
+        this.locks = locks;
     }
 
     @Transactional
     public CreatedInvite create(Authentication authentication, Integer maxUses, HouseholdRole requestedRole) {
         MembershipContext context = currentMembership.require(authentication);
+        locks.lockActiveHousehold(context.householdId());
         HouseholdRole role = requestedRole == null ? HouseholdRole.MEMBER : requestedRole;
         if (role == HouseholdRole.OWNER) validation("role", "邀请不能授予所有者角色");
         if (role == HouseholdRole.ADMIN) permissions.requireOwner(context); else permissions.requireAdmin(context);
@@ -52,15 +57,18 @@ public class InviteService {
     }
 
     @Transactional(readOnly = true)
-    public List<InviteView> list(Authentication authentication) {
+    public InvitePage list(Authentication authentication, int page, int size) {
         MembershipContext context = currentMembership.require(authentication);
         permissions.requireAdmin(context);
-        return invites.findByHouseholdIdOrderByIdDesc(context.householdId()).stream().map(InviteView::from).toList();
+        int safePage = Math.max(0, page); int safeSize = Math.min(50, Math.max(1, size));
+        var result = invites.findByHouseholdId(context.householdId(), PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id")));
+        return new InvitePage(result.getContent().stream().map(InviteView::from).toList(), safePage, safeSize, result.hasNext());
     }
 
     @Transactional
     public void revoke(Authentication authentication, long id) {
         MembershipContext context = currentMembership.require(authentication);
+        locks.lockActiveHousehold(context.householdId());
         FamilyInvite invite = invites.findByIdAndHouseholdId(id, context.householdId())
                 .orElseThrow(() -> new ResourceNotFoundException("邀请不存在"));
         if (invite.getRole() == HouseholdRole.ADMIN) permissions.requireOwner(context); else permissions.requireAdmin(context);
@@ -68,9 +76,14 @@ public class InviteService {
     }
 
     public FamilyInvite lockValidInvite(String rawToken, Instant now) {
+        Long householdId = invites.findHouseholdIdByTokenHash(sha256(rawToken))
+                .orElseThrow(() -> new InviteStateException("INVITE_INVALID", "邀请码无效"));
+        locks.lockActiveHousehold(householdId);
         FamilyInvite invite = invites.findByTokenHash(sha256(rawToken))
                 .orElseThrow(() -> new InviteStateException("INVITE_INVALID", "邀请码无效"));
-        invite.consume(now);
+        if (invite.getRevokedAt() != null) throw new InviteStateException("INVITE_REVOKED", "邀请已撤销");
+        if (!invite.getExpiresAt().isAfter(now)) throw new InviteStateException("INVITE_EXPIRED", "邀请已过期");
+        if (invites.consumeIfAvailable(invite.getId(), now) != 1) throw new InviteStateException("INVITE_EXHAUSTED", "邀请使用次数已用尽");
         return invite;
     }
 
@@ -96,4 +109,5 @@ public class InviteService {
     public record InviteView(Long id, HouseholdRole role, Instant expiresAt, int maxUses, int usedCount, Instant revokedAt, Instant createdAt) {
         static InviteView from(FamilyInvite invite) { return new InviteView(invite.getId(), invite.getRole(), invite.getExpiresAt(), invite.getMaxUses(), invite.getUsedCount(), invite.getRevokedAt(), invite.getCreatedAt()); }
     }
+    public record InvitePage(List<InviteView> items, int page, int size, boolean hasNext) {}
 }

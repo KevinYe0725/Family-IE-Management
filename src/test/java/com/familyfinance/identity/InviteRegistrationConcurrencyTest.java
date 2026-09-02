@@ -32,6 +32,7 @@ class InviteRegistrationConcurrencyTest {
 
     @Test
     void maxUseOneInviteAllowsExactlyOneConcurrentJoin() throws Exception {
+        long before = memberships.count();
         String token = createSingleUseInvite();
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
@@ -48,8 +49,7 @@ class InviteRegistrationConcurrencyTest {
             start.countDown();
             List<String> outcomes = List.of(results.get(0).get(), results.get(1).get());
             assertThat(outcomes).containsExactlyInAnyOrder("SUCCESS", "INVITE_EXHAUSTED");
-            assertThat(memberships.findByUserIdAndStatus(2L, MembershipStatus.ACTIVE).size()
-                    + memberships.findByUserIdAndStatus(3L, MembershipStatus.ACTIVE).size()).isEqualTo(1);
+            assertThat(memberships.count()).isEqualTo(before + 1);
         } finally { executor.shutdownNow(); }
     }
 
