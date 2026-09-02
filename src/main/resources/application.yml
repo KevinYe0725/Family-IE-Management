@@ -16,9 +16,13 @@ spring:
     password:
   jackson:
     time-zone: UTC
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
     show-sql: false
 
