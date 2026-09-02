@@ -14,9 +14,17 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ServletRequestPathUtils;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import tools.jackson.databind.ObjectMapper;
 
 public class ActiveUserSessionFilter extends OncePerRequestFilter {
+
+    private static final PathPatternParser PATHS = new PathPatternParser();
+    private static final PathPattern API_PATH = PATHS.parse("/api/**");
+    private static final PathPattern LOGIN_PATH = PATHS.parse("/api/auth/login");
+    private static final PathPattern REGISTRATION_PATH = PATHS.parse("/api/auth/register");
+    private static final PathPattern CSRF_PATH = PATHS.parse("/api/csrf");
 
     private final AppUserRepository users;
     private final ObjectMapper objectMapper;
@@ -52,10 +60,10 @@ public class ActiveUserSessionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = ServletRequestPathUtils.parse(request).pathWithinApplication().value();
-        return !path.startsWith("/api/")
-                || path.equals("/api/auth/login")
-                || path.equals("/api/auth/register")
-                || path.equals("/api/csrf");
+        var path = ServletRequestPathUtils.parse(request).pathWithinApplication();
+        return !API_PATH.matches(path)
+                || LOGIN_PATH.matches(path)
+                || REGISTRATION_PATH.matches(path)
+                || CSRF_PATH.matches(path);
     }
 }

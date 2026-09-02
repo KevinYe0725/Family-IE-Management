@@ -10,9 +10,13 @@ import java.io.IOException;
 import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ServletRequestPathUtils;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import tools.jackson.databind.ObjectMapper;
 
 public class LoginRateLimitFilter extends OncePerRequestFilter {
+
+    private static final PathPattern LOGIN_PATH = new PathPatternParser().parse("/api/auth/login");
 
     private final LoginRateLimiter limiter;
     private final ObjectMapper objectMapper;
@@ -40,7 +44,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = ServletRequestPathUtils.parse(request).pathWithinApplication().value();
-        return !"POST".equals(request.getMethod()) || !"/api/auth/login".equals(path);
+        return !"POST".equals(request.getMethod())
+                || !LOGIN_PATH.matches(ServletRequestPathUtils.parse(request).pathWithinApplication());
     }
 }
