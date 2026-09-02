@@ -5,9 +5,23 @@ on:
     branches:
       - main
       - codex/family-finance-mvp
+      - codex/family-finance-stage-2
     paths:
       - start-local.cmd
       - scripts/start-local.ps1
+      - scripts/windows-cmd-quote-regression.ps1
+      - scripts/windows-startup-gates.ps1
+      - .github/workflows/windows-startup-smoke.yml
+      - pom.xml
+      - mvnw.cmd
+      - .mvn/**
+      - src/**
+  pull_request:
+    paths:
+      - start-local.cmd
+      - scripts/start-local.ps1
+      - scripts/windows-cmd-quote-regression.ps1
+      - scripts/windows-startup-gates.ps1
       - .github/workflows/windows-startup-smoke.yml
       - pom.xml
       - mvnw.cmd
@@ -21,7 +35,7 @@ permissions:
 jobs:
   windows-startup:
     runs-on: windows-latest
-    timeout-minutes: 12
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -34,23 +48,21 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Reject an unrelated HTTP service on port 8080
+      - name: Verify cmd.exe quote-envelope regression
         shell: pwsh
-        run: |
-          $fake = Start-Process python -ArgumentList '-m', 'http.server', '8080', '--bind', '127.0.0.1' -PassThru
-          try {
-            Start-Sleep -Seconds 2
-            & .\start-local.cmd -NoBrowser -Smoke
-            if ($LASTEXITCODE -eq 0) {
-              throw 'The startup script incorrectly accepted an unrelated HTTP 200 service.'
-            }
-            Write-Host 'Unrelated port owner was rejected as expected.'
-            $global:LASTEXITCODE = 0
-          }
-          finally {
-            Stop-Process -Id $fake.Id -Force -ErrorAction SilentlyContinue
-          }
+        run: .\scripts\windows-cmd-quote-regression.ps1
 
-      - name: Run Windows one-click startup smoke
-        shell: cmd
-        run: start-local.cmd -NoBrowser -Smoke
+      - name: Run isolated Windows startup certification
+        shell: pwsh
+        run: .\scripts\windows-startup-gates.ps1
+
+      - name: Preserve synthetic failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-startup-synthetic-failure
+          path: |
+            ${{ runner.temp }}\family-finance-windows-gates-*\*\windows-gate-logs\*
+            ${{ runner.temp }}\family-finance-windows-gates-*\*\data-backups\**
+          if-no-files-found: ignore
+          retention-days: 3

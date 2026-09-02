@@ -208,7 +208,8 @@ if ($Smoke) {
     $SmokeJdbcUrl = "jdbc:h2:file:$($SmokeDatabase.Replace('\', '/'));DB_CLOSE_ON_EXIT=FALSE"
     Write-Step "Starting the Windows smoke instance on port $Port..."
     $Command = "`"$MavenWrapper`" -q spring-boot:run `"-Dspring-boot.run.arguments=--server.port=$Port --spring.datasource.url=$SmokeJdbcUrl`""
-    $Process = Start-Process -FilePath $env:ComSpec -ArgumentList '/d', '/s', '/c', $Command `
+    $CmdArgumentLine = "/d /s /c `"$Command`""
+    $Process = Start-Process -FilePath $env:ComSpec -ArgumentList $CmdArgumentLine `
         -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow
     try {
         Wait-ForApplication $Process
