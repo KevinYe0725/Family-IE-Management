@@ -33,7 +33,15 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     boolean existsByHouseholdIdAndKindAndNameAndIdNot(Long householdId, TransactionKind kind, String name, Long id);
 
-    @Query(value = "select count(*) from budgets where household_id=:householdId and category_id=:categoryId", nativeQuery = true)
+    @Query(value = """
+            select count(*) from (
+                select id from budgets where household_id=:householdId and category_id=:categoryId
+                union all
+                select id from budget_revisions
+                where household_id=:householdId
+                  and (old_category_id=:categoryId or new_category_id=:categoryId)
+            ) budget_refs
+            """, nativeQuery = true)
     long countBudgetReferences(@Param("householdId") Long householdId, @Param("categoryId") Long categoryId);
 
     @Query(value = "select count(*) from recurring_rules where household_id=:householdId and category_id=:categoryId", nativeQuery = true)

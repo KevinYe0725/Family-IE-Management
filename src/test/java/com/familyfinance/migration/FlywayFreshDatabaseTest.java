@@ -12,10 +12,10 @@ class FlywayFreshDatabaseTest {
     Path tempDir;
 
     @Test
-    void freshDatabaseRunsThroughV4() {
+    void freshDatabaseRunsThroughV5() {
         MigrationResult result = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh"));
 
-        assertThat(result.version()).isEqualTo("4");
+        assertThat(result.version()).isEqualTo("5");
         assertThat(result.tables()).contains(
                 "APP_USERS",
                 "HOUSEHOLD_MEMBERSHIPS",

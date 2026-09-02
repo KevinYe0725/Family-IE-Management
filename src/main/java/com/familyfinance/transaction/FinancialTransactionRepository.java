@@ -7,6 +7,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface FinancialTransactionRepository
         extends JpaRepository<FinancialTransaction, Long>, JpaSpecificationExecutor<FinancialTransaction> {
@@ -28,4 +30,93 @@ public interface FinancialTransactionRepository
             TransactionKind kind,
             LocalDate before,
             Sort sort);
+
+    @Query(value = """
+            select cast(coalesce(sum(cast(transaction_row.amount_cents as numeric(38))), 0) as varchar)
+            from financial_transactions transaction_row
+            where transaction_row.household_id = :householdId
+              and transaction_row.kind = 'EXPENSE'
+              and transaction_row.occurred_on >= :fromDate
+              and transaction_row.occurred_on < :toDate
+              and (transaction_row.source_type <> 'RECURRING' or exists (
+                  select 1 from recurring_occurrences occurrence_row
+                  where occurrence_row.id = transaction_row.source_id
+                    and occurrence_row.household_id = transaction_row.household_id
+                    and occurrence_row.status = 'CONFIRMED'
+                    and occurrence_row.confirmed_transaction_id = transaction_row.id
+              ))
+            """, nativeQuery = true)
+    String sumExpenseCentsForMonth(
+            @Param("householdId") Long householdId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
+
+    @Query(value = """
+            select cast(coalesce(sum(cast(transaction_row.amount_cents as numeric(38))), 0) as varchar)
+            from financial_transactions transaction_row
+            where transaction_row.household_id = :householdId
+              and transaction_row.kind = 'EXPENSE'
+              and transaction_row.occurred_on >= :fromDate
+              and transaction_row.occurred_on < :toDate
+              and transaction_row.category_id = :categoryId
+              and (transaction_row.source_type <> 'RECURRING' or exists (
+                  select 1 from recurring_occurrences occurrence_row
+                  where occurrence_row.id = transaction_row.source_id
+                    and occurrence_row.household_id = transaction_row.household_id
+                    and occurrence_row.status = 'CONFIRMED'
+                    and occurrence_row.confirmed_transaction_id = transaction_row.id
+              ))
+            """, nativeQuery = true)
+    String sumExpenseCentsForExactCategory(
+            @Param("householdId") Long householdId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("categoryId") Long categoryId);
+
+    @Query(value = """
+            select cast(coalesce(sum(cast(transaction_row.amount_cents as numeric(38))), 0) as varchar)
+            from financial_transactions transaction_row
+            join categories category_row
+              on category_row.id = transaction_row.category_id
+             and category_row.household_id = transaction_row.household_id
+            where transaction_row.household_id = :householdId
+              and transaction_row.kind = 'EXPENSE'
+              and transaction_row.occurred_on >= :fromDate
+              and transaction_row.occurred_on < :toDate
+              and (category_row.id = :categoryId or category_row.parent_id = :categoryId)
+              and (transaction_row.source_type <> 'RECURRING' or exists (
+                  select 1 from recurring_occurrences occurrence_row
+                  where occurrence_row.id = transaction_row.source_id
+                    and occurrence_row.household_id = transaction_row.household_id
+                    and occurrence_row.status = 'CONFIRMED'
+                    and occurrence_row.confirmed_transaction_id = transaction_row.id
+              ))
+            """, nativeQuery = true)
+    String sumExpenseCentsForCategoryTree(
+            @Param("householdId") Long householdId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("categoryId") Long categoryId);
+
+    @Query(value = """
+            select cast(coalesce(sum(cast(transaction_row.amount_cents as numeric(38))), 0) as varchar)
+            from financial_transactions transaction_row
+            where transaction_row.household_id = :householdId
+              and transaction_row.kind = 'EXPENSE'
+              and transaction_row.occurred_on >= :fromDate
+              and transaction_row.occurred_on < :toDate
+              and transaction_row.member_id = :memberId
+              and (transaction_row.source_type <> 'RECURRING' or exists (
+                  select 1 from recurring_occurrences occurrence_row
+                  where occurrence_row.id = transaction_row.source_id
+                    and occurrence_row.household_id = transaction_row.household_id
+                    and occurrence_row.status = 'CONFIRMED'
+                    and occurrence_row.confirmed_transaction_id = transaction_row.id
+              ))
+            """, nativeQuery = true)
+    String sumExpenseCentsForMember(
+            @Param("householdId") Long householdId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("memberId") Long memberId);
 }

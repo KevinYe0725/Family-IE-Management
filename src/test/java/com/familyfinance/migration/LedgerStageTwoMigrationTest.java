@@ -25,7 +25,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("4");
+        assertThat(result.version()).isEqualTo("5");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions")).isEqualTo(12);
         assertThat(result.queryLong("select count(*) from financial_accounts where household_id=1 "
@@ -55,7 +55,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("4");
+        assertThat(result.version()).isEqualTo("5");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
                 .isEqualTo(12);
@@ -72,7 +72,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("4");
+        assertThat(result.version()).isEqualTo("5");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
                 .isEqualTo(12);
@@ -152,7 +152,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("4");
+        assertThat(result.version()).isEqualTo("5");
         assertThat(result.queryLong("select count(*) from financial_accounts")).isEqualTo(2);
         assertThat(result.queryLong("select count(*) from households h where not exists "
                 + "(select 1 from financial_accounts a where a.household_id=h.id and a.name='默认账户')"))
@@ -204,6 +204,9 @@ class LedgerStageTwoMigrationTest {
         assertRejected(result, "insert into budgets "
                 + "(household_id,period_month,scope_type,category_id,member_id,amount_cents,version,active) "
                 + "values (1,'2026-09','CATEGORY',null,null,10000,1,true)");
+        assertRejected(result, "insert into budgets "
+                + "(household_id,period_month,scope_type,category_id,member_id,amount_cents,version,active) "
+                + "values (1,'2026-10','TOTAL',null,null,100000000000,1,true)");
 
         long accountId = result.queryLong("select id from financial_accounts where household_id=1");
         result.executeUpdate("insert into recurring_rules "
@@ -233,15 +236,9 @@ class LedgerStageTwoMigrationTest {
                 + "values (1,'2026-10','TOTAL',null,null,10000,1,true)");
         long budgetId = result.queryLong("select id from budgets where household_id=1");
 
-        result.executeUpdate("insert into budget_revisions "
-                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
-                + "(1," + budgetId + ",10000,12000,1,current_timestamp)");
-        assertRejected(result, "insert into budget_revisions "
-                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
-                + "(1," + budgetId + ",12000,14000,2,current_timestamp)");
-        assertRejected(result, "insert into budget_revisions "
-                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
-                + "(2," + budgetId + ",12000,14000,2,current_timestamp)");
+        result.executeUpdate(revisionInsert(1, budgetId, 1));
+        assertRejected(result, revisionInsert(1, budgetId, 2));
+        assertRejected(result, revisionInsert(2, budgetId, 2));
     }
 
     @Test
@@ -292,6 +289,16 @@ class LedgerStageTwoMigrationTest {
         assertThatThrownBy(() -> result.executeUpdate(sql))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Could not execute migration test statement");
+    }
+
+    private static String revisionInsert(long householdId, long budgetId, long actorId) {
+        return "insert into budget_revisions "
+                + "(household_id,budget_id,old_period_month,new_period_month,old_scope_type,new_scope_type,"
+                + "old_category_id,new_category_id,old_member_id,new_member_id,old_amount_cents,new_amount_cents,"
+                + "old_active,new_active,changed_by,changed_at) values ("
+                + householdId + "," + budgetId
+                + ",'2026-10','2026-10','TOTAL','TOTAL',null,null,null,null,10000,12000,true,true,"
+                + actorId + ",current_timestamp)";
     }
 
     private static List<LegacyTransactionRow> legacyTransactionRows(Path database) {
