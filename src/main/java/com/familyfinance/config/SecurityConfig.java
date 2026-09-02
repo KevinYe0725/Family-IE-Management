@@ -6,6 +6,7 @@ import com.familyfinance.family.MembershipContext;
 import com.familyfinance.shared.ApiEnvelope;
 import com.familyfinance.shared.ApiError;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Clock;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,7 +35,7 @@ public class SecurityConfig {
                         .sessionFixation(fixation -> fixation.migrateSession()))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/", "/index.html", "/favicon.ico", "/assets/**", "/static/**").permitAll()
-                        .requestMatchers("/api/csrf", "/api/auth/login").permitAll()
+                        .requestMatchers("/api/csrf", "/api/auth/login", "/api/auth/register").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .formLogin(form -> form
@@ -83,6 +84,11 @@ public class SecurityConfig {
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    Clock clock() {
+        return Clock.systemUTC();
     }
 
     private static void writeJson(

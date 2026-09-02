@@ -23,6 +23,10 @@ public class FamilyMember {
     @JoinColumn(name = "household_id", nullable = false)
     private Household household;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "linked_user_id")
+    private AppUser linkedUser;
+
     @Column(nullable = false)
     private String name;
 
@@ -36,7 +40,12 @@ public class FamilyMember {
     }
 
     public FamilyMember(Household household, String name, String roleLabel, Instant createdAt) {
+        this(household, null, name, roleLabel, createdAt);
+    }
+
+    public FamilyMember(Household household, AppUser linkedUser, String name, String roleLabel, Instant createdAt) {
         this.household = household;
+        this.linkedUser = linkedUser;
         this.name = name;
         this.roleLabel = roleLabel;
         this.createdAt = createdAt;
@@ -48,6 +57,10 @@ public class FamilyMember {
 
     public Household getHousehold() {
         return household;
+    }
+
+    public AppUser getLinkedUser() {
+        return linkedUser;
     }
 
     public String getName() {

@@ -1,6 +1,8 @@
 package com.familyfinance.shared;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.familyfinance.identity.PasswordChangeException;
+import com.familyfinance.identity.RegistrationRateLimitedException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -75,6 +77,18 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleConflict(ResourceConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiEnvelope.error(ApiError.of(exception.code(), exception.getMessage())));
+    }
+
+    @ExceptionHandler(PasswordChangeException.class)
+    ResponseEntity<ApiEnvelope<Void>> handlePasswordChange(PasswordChangeException exception) {
+        return ResponseEntity.badRequest()
+                .body(ApiEnvelope.error(ApiError.of("PASSWORD_CHANGE_FAILED", "密码修改失败")));
+    }
+
+    @ExceptionHandler(RegistrationRateLimitedException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleRegistrationRateLimited(RegistrationRateLimitedException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiEnvelope.error(ApiError.of("REGISTRATION_RATE_LIMITED", "注册暂时无法完成")));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

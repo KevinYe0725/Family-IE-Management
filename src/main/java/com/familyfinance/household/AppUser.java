@@ -80,6 +80,10 @@ public class AppUser {
         return passwordHash;
     }
 
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
