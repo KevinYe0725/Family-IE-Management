@@ -2,6 +2,7 @@ package com.familyfinance.shared;
 
 import jakarta.servlet.http.HttpServletRequest;
 import com.familyfinance.identity.PasswordChangeException;
+import com.familyfinance.identity.RegistrationRequestBodyTooLargeException;
 import com.familyfinance.identity.RegistrationRateLimitedException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -53,6 +54,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiEnvelope<Void>> handleUnreadableBody(HttpMessageNotReadableException exception) {
+        if (hasCause(exception, RegistrationRequestBodyTooLargeException.class)) {
+            return ResponseEntity.badRequest()
+                    .body(ApiEnvelope.error(new ApiError(
+                            "VALIDATION_ERROR", "请检查输入内容", Map.of("request", "请求内容过大"))));
+        }
         Throwable cause = exception.getCause();
         if (cause instanceof ValueInstantiationException valueException && !valueException.getPath().isEmpty()) {
             JacksonException.Reference reference =
@@ -65,6 +71,17 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.badRequest()
                 .body(ApiEnvelope.error(ApiError.of("VALIDATION_ERROR", "请检查输入内容")));
+    }
+
+    private static boolean hasCause(Throwable exception, Class<? extends Throwable> causeType) {
+        Throwable current = exception;
+        while (current != null) {
+            if (causeType.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

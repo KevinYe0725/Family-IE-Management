@@ -103,11 +103,11 @@ public class RegistrationService {
             fields.put("email", "邮箱格式不正确");
         }
         String displayName = normalize(request.displayName(), "displayName", MAX_DISPLAY_NAME_INPUT_CODE_UNITS, fields);
-        if (displayName.isEmpty() || displayName.codePointCount(0, displayName.length()) > 40) {
+        if (displayName.isEmpty() || displayName.length() > 40) {
             fields.put("displayName", "显示姓名长度应为 1 到 40 个字符");
         }
         String householdName = normalize(request.householdName(), "householdName", MAX_HOUSEHOLD_NAME_INPUT_CODE_UNITS, fields);
-        if (householdName.isEmpty() || householdName.codePointCount(0, householdName.length()) > 255) {
+        if (householdName.isEmpty() || householdName.length() > 255) {
             fields.put("householdName", "家庭名称不能为空且不能超过 255 个字符");
         }
         validatePassword(fields, "password", request.password());

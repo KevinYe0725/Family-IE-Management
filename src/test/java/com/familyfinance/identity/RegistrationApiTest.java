@@ -169,6 +169,27 @@ class RegistrationApiTest {
     }
 
     @Test
+    void registrationKeepsSupplementaryNamesWithinH2VarcharCapacity() throws Exception {
+        String acceptedDisplayName = emoji(20);
+        String acceptedHouseholdName = emoji(127);
+        mvc.perform(register("emoji-names-accepted@example.com", acceptedDisplayName, "family-pass-2026", "CREATE", acceptedHouseholdName))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.displayName").value(acceptedDisplayName))
+                .andExpect(jsonPath("$.data.householdName").value(acceptedHouseholdName));
+        var user = users.findByEmail("emoji-names-accepted@example.com").orElseThrow();
+        assertThat(user.getDisplayName()).isEqualTo(acceptedDisplayName);
+        assertThat(households.findById(user.getHousehold().getId()).orElseThrow().getName())
+                .isEqualTo(acceptedHouseholdName);
+
+        mvc.perform(register("emoji-display-rejected@example.com", emoji(21), "family-pass-2026", "CREATE", "普通家庭"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.displayName").exists());
+        mvc.perform(register("emoji-household-rejected@example.com", "普通用户", "family-pass-2026", "CREATE", emoji(128)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.householdName").exists());
+    }
+
+    @Test
     void registrationRejectsDeclaredOversizedBodiesBeforeTheyReachLimiterState() throws Exception {
         mvc.perform(post("/api/auth/register")
                         .with(csrf())

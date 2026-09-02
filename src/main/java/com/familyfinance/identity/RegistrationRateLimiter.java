@@ -17,6 +17,8 @@ class RegistrationRateLimiter {
 
     private static final double CAPACITY = 5;
     private static final int MAX_BUCKETS = 10_000;
+    private static final int MAX_EMAIL_IDENTIFIER_CODE_UNITS = 512;
+    private static final int MAX_REMOTE_IP_CODE_UNITS = 64;
     private static final Duration REFILL_PERIOD = Duration.ofMinutes(1);
 
     private final Clock clock;
@@ -27,13 +29,13 @@ class RegistrationRateLimiter {
     }
 
     // Every admitted attempt consumes a token; successful requests are intentionally not refunded.
-    synchronized boolean tryAcquire(String email, String remoteIp) {
-        String normalizedEmail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
-        return consume(normalizedEmail + '\u0000' + remoteIp);
+    boolean tryAcquire(String email, String remoteIp) {
+        String normalizedEmail = canonicalIdentifier(email, MAX_EMAIL_IDENTIFIER_CODE_UNITS, true);
+        String normalizedRemoteIp = canonicalIdentifier(remoteIp, MAX_REMOTE_IP_CODE_UNITS, false);
+        return consume(digest(normalizedEmail + '\u0000' + normalizedRemoteIp));
     }
 
-    private boolean consume(String rawKey) {
-        String key = digest(rawKey);
+    private synchronized boolean consume(String key) {
         Instant now = clock.instant();
         Bucket bucket = buckets.get(key);
         Bucket refilled = bucket == null ? new Bucket(CAPACITY, now) : refill(bucket, now);
@@ -67,6 +69,17 @@ class RegistrationRateLimiter {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
+    }
+
+    private static String canonicalIdentifier(String value, int maximumCodeUnits, boolean lowercase) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() > maximumCodeUnits) {
+            return "<oversized>";
+        }
+        String canonical = value.trim();
+        return lowercase ? canonical.toLowerCase(Locale.ROOT) : canonical;
     }
 
     private record Bucket(double tokens, Instant refilledAt) {
