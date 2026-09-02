@@ -19,17 +19,28 @@ final class MigrationTestSupport {
     }
 
     static MigrationResult migrateExistingDatabase(Path database) {
-        return migrate(database, true);
+        return migrate(database, true, null);
+    }
+
+    static MigrationResult migrateExistingDatabaseTo(Path database, String targetVersion) {
+        return migrate(database, true, targetVersion);
     }
 
     private static MigrationResult migrate(Path database, boolean baselineOnMigrate) {
+        return migrate(database, baselineOnMigrate, null);
+    }
+
+    private static MigrationResult migrate(Path database, boolean baselineOnMigrate, String targetVersion) {
         String url = h2Url(database);
-        Flyway flyway = Flyway.configure()
+        var configuration = Flyway.configure()
                 .dataSource(url, "sa", "")
                 .locations("classpath:db/migration")
                 .baselineOnMigrate(baselineOnMigrate)
-                .baselineVersion("1")
-                .load();
+                .baselineVersion("1");
+        if (targetVersion != null) {
+            configuration.target(targetVersion);
+        }
+        Flyway flyway = configuration.load();
         flyway.migrate();
         return inspect(url, flyway.info().current().getVersion().getVersion());
     }
@@ -56,6 +67,14 @@ final class MigrationTestSupport {
 }
 
 record MigrationResult(String version, Set<String> tables, String databaseUrl) {
+
+    void executeUpdate(String sql) {
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            connection.createStatement().executeUpdate(sql);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not execute migration test statement: " + sql, exception);
+        }
+    }
 
     long queryLong(String sql) {
         try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");

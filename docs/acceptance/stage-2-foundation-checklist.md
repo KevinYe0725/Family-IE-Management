@@ -7,22 +7,26 @@
 | 邮箱创建家庭 | 用 `POST /api/auth/register` 发送 `mode=CREATE`、邮箱、显示名、密码和家庭名；响应为 `201` 且角色为 `OWNER`。 |
 | 邀请加入家庭 | 所有者创建 `MEMBER` 邀请，使用一次性显示的 Token 发送 `mode=JOIN` 注册；受邀用户登录后可在成员列表中看到自己的有效成员关系。 |
 | 成员不能调整角色 | 使用受邀 `MEMBER` 的会话 `PATCH /api/family/memberships/{id}` 修改角色；响应为 `403 FORBIDDEN`。 |
-| 旧库先备份再迁移 | 在 Windows 上放入非空的第一阶段主库 `data/family-finance.mv.db` 且不含 Flyway history，运行 `start-local.cmd -NoBrowser`。在应用开始迁移前，确认出现 `data-backups/<时间戳>/`，其中完整复制全部 `family-finance.*.db`（包括零字节跟随文件），并有 `RESTORE.txt`。 |
+| 旧库先备份再迁移 | 放入非空的第一阶段主库 `data/family-finance.mv.db` 且不含 Flyway history；Windows 运行 `start-local.cmd -NoBrowser`，macOS/Linux 运行 `./start-local.sh --no-browser`。在应用开始迁移前，确认出现 `data-backups/<时间戳>/`，其中完整复制全部 `family-finance.*.db`（包括零字节跟随文件），并有清单、哈希和 `RESTORE.txt`。 |
 | 备份可恢复 | 停止应用，将当前 `data/` 保留到安全位置；从一个已完成（非 `.partial`）备份复制全部数据库文件回 `data/`，重新启动并确认演示账户和既有账目可读取。 |
-| Smoke 不碰生产数据 | 记录 `data/` 和 `data-backups/` 状态，运行 `start-local.cmd -NoBrowser -Smoke`，确认成功探活、进程停止，且生产目录和备份目录均未新增或修改；临时库只出现在 `target/`。 |
-| 不相关端口保持被拒绝 | 让非本应用的 HTTP 服务监听 8080，运行 `start-local.cmd -NoBrowser -Smoke`；命令应失败并提示端口被占用。 |
+| Smoke 不碰生产数据 | 记录 `data/` 和 `data-backups/` 状态，运行对应平台的隔离启动门槛，确认成功探活、进程停止，且生产目录和备份目录均未新增或修改；临时库只出现在 `target/`。 |
+| 不相关端口保持被拒绝 | 让非本应用的 HTTP 服务监听目标端口并运行对应平台的隔离启动门槛；命令应失败并提示端口被占用。 |
 
 ## 自动化门槛
 
 ```bash
 ./mvnw -q -Dtest=StageTwoFoundationSmokeTest test
 ./mvnw test
+/bin/sh scripts/unix-startup-gates.sh
 ```
 
-Windows runner 还需执行：
+Unix 脚本包含 10 个隔离场景，覆盖 Java/Wrapper 前置条件、备份路径、H2 检查与依赖解析失败、复制/哈希失败、发布冲突、锁归属、完整备份、迁移后跳过、恢复后的演示登录与 12 条账目，以及启动退出状态传播。当前本机 macOS 运行只证明 macOS 路径；`.github/workflows/unix-startup-smoke.yml` 在 `ubuntu-latest` 上重跑完整 Java 测试和 10 个 Unix 场景，作为 Linux 证据。
 
-```bat
-start-local.cmd -NoBrowser -Smoke
+Windows runner 需独立执行：
+
+```powershell
+.\scripts\windows-cmd-quote-regression.ps1
+.\scripts\windows-startup-gates.ps1
 ```
 
-该脚本的 Windows 行为（预迁移备份、专用 Smoke 数据库和进程树停止）必须在 Windows 环境实际复核；macOS/Linux 只可完成 Java 测试与静态检查。
+Windows 的 `cmd.exe` 引号边界和 6 个隔离启动场景只能由 Windows 实机或 `.github/workflows/windows-startup-smoke.yml` 证明；Unix 成功不能替代 Windows 证据。同样，Windows 成功也不能替代 macOS/Linux 的 shell、锁和文件发布语义。验收结论必须注明运行平台、提交 SHA 和对应工作流结果，不能把静态检查写成跨平台运行认证。

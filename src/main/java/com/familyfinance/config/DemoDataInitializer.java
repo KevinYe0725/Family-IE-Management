@@ -79,7 +79,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 SEED_TIME));
 
         List<FamilyMember> seededMembers = members.saveAll(List.of(
-                new FamilyMember(household, "Kevin", "爸爸", SEED_TIME),
+                new FamilyMember(household, demo, "Kevin", "爸爸", SEED_TIME),
                 new FamilyMember(household, "Lily", "妈妈", SEED_TIME),
                 new FamilyMember(household, "Annie", "孩子", SEED_TIME),
                 new FamilyMember(household, "爷爷", "长辈", SEED_TIME),

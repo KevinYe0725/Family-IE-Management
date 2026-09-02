@@ -19,6 +19,46 @@ public final class StageOneDatabaseFixture {
         return create(database, true);
     }
 
+    static Path createWithRenamedOriginalMember(Path database) {
+        Path created = create(database);
+        execute(created, "update family_members set name='重命名成员' where id=1");
+        return created;
+    }
+
+    static Path createWithDuplicateKevinMember(Path database) {
+        Path created = create(database);
+        execute(created, "insert into family_members (id, household_id, name, role_label, created_at) "
+                + "values (2, 1, 'Kevin', '其他', timestamp with time zone '2026-09-01 00:00:01+00')");
+        return created;
+    }
+
+    static Path createWithoutMembers(Path database) {
+        try (Connection connection = DriverManager.getConnection(MigrationTestSupport.h2Url(database), "sa", "");
+                Statement statement = connection.createStatement()) {
+            createSchema(statement);
+            statement.execute("insert into households (id, name, created_at) values "
+                    + "(1, '空家庭', timestamp with time zone '2026-09-01 00:00:00+00')");
+            statement.execute("insert into app_users (id, household_id, username, password_hash, created_at) values "
+                    + "(1, 1, 'demo', 'encoded-password', timestamp with time zone '2026-09-01 00:00:00+00')");
+            return database;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not create Stage 1 H2 database fixture without members", exception);
+        }
+    }
+
+    static Path createWithSecondHousehold(Path database) {
+        Path created = create(database);
+        execute(created, "insert into households (id, name, created_at) values "
+                + "(2, '其他家庭', timestamp with time zone '2026-09-01 00:00:00+00')");
+        execute(created, "insert into app_users (id, household_id, username, password_hash, created_at) values "
+                + "(2, 2, 'outsider', 'encoded-password', timestamp with time zone '2026-09-01 00:00:00+00')");
+        execute(created, "insert into family_members (id, household_id, name, role_label, created_at) values "
+                + "(2, 2, '外部成员', '成员', timestamp with time zone '2026-09-01 00:00:00+00')");
+        execute(created, "insert into family_members (id, household_id, name, role_label, created_at) values "
+                + "(3, 1, '家庭成员', '成员', timestamp with time zone '2026-09-01 00:00:01+00')");
+        return created;
+    }
+
     private static Path create(Path database, boolean includeAdditionalUser) {
         try (Connection connection = DriverManager.getConnection(MigrationTestSupport.h2Url(database), "sa", "");
                 Statement statement = connection.createStatement()) {
@@ -56,5 +96,14 @@ public final class StageOneDatabaseFixture {
         statement.execute("alter table family_members alter column id restart with 2");
         statement.execute("alter table categories alter column id restart with 2");
         statement.execute("alter table financial_transactions alter column id restart with 13");
+    }
+
+    private static void execute(Path database, String sql) {
+        try (Connection connection = DriverManager.getConnection(MigrationTestSupport.h2Url(database), "sa", "");
+                Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not customize Stage 1 H2 database fixture", exception);
+        }
     }
 }
