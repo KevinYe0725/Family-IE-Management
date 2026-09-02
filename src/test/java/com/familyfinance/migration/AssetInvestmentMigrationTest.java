@@ -2,6 +2,7 @@ package com.familyfinance.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
@@ -107,26 +108,38 @@ class AssetInvestmentMigrationTest {
                 + "(asset_id,household_id,asset_type,brand_model,plate_hint,purchase_year) values "
                 + "(2,1,'VEHICLE','示例车型','浙A***01',2024)");
 
-        assertRejected(result, assetInsert(3, 1, "错误类型", "CASH", 1L, 1L, 1, "ACTIVE", 1, "null"));
-        assertRejected(result, assetInsert(3, 1, "跨家庭所有者", "OTHER", 2L, 1L, 1, "ACTIVE", 1, "null"));
-        assertRejected(result, assetInsert(3, 1, "跨家庭创建者", "OTHER", 1L, 1L, 1, "ACTIVE", 2, "null"));
-        assertRejected(result, assetInsert(3, 1, "负购买价", "OTHER", 1L, -1L, 1, "ACTIVE", 1, "null"));
-        assertRejected(result, assetInsert(3, 1, "超上限现值", "OTHER", 1L, 1L, MAX_CENTS + 1,
-                "ACTIVE", 1, "null"));
-        assertRejected(result, assetInsert(3, 1, "状态不匹配", "OTHER", null, 1L, 1,
-                "ARCHIVED", 1, "null"));
+        insertAsset(result, 10, 1, "无房产明细车辆", "VEHICLE", null, null, 0, "ACTIVE", 1, "null");
+        insertAsset(result, 11, 1, "无车辆明细房产", "PROPERTY", null, null, 0, "ACTIVE", 1, "null");
+        insertAsset(result, 12, 1, "家庭边界房产", "PROPERTY", null, null, 0, "ACTIVE", 1, "null");
+        insertAsset(result, 13, 1, "面积边界房产", "PROPERTY", null, null, 0, "ACTIVE", 1, "null");
+
+        assertRejected(result, assetInsert(100, 1, "错误类型", "CASH", 1L, 1L, 1, "ACTIVE", 1, "null"),
+                "CK_ASSETS_TYPE");
+        assertRejected(result, assetInsert(101, 1, "跨家庭所有者", "OTHER", 2L, 1L, 1, "ACTIVE", 1, "null"),
+                "FK_ASSETS_OWNER_HOUSEHOLD");
+        assertRejected(result, assetInsert(102, 1, "跨家庭创建者", "OTHER", 1L, 1L, 1, "ACTIVE", 2, "null"),
+                "FK_ASSETS_CREATOR_HOUSEHOLD");
+        assertRejected(result, assetInsert(103, 1, "负购买价", "OTHER", 1L, -1L, 1, "ACTIVE", 1, "null"),
+                "CK_ASSETS_PURCHASE_VALUE");
+        assertRejected(result, assetInsert(104, 1, "超上限现值", "OTHER", 1L, 1L, MAX_CENTS + 1,
+                "ACTIVE", 1, "null"), "CK_ASSETS_CURRENT_VALUE");
+        assertRejected(result, assetInsert(105, 1, "状态不匹配", "OTHER", null, 1L, 1,
+                "ARCHIVED", 1, "null"), "CK_ASSETS_STATUS");
         assertRejected(result, "insert into property_assets "
                 + "(asset_id,household_id,asset_type,address,area_sqm,usage_type) values "
-                + "(2,1,'PROPERTY','错误子类型',60.00,'SELF_USE')");
+                + "(10,1,'PROPERTY','错误子类型',60.00,'SELF_USE')",
+                "FK_PROPERTY_ASSETS_ASSET_HOUSEHOLD_TYPE");
         assertRejected(result, "insert into vehicle_assets "
                 + "(asset_id,household_id,asset_type,brand_model,purchase_year) values "
-                + "(1,1,'VEHICLE','错误子类型',2024)");
+                + "(11,1,'VEHICLE','错误子类型',2024)",
+                "FK_VEHICLE_ASSETS_ASSET_HOUSEHOLD_TYPE");
         assertRejected(result, "insert into property_assets "
                 + "(asset_id,household_id,asset_type,address,area_sqm,usage_type) values "
-                + "(1,2,'PROPERTY','跨家庭',60.00,'SELF_USE')");
+                + "(12,2,'PROPERTY','跨家庭',60.00,'SELF_USE')",
+                "FK_PROPERTY_ASSETS_ASSET_HOUSEHOLD_TYPE");
         assertRejected(result, "insert into property_assets "
                 + "(asset_id,household_id,asset_type,address,area_sqm,usage_type) values "
-                + "(1,1,'PROPERTY','零面积',0.00,'SELF_USE')");
+                + "(13,1,'PROPERTY','零面积',0.00,'SELF_USE')", "CK_PROPERTY_ASSETS_AREA");
     }
 
     @Test
@@ -148,28 +161,39 @@ class AssetInvestmentMigrationTest {
         assertThat(result.queryLong("select count(*) from asset_valuations where note is null")).isEqualTo(1);
         assertThat(result.queryLong("select count(*) from manual_price_overrides where note is null")).isEqualTo(1);
         assertRejected(result, "insert into asset_valuations "
-                + "(household_id,asset_id,valued_on,value_cents,source,created_by) values "
-                + "(1,1,date '2026-09-03',1,'MANUAL',1)");
+                + "(id,household_id,asset_id,valued_on,value_cents,source,created_by) values "
+                + "(100,1,1,date '2026-09-03',1,'MANUAL',1)",
+                "UK_ASSET_VALUATIONS_ASSET_DATE_SOURCE");
         assertRejected(result, "insert into asset_valuations "
-                + "(household_id,asset_id,valued_on,value_cents,source,created_by) values "
-                + "(2,1,date '2026-09-04',1,'MANUAL',2)");
+                + "(id,household_id,asset_id,valued_on,value_cents,source,created_by) values "
+                + "(101,2,1,date '2026-09-04',1,'MANUAL',2)",
+                "FK_ASSET_VALUATIONS_ASSET_HOUSEHOLD");
         assertRejected(result, "insert into asset_valuations "
-                + "(household_id,asset_id,valued_on,value_cents,source,created_by) values "
-                + "(1,1,date '2026-09-04',1,'ESTIMATE',1)");
+                + "(id,household_id,asset_id,valued_on,value_cents,source,created_by) values "
+                + "(102,1,1,date '2026-09-04',1,'MANUAL',2)",
+                "FK_ASSET_VALUATIONS_CREATOR_HOUSEHOLD");
         assertRejected(result, "insert into asset_valuations "
-                + "(household_id,asset_id,valued_on,value_cents,source,created_by) values "
-                + "(1,1,date '2026-09-04',-1,'MANUAL',1)");
+                + "(id,household_id,asset_id,valued_on,value_cents,source,created_by) values "
+                + "(103,1,1,date '2026-09-04',1,'ESTIMATE',1)", "CK_ASSET_VALUATIONS_SOURCE");
         assertRejected(result, "insert into manual_price_overrides "
-                + "(household_id,security_id,price_cents,effective_on,created_by) values "
-                + "(1,1,2,date '2026-09-03',1)");
+                + "(id,household_id,security_id,price_cents,effective_on,created_by) values "
+                + "(100,1,1,-1,date '2026-09-04',1)", "CK_MANUAL_PRICE_OVERRIDES_PRICE");
+        assertRejected(result, "insert into asset_valuations "
+                + "(id,household_id,asset_id,valued_on,value_cents,source,created_by) values "
+                + "(104,1,1,date '2026-09-04',-1,'MANUAL',1)", "CK_ASSET_VALUATIONS_VALUE");
         assertRejected(result, "insert into manual_price_overrides "
-                + "(household_id,security_id,price_cents,effective_on,created_by) values "
-                + "(1,1,2,date '2026-09-04',2)");
+                + "(id,household_id,security_id,price_cents,effective_on,created_by) values "
+                + "(101,1,1,2,date '2026-09-04',2)",
+                "FK_MANUAL_PRICE_OVERRIDES_CREATOR_HOUSEHOLD");
         assertRejected(result, "insert into manual_price_overrides "
-                + "(household_id,security_id,price_cents,effective_on,created_by) values "
-                + "(1,1,2,date '2026-09-03',1)");
-        assertRejected(result, "delete from assets where id=1");
-        assertRejected(result, "delete from securities where id=1");
+                + "(id,household_id,security_id,price_cents,effective_on,created_by) values "
+                + "(102,1,999,2,date '2026-09-04',1)", "FK_MANUAL_PRICE_OVERRIDES_SECURITY");
+        assertRejected(result, "insert into manual_price_overrides "
+                + "(id,household_id,security_id,price_cents,effective_on,created_by) values "
+                + "(103,1,1,2,date '2026-09-03',1)",
+                "UK_MANUAL_PRICE_OVERRIDES_HOUSEHOLD_SECURITY_DATE");
+        assertRejected(result, "delete from assets where id=1", "FK_ASSET_VALUATIONS_ASSET_HOUSEHOLD");
+        assertRejected(result, "delete from securities where id=1", "FK_MANUAL_PRICE_OVERRIDES_SECURITY");
     }
 
     @Test
@@ -193,41 +217,43 @@ class AssetInvestmentMigrationTest {
                 .isEqualByComparingTo("999999999999999.9999");
         assertThat(result.queryLong("select count(*) from investment_trades where id in (3,4) and quantity is null"))
                 .isEqualTo(2);
-        assertRejected(result, tradeInsert(5, 1, 2, 1, "BUY", "1.0000", 1, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", null, 1, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "0.0000", 1, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "DIVIDEND", "1.0000", 500, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "SPLIT", "1.0000", 1, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1000000000000000.0000", 1, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 0, 0,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 1, -1,
-                "2026-09-07", 1, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 1, 0,
-                "2026-09-07", 2, "MANUAL", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 1, 0,
-                "2026-09-07", 1, "IMPORT", null));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 1, 0,
-                "2026-09-07", 1, "MANUAL", "unexpected"));
-        assertRejected(result, tradeInsert(5, 1, 1, 1, "BUY", "1.0000", 1, 0,
-                "2026-09-07", 1, "IMPORT", "broker-2"));
+        assertRejected(result, tradeInsert(100, 1, 2, 1, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 1, "MANUAL", null), "FK_INVESTMENT_TRADES_ACCOUNT_HOUSEHOLD");
+        assertRejected(result, tradeInsert(101, 1, 1, 999, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 1, "MANUAL", null), "FK_INVESTMENT_TRADES_SECURITY");
+        assertRejected(result, tradeInsert(102, 1, 1, 1, "BUY", null, 1, 0,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_ACTION_SHAPE");
+        assertRejected(result, tradeInsert(103, 1, 1, 1, "BUY", "0.0000", 1, 0,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_ACTION_SHAPE");
+        assertRejected(result, tradeInsert(104, 1, 1, 1, "DIVIDEND", "1.0000", 500, 0,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_ACTION_SHAPE");
+        assertRejected(result, tradeInsert(105, 1, 1, 1, "SPLIT", "1.0000", 1, 0,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_TYPE");
+        assertRejected(result, tradeInsert(106, 1, 1, 1, "BUY", "1.0000", 0, 0,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_PRICE");
+        assertRejected(result, tradeInsert(107, 1, 1, 1, "BUY", "1.0000", 1, -1,
+                "2026-09-07", 1, "MANUAL", null), "CK_INVESTMENT_TRADES_FEE");
+        assertRejected(result, tradeInsert(108, 1, 1, 1, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 2, "MANUAL", null), "FK_INVESTMENT_TRADES_CREATOR_HOUSEHOLD");
+        assertRejected(result, tradeInsert(109, 1, 1, 1, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 1, "IMPORT", null), "CK_INVESTMENT_TRADES_SOURCE");
+        assertRejected(result, tradeInsert(110, 1, 1, 1, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 1, "MANUAL", "unexpected"), "CK_INVESTMENT_TRADES_SOURCE");
+        assertRejected(result, tradeInsert(111, 1, 1, 1, "BUY", "1.0000", 1, 0,
+                "2026-09-07", 1, "IMPORT", "broker-2"), "UK_INVESTMENT_TRADES_HOUSEHOLD_SOURCE");
 
-        assertRejected(result, "insert into securities (market,ts_code,name,security_type,active) "
-                + "values ('SH','600000.SH','重复证券','STOCK',true)");
-        assertRejected(result, "insert into securities (market,ts_code,name,security_type,active) "
-                + "values ('SZ','600000.SH','市场后缀不匹配','STOCK',true)");
-        assertRejected(result, "insert into securities (market,ts_code,name,security_type,active) "
-                + "values ('HK','000001.HK','非A股','STOCK',true)");
-        assertRejected(result, "insert into securities (market,ts_code,name,security_type,active) "
-                + "values ('SZ','00001.SZ','位数错误','STOCK',true)");
-        assertRejected(result, "insert into securities (market,ts_code,name,security_type,active) "
-                + "values ('SZ','000002.SZ','类型错误','FUND',true)");
+        assertRejected(result, "insert into securities (id,market,ts_code,name,security_type,active) "
+                + "values (100,'SH','600000.SH','重复证券','STOCK',true)",
+                "UK_SECURITIES_MARKET_CODE");
+        assertRejected(result, "insert into securities (id,market,ts_code,name,security_type,active) "
+                + "values (101,'SZ','600000.SH','市场后缀不匹配','STOCK',true)",
+                "CK_SECURITIES_TS_CODE");
+        assertRejected(result, "insert into securities (id,market,ts_code,name,security_type,active) "
+                + "values (102,'HK','000001.HK','非A股','STOCK',true)", "CK_SECURITIES_MARKET");
+        assertRejected(result, "insert into securities (id,market,ts_code,name,security_type,active) "
+                + "values (103,'SZ','00001.SZ','位数错误','STOCK',true)", "CK_SECURITIES_TS_CODE");
+        assertRejected(result, "insert into securities (id,market,ts_code,name,security_type,active) "
+                + "values (104,'SZ','000002.SZ','类型错误','FUND',true)", "CK_SECURITIES_TYPE");
     }
 
     @Test
@@ -239,18 +265,29 @@ class AssetInvestmentMigrationTest {
                 "99999.9999", "TUSHARE"));
         assertThat(decimal(result, "select pct_change from market_price_snapshots where id=1"))
                 .isEqualByComparingTo("99999.9999");
-        assertRejected(result, snapshotInsert(2, "2026-09-03", 100, 120, 90, 110, 95,
-                "1.0000", "TUSHARE"));
-        assertRejected(result, snapshotInsert(2, "2026-09-04", 100, 120, 90, 110, 95,
-                "1.0000", "MANUAL"));
-        assertRejected(result, snapshotInsert(2, "2026-09-04", 100, 80, 90, 110, 95,
-                "1.0000", "TUSHARE"));
-        assertRejected(result, snapshotInsert(2, "2026-09-04", -1, 120, 90, 110, 95,
-                "1.0000", "TUSHARE"));
-        assertRejected(result, snapshotInsert(2, "2026-09-04", 100, 120, 90, MAX_CENTS + 1, 95,
-                "1.0000", "TUSHARE"));
-        assertRejected(result, snapshotInsert(2, "2026-09-04", 100, 120, 90, 110, 95,
-                "100000.0000", "TUSHARE"));
+        assertRejected(result, snapshotInsert(100, "2026-09-03", 100, 120, 90, 110, 95,
+                "1.0000", "TUSHARE"), "UK_MARKET_PRICE_SNAPSHOTS_SECURITY_DATE_SOURCE");
+        assertRejected(result, snapshotInsert(101, "2026-09-04", 100, 120, 90, 110, 95,
+                "1.0000", "MANUAL"), "CK_MARKET_PRICE_SNAPSHOTS_SOURCE");
+        assertRejected(result, snapshotInsert(102, "2026-09-04", 100, 80, 90, 110, 95,
+                "1.0000", "TUSHARE"), "CK_MARKET_PRICE_SNAPSHOTS_RANGE");
+        assertRejected(result, snapshotInsert(103, "2026-09-04", -1, 120, 90, 110, 95,
+                "1.0000", "TUSHARE"), "CK_MARKET_PRICE_SNAPSHOTS_OPEN");
+        assertRejected(result, snapshotInsert(104, "2026-09-04", 100, 120, 90, MAX_CENTS + 1, 95,
+                "1.0000", "TUSHARE"), "CK_MARKET_PRICE_SNAPSHOTS_CLOSE");
+    }
+
+    @Test
+    void rejectionEvidenceDoesNotAcceptAnUnrelatedPrimaryKeyViolation() {
+        MigrationResult result = migratedTwoHouseholds("rejection-cause");
+        insertAsset(result, 1, 1, "已存在资产", "OTHER", null, null, 0, "ACTIVE", 1, "null");
+
+        assertThatThrownBy(() -> assertRejected(
+                        result,
+                        assetInsert(1, 1, "重复主键", "OTHER", null, null, 0, "ACTIVE", 1, "null"),
+                        "CK_ASSETS_TYPE"))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("CK_ASSETS_TYPE");
     }
 
     @Test
@@ -504,9 +541,20 @@ class AssetInvestmentMigrationTest {
         }
     }
 
-    private static void assertRejected(MigrationResult result, String sql) {
-        assertThatThrownBy(() -> result.executeUpdate(sql))
+    private static void assertRejected(MigrationResult result, String sql, String expectedConstraint) {
+        Throwable failure = catchThrowable(() -> result.executeUpdate(sql));
+        assertThat(failure)
+                .as("statement should be rejected by %s: %s", expectedConstraint, sql)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Could not execute migration test statement");
+
+        Throwable rootCause = failure;
+        while (rootCause.getCause() != null) rootCause = rootCause.getCause();
+        assertThat(rootCause)
+                .as("root cause for %s", expectedConstraint)
+                .isInstanceOf(SQLException.class);
+        assertThat(rootCause.getMessage())
+                .as("database diagnostic for %s", expectedConstraint)
+                .contains(expectedConstraint);
     }
 }
