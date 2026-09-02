@@ -121,14 +121,22 @@ class RecurringConcurrencyTest {
                 await(release);
             }));
             assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
-            Future<MvcResult> contender = executor.submit(() -> mvc.perform(
-                            post("/api/recurring-occurrences/{id}/confirm", prepared.occurrenceId())
-                                    .session(prepared.session()).with(csrf()))
-                    .andReturn());
-            MvcResult result = contender.get(5, TimeUnit.SECONDS);
-            assertThat(result.getResponse().getStatus()).isEqualTo(409);
-            assertThat(objectMapper.readTree(result.getResponse().getContentAsString())
-                    .path("error").path("code").asText()).isEqualTo("LOCK_RETRY_REQUIRED");
+            ch.qos.logback.classic.Logger sqlErrorLogger = (ch.qos.logback.classic.Logger)
+                    org.slf4j.LoggerFactory.getLogger("org.hibernate.orm.jdbc.error");
+            ch.qos.logback.classic.Level previousLevel = sqlErrorLogger.getLevel();
+            try {
+                sqlErrorLogger.setLevel(ch.qos.logback.classic.Level.ERROR);
+                Future<MvcResult> contender = executor.submit(() -> mvc.perform(
+                                post("/api/recurring-occurrences/{id}/confirm", prepared.occurrenceId())
+                                        .session(prepared.session()).with(csrf()))
+                        .andReturn());
+                MvcResult result = contender.get(5, TimeUnit.SECONDS);
+                assertThat(result.getResponse().getStatus()).isEqualTo(409);
+                assertThat(objectMapper.readTree(result.getResponse().getContentAsString())
+                        .path("error").path("code").asText()).isEqualTo("LOCK_RETRY_REQUIRED");
+            } finally {
+                sqlErrorLogger.setLevel(previousLevel);
+            }
             release.countDown();
             holder.get(5, TimeUnit.SECONDS);
         } finally {

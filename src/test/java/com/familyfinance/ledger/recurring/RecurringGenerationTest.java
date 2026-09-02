@@ -103,7 +103,7 @@ class RecurringGenerationTest {
     }
 
     @Test
-    void pausedAndEndedRulesGenerateNothingAndCrudIsAdminOnlyBoundedAndArchived() throws Exception {
+    void pausedRuleWaitsButEndedOfflineRuleBackfillsThroughItsEndDate() throws Exception {
         MockHttpSession owner = login();
         Fixture fixture = fixture();
         long pausedId = createRule(owner, monthlyBody(fixture, 3, "2026-02-03", null, true))
@@ -114,7 +114,9 @@ class RecurringGenerationTest {
 
         recurringService.generateDueOccurrences();
         assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(pausedId)).isEmpty();
-        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(endedId)).isEmpty();
+        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(endedId))
+                .extracting(RecurringOccurrence::getDueOn)
+                .containsExactly(java.time.LocalDate.parse("2026-02-03"));
         assertThat(rules.findById(endedId).orElseThrow().getNextDueOn()).isNull();
 
         mvc.perform(get("/api/recurring-rules").session(owner)
@@ -178,6 +180,103 @@ class RecurringGenerationTest {
                         .contentType("application/json").content("{\"amount\":\"200.00\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.fields.accountId").value("账户不存在"));
+    }
+
+    @Test
+    void oversizedBacklogMakesBoundedProgressWithoutStarvingAnotherRuleAndEventuallyCompletes() throws Exception {
+        MockHttpSession owner = login();
+        Fixture fixture = fixture();
+        long backlogRule = createRule(owner, monthlyBody(fixture, 1, "2010-01-01", null, false))
+                .path("id").asLong();
+        long normalRule = createRule(owner, monthlyBody(fixture, 31, "2026-03-31", null, false))
+                .path("id").asLong();
+
+        int firstCreated = recurringService.generateDueOccurrences();
+
+        assertThat(RecurringGenerator.MAX_OCCURRENCES_PER_RULE_PER_RUN).isEqualTo(120);
+        assertThat(firstCreated).isEqualTo(RecurringGenerator.MAX_OCCURRENCES_PER_RULE_PER_RUN + 1);
+        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(backlogRule))
+                .hasSize(RecurringGenerator.MAX_OCCURRENCES_PER_RULE_PER_RUN);
+        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(normalRule)).hasSize(1);
+        assertThat(jdbc.queryForObject(
+                "select next_due_on from recurring_rules where id=?", java.time.LocalDate.class, backlogRule))
+                .isEqualTo(java.time.LocalDate.parse("2020-01-01"));
+        assertThat(rules.findById(backlogRule).orElseThrow().getNextDueOn())
+                .isEqualTo(java.time.LocalDate.parse("2020-01-01"));
+
+        for (int invocation = 0; invocation < 10; invocation++) {
+            var rule = rules.findById(backlogRule).orElseThrow();
+            if (rule.getNextDueOn() == null
+                    || rule.getNextDueOn().isAfter(java.time.LocalDate.parse("2026-03-31"))) break;
+            recurringService.generateDueOccurrences();
+        }
+
+        List<RecurringOccurrence> all = occurrences.findByRuleIdOrderByDueOnAscIdAsc(backlogRule);
+        assertThat(all).hasSize(195);
+        assertThat(all.stream().map(RecurringOccurrence::getDueOn).distinct().count()).isEqualTo(195);
+        assertThat(rules.findById(backlogRule).orElseThrow().getNextDueOn())
+                .isEqualTo(java.time.LocalDate.parse("2026-04-01"));
+        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(normalRule)).hasSize(1);
+    }
+
+    @Test
+    void patchPreservesOmittedEndDateButExplicitNullClearsItAndRestartsOpenEndedSchedule() throws Exception {
+        MockHttpSession owner = login();
+        Fixture fixture = fixture();
+        long ruleId = createRule(owner, monthlyBody(fixture, 3, "2026-02-03", "2026-02-03", false))
+                .path("id").asLong();
+        recurringService.generateDueOccurrences();
+        assertThat(rules.findById(ruleId).orElseThrow().getNextDueOn()).isNull();
+
+        mvc.perform(patch("/api/recurring-rules/{id}", ruleId).session(owner).with(csrf())
+                        .contentType("application/json").content("{\"amount\":\"201.00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.endOn").value("2026-02-03"))
+                .andExpect(jsonPath("$.data.nextDueOn").isEmpty());
+        mvc.perform(patch("/api/recurring-rules/{id}", ruleId).session(owner).with(csrf())
+                        .contentType("application/json").content("{\"endOn\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.endOn").isEmpty())
+                .andExpect(jsonPath("$.data.nextDueOn").value("2026-02-03"));
+
+        recurringService.generateDueOccurrences();
+        assertThat(occurrences.findByRuleIdOrderByDueOnAscIdAsc(ruleId))
+                .extracting(RecurringOccurrence::getDueOn)
+                .containsExactly(
+                        java.time.LocalDate.parse("2026-02-03"),
+                        java.time.LocalDate.parse("2026-03-03"));
+        assertThat(rules.findById(ruleId).orElseThrow().getNextDueOn())
+                .isEqualTo(java.time.LocalDate.parse("2026-04-03"));
+    }
+
+    @Test
+    void createAndPatchRejectScheduleFieldsThatDoNotApplyToTheChosenType() throws Exception {
+        MockHttpSession owner = login();
+        Fixture fixture = fixture();
+        String monthly = monthlyBody(fixture, 3, "2026-03-03", null, false);
+        mvc.perform(post("/api/recurring-rules").session(owner).with(csrf())
+                        .contentType("application/json")
+                        .content(monthly.replace("\"dayOfMonth\":3", "\"dayOfMonth\":3,\"dayOfWeek\":\"MONDAY\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.dayOfWeek").exists());
+        String weekly = weeklyBody(fixture, 1, "MONDAY", "2026-03-03", null, false);
+        mvc.perform(post("/api/recurring-rules").session(owner).with(csrf())
+                        .contentType("application/json")
+                        .content(weekly.replace("\"dayOfWeek\":\"MONDAY\"",
+                                "\"dayOfWeek\":\"MONDAY\",\"dayOfMonth\":3")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.dayOfMonth").exists());
+
+        long monthlyId = createRule(owner, monthly).path("id").asLong();
+        mvc.perform(patch("/api/recurring-rules/{id}", monthlyId).session(owner).with(csrf())
+                        .contentType("application/json").content("{\"dayOfWeek\":\"MONDAY\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.dayOfWeek").exists());
+        long weeklyId = createRule(owner, weekly).path("id").asLong();
+        mvc.perform(patch("/api/recurring-rules/{id}", weeklyId).session(owner).with(csrf())
+                        .contentType("application/json").content("{\"dayOfMonth\":3}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.dayOfMonth").exists());
     }
 
     private JsonNode createRule(MockHttpSession session, String body) throws Exception {

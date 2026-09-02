@@ -19,11 +19,8 @@ import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.shared.ResourceConflictException;
 import com.familyfinance.shared.ResourceNotFoundException;
 import jakarta.persistence.criteria.Predicate;
-import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.YearMonth;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,8 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecurringService {
     private static final int MAX_PAGE_SIZE = 50;
     private static final long MAX_AMOUNT_CENTS = 99_999_999_999L;
-    private static final int MAX_GENERATED_PER_RULE = 10_000;
-    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final Sort RULE_SORT = Sort.by(Sort.Direction.DESC, "id");
     private static final Sort OCCURRENCE_SORT = Sort.by(
             Sort.Order.asc("dueOn"), Sort.Order.asc("id"));
@@ -55,7 +50,7 @@ public class RecurringService {
     private final HouseholdMembershipRepository memberships;
     private final CurrentMembership currentMembership;
     private final FamilyMutationAuthorization mutationAuthorization;
-    private final Clock clock;
+    private final RecurringGenerator generator;
 
     public RecurringService(
             RecurringRuleRepository rules,
@@ -67,7 +62,7 @@ public class RecurringService {
             HouseholdMembershipRepository memberships,
             CurrentMembership currentMembership,
             FamilyMutationAuthorization mutationAuthorization,
-            Clock clock) {
+            RecurringGenerator generator) {
         this.rules = rules;
         this.occurrences = occurrences;
         this.accounts = accounts;
@@ -77,7 +72,7 @@ public class RecurringService {
         this.memberships = memberships;
         this.currentMembership = currentMembership;
         this.mutationAuthorization = mutationAuthorization;
-        this.clock = clock;
+        this.generator = generator;
     }
 
     public RecurringRulePage listRules(
@@ -134,8 +129,9 @@ public class RecurringService {
         Map<String, String> fields = new LinkedHashMap<>();
         ValidatedRule data = validateCreate(householdId, request, fields);
         throwIfInvalid(fields);
-        LocalDate nextDue = firstDue(data.scheduleType(), data.dayOfMonth(), data.dayOfWeek(), data.startOn());
-        nextDue = withinEnd(nextDue, data.endOn());
+        LocalDate nextDue = RecurrenceCalculator.firstDue(
+                data.scheduleType(), data.dayOfMonth(), data.dayOfWeek(), data.startOn());
+        nextDue = RecurrenceCalculator.withinEnd(nextDue, data.endOn());
         try {
             RecurringRule saved = rules.saveAndFlush(new RecurringRule(
                     access.household(), data.kind(), data.amountCents(), data.scheduleType(), data.intervalValue(),
@@ -167,10 +163,16 @@ public class RecurringService {
                 ? rule.getDayOfMonth() : request.dayOfMonth();
         DayOfWeek dayOfWeek = request == null || request.dayOfWeek() == null
                 ? rule.getDayOfWeek() : request.dayOfWeek();
+        if (request != null && scheduleType == RecurringScheduleType.MONTHLY && request.dayOfWeek() != null) {
+            fields.put("dayOfWeek", "月度规则不能指定星期");
+        }
+        if (request != null && scheduleType == RecurringScheduleType.WEEKLY && request.dayOfMonth() != null) {
+            fields.put("dayOfMonth", "周规则不能指定月度日期");
+        }
         if (scheduleType == RecurringScheduleType.MONTHLY) dayOfWeek = null;
         if (scheduleType == RecurringScheduleType.WEEKLY) dayOfMonth = null;
         LocalDate startOn = request == null || request.startOn() == null ? rule.getStartOn() : request.startOn();
-        LocalDate endOn = request == null || request.endOn() == null ? rule.getEndOn() : request.endOn();
+        LocalDate endOn = request == null || !request.endOnPresent() ? rule.getEndOn() : request.endOn();
         Long accountId = request == null || request.accountId() == null
                 ? rule.getAccount().getId() : request.accountId();
         Long memberId = request == null || request.memberId() == null
@@ -189,10 +191,11 @@ public class RecurringService {
         throwIfInvalid(fields);
         boolean scheduleChanged = request != null && (request.scheduleType() != null
                 || request.intervalValue() != null || request.dayOfMonth() != null
-                || request.dayOfWeek() != null || request.startOn() != null || request.endOn() != null);
+                || request.dayOfWeek() != null || request.startOn() != null || request.endOnPresent());
         LocalDate nextDue = scheduleChanged
-                ? withinEnd(firstDue(scheduleType, dayOfMonth, dayOfWeek, startOn), endOn)
-                : withinEnd(rule.getNextDueOn(), endOn);
+                ? RecurrenceCalculator.withinEnd(
+                        RecurrenceCalculator.firstDue(scheduleType, dayOfMonth, dayOfWeek, startOn), endOn)
+                : RecurrenceCalculator.withinEnd(rule.getNextDueOn(), endOn);
         try {
             rule.update(kind, amount, scheduleType, interval, dayOfMonth, dayOfWeek, startOn, endOn, nextDue,
                     account, member, category, assignee, paused);
@@ -220,35 +223,7 @@ public class RecurringService {
 
     @Transactional
     public int generateDueOccurrences() {
-        LocalDate today = LocalDate.now(clock.withZone(SHANGHAI));
-        int created = 0;
-        for (RecurringRule rule : rules
-                .findByActiveTrueAndPausedFalseAndNextDueOnLessThanEqualOrderByIdAsc(today)) {
-            if (rule.getEndOn() != null && rule.getEndOn().isBefore(today)) {
-                rule.advanceTo(null);
-                continue;
-            }
-            int generatedForRule = 0;
-            LocalDate due = rule.getNextDueOn();
-            while (due != null && !due.isAfter(today) && withinEnd(due, rule.getEndOn()) != null) {
-                if (!occurrences.existsByRuleIdAndDueOn(rule.getId(), due)) {
-                    occurrences.save(new RecurringOccurrence(rule, due));
-                    created++;
-                }
-                if (++generatedForRule > MAX_GENERATED_PER_RULE) {
-                    throw new ResourceConflictException("RECURRENCE_RANGE_TOO_LARGE", "周期规则待生成范围过大");
-                }
-                due = nextDue(rule, due);
-            }
-            rule.advanceTo(withinEnd(due, rule.getEndOn()));
-        }
-        try {
-            occurrences.flush();
-            rules.flush();
-        } catch (DataIntegrityViolationException exception) {
-            throw new ResourceConflictException("RECURRENCE_RACE", "周期发生项已由另一任务生成，请重试");
-        }
-        return created;
+        return generator.generateDueOccurrences();
     }
 
     private ValidatedRule validateCreate(long householdId, RecurringRuleRequest request, Map<String, String> fields) {
@@ -318,8 +293,14 @@ public class RecurringService {
         if (type == RecurringScheduleType.MONTHLY && (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31)) {
             fields.put("dayOfMonth", "月度日期必须在 1 到 31 之间");
         }
+        if (type == RecurringScheduleType.MONTHLY && dayOfWeek != null) {
+            fields.put("dayOfWeek", "月度规则不能指定星期");
+        }
         if (type == RecurringScheduleType.WEEKLY && dayOfWeek == null) {
             fields.put("dayOfWeek", "周规则必须指定星期");
+        }
+        if (type == RecurringScheduleType.WEEKLY && dayOfMonth != null) {
+            fields.put("dayOfMonth", "周规则不能指定月度日期");
         }
         if (start == null) fields.put("startOn", "开始日期不能为空");
         if (start != null && end != null && end.isBefore(start)) fields.put("endOn", "结束日期不能早于开始日期");
@@ -335,33 +316,6 @@ public class RecurringService {
             fields.put("amount", exception.getMessage());
             return 0;
         }
-    }
-
-    static LocalDate firstDue(
-            RecurringScheduleType type, Integer dayOfMonth, DayOfWeek dayOfWeek, LocalDate start) {
-        if (type == RecurringScheduleType.MONTHLY) {
-            YearMonth month = YearMonth.from(start);
-            LocalDate candidate = month.atDay(Math.min(dayOfMonth, month.lengthOfMonth()));
-            if (candidate.isBefore(start)) {
-                month = month.plusMonths(1);
-                candidate = month.atDay(Math.min(dayOfMonth, month.lengthOfMonth()));
-            }
-            return candidate;
-        }
-        int days = Math.floorMod(dayOfWeek.getValue() - start.getDayOfWeek().getValue(), 7);
-        return start.plusDays(days);
-    }
-
-    private static LocalDate nextDue(RecurringRule rule, LocalDate current) {
-        if (rule.getScheduleType() == RecurringScheduleType.WEEKLY) {
-            return current.plusWeeks(rule.getIntervalValue());
-        }
-        YearMonth target = YearMonth.from(current).plusMonths(rule.getIntervalValue());
-        return target.atDay(Math.min(rule.getDayOfMonth(), target.lengthOfMonth()));
-    }
-
-    private static LocalDate withinEnd(LocalDate due, LocalDate end) {
-        return due == null || end == null || !due.isAfter(end) ? due : null;
     }
 
     private RecurringRule findRule(long householdId, long ruleId) {
