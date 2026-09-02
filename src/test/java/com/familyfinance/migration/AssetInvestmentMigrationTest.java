@@ -24,7 +24,7 @@ class AssetInvestmentMigrationTest {
 
     @Test
     void freshAndV7DatabasesMigrateToV8WithoutChangingLedgerMembershipBudgetOrRecurringFacts() {
-        MigrationResult fresh = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh-v8"));
+        MigrationResult fresh = MigrationTestSupport.migrateExistingDatabaseTo(tempDir.resolve("fresh-v8"), "8");
 
         assertThat(fresh.version()).isEqualTo("8");
         assertThat(fresh.tables()).contains(
@@ -62,7 +62,7 @@ class AssetInvestmentMigrationTest {
         List<List<String>> occurrencesBefore = rows(v7, "select id,household_id,rule_id,due_on,status,"
                 + "confirmed_transaction_id,assigned_user_id from recurring_occurrences order by id");
 
-        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
+        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabaseTo(database, "8");
 
         assertThat(migrated.version()).isEqualTo("8");
         assertThat(rows(migrated, transactionsSql())).containsExactlyElementsOf(transactionsBefore);
@@ -82,7 +82,7 @@ class AssetInvestmentMigrationTest {
                 "select id,household_id,member_id,category_id,kind,amount_cents,occurred_on,merchant,"
                         + "location,note,created_at,updated_at from financial_transactions order by id");
 
-        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
+        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabaseTo(database, "8");
 
         assertThat(migrated.version()).isEqualTo("8");
         assertThat(rows(migrated, "select id,household_id,member_id,category_id,kind,amount_cents,occurred_on,"
@@ -292,7 +292,7 @@ class AssetInvestmentMigrationTest {
 
     @Test
     void schemaPublishesExplicitDecimalTypesAndHouseholdStatusDateIndexes() {
-        MigrationResult result = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("metadata"));
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabaseTo(tempDir.resolve("metadata"), "8");
 
         assertColumn(result, "PROPERTY_ASSETS", "AREA_SQM", "NUMERIC", 12, 2);
         assertColumn(result, "INVESTMENT_TRADES", "QUANTITY", "NUMERIC", 19, 4);
@@ -309,7 +309,7 @@ class AssetInvestmentMigrationTest {
 
     private MigrationResult migratedTwoHouseholds(String name) {
         Path database = StageOneDatabaseFixture.createWithSecondHousehold(tempDir.resolve(name));
-        return MigrationTestSupport.migrateExistingDatabase(database);
+        return MigrationTestSupport.migrateExistingDatabaseTo(database, "8");
     }
 
     private static void seedPlanTwoFacts(MigrationResult v7) {
