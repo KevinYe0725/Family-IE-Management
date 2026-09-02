@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.familyfinance.FamilyFinanceApplication;
 import com.familyfinance.ledger.recurring.RecurringService;
 import com.familyfinance.shared.ApiEnvelope;
+import java.math.BigDecimal;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
@@ -29,6 +30,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.scheduling.config.TaskManagementConfigUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
@@ -49,6 +51,10 @@ class StageTwoLedgerSmokeTest {
         State state;
         RunningApplication first = start(database);
         try {
+            assertThat(first.context().getEnvironment().getProperty("app.scheduling.enabled"))
+                    .isEqualTo("false");
+            assertThat(first.context().containsBean(
+                    TaskManagementConfigUtils.SCHEDULED_ANNOTATION_PROCESSOR_BEAN_NAME)).isFalse();
             Api anonymous = first.newApi();
             assertThat(anonymous.get("/api/accounts").statusCode()).isEqualTo(401);
             assertThat(anonymous.write("POST", "/api/auth/register", """
@@ -71,6 +77,8 @@ class StageTwoLedgerSmokeTest {
 
             JsonNode initialAccounts = owner.data(owner.get("/api/accounts")).path("items");
             assertThat(initialAccounts).hasSize(1);
+            long defaultAccountId = initialAccounts.get(0).path("id").asLong();
+            assertAccount(initialAccounts.get(0), defaultAccountId, "默认账户", "CASH", "0.00");
             long accountId = owner.data(owner.expectStatus(
                     owner.write("POST", "/api/accounts", accountBody()), 201)).path("id").asLong();
 
@@ -96,7 +104,7 @@ class StageTwoLedgerSmokeTest {
                     """.formatted(version)));
             assertThat(updatedBudget.path("amount").asString()).isEqualTo("1000.00");
             int budgetVersion = updatedBudget.path("version").asInt();
-            long revisionId = assertBudgetRevision(owner, budgetId, userId, null);
+            long revisionId = assertBudgetRevision(owner, budgetId, childCategoryId, userId, null);
 
             JsonNode createdRule = owner.data(owner.expectStatus(owner.write("POST", "/api/recurring-rules", """
                     {"kind":"EXPENSE","amount":"123.45","scheduleType":"MONTHLY","intervalValue":1,
@@ -104,6 +112,7 @@ class StageTwoLedgerSmokeTest {
                      "categoryId":%d,"assignedUserId":%d,"paused":false}
                     """.formatted(accountId, memberId, childCategoryId, userId)), 201));
             long ruleId = createdRule.path("id").asLong();
+            assertRule(createdRule, ruleId, accountId, memberId, childCategoryId, userId, "2026-09-03");
             assertBudgetUsage(owner, budgetId, "0.00", "1000.00");
 
             HttpResponse<String> generation = owner.write("POST", "/api/__acceptance/recurring-generation", "{}");
@@ -114,8 +123,7 @@ class StageTwoLedgerSmokeTest {
                     "/api/recurring-occurrences?status=PENDING&from=2026-09-03&to=2026-09-03"));
             assertThat(pending).hasSize(1);
             long occurrenceId = pending.get(0).path("id").asLong();
-            assertThat(pending.get(0).path("ruleId").asLong()).isEqualTo(ruleId);
-            assertThat(pending.get(0).path("assignedUserId").asLong()).isEqualTo(userId);
+            assertOccurrence(pending.get(0), occurrenceId, ruleId, userId, "PENDING", null);
 
             JsonNode firstConfirmation = owner.data(owner.write(
                     "POST", "/api/recurring-occurrences/" + occurrenceId + "/confirm", null));
@@ -129,7 +137,7 @@ class StageTwoLedgerSmokeTest {
                     owner, transactionId, accountId, memberId, parentCategoryId, childCategoryId);
             assertBudgetUsage(owner, budgetId, "123.45", "876.55");
             state = new State(
-                    householdId, userId, memberId, accountId, parentCategoryId, childCategoryId,
+                    householdId, userId, memberId, defaultAccountId, accountId, parentCategoryId, childCategoryId,
                     budgetId, budgetVersion, revisionId, ruleId, occurrenceId, transactionId);
         } finally {
             first.close();
@@ -143,6 +151,7 @@ class StageTwoLedgerSmokeTest {
             assertThat(owner.login(EMAIL, PASSWORD).statusCode()).isEqualTo(200);
             assertPersistedState(owner, state);
         }
+        assertReciprocalRecurringLink(database, state);
     }
 
     private RunningApplication start(Path database) {
@@ -155,6 +164,7 @@ class StageTwoLedgerSmokeTest {
                         "--spring.datasource.password=",
                         "--spring.jpa.hibernate.ddl-auto=validate",
                         "--app.seed.enabled=false",
+                        "--app.scheduling.enabled=false",
                         "--spring.main.banner-mode=off");
         int port = ((WebServerApplicationContext) context).getWebServer().getPort();
         return new RunningApplication(context, port, context.getBean(ObjectMapper.class));
@@ -163,14 +173,29 @@ class StageTwoLedgerSmokeTest {
     private static void assertHierarchy(Api api, long parentId, long childId) throws Exception {
         JsonNode roots = api.data(api.get("/api/categories?projection=tree&page=0&size=50"));
         JsonNode parent = findById(roots, parentId);
+        assertThat(parent.path("id").asLong()).isEqualTo(parentId);
+        assertThat(parent.path("kind").asString()).isEqualTo("expense");
+        assertThat(parent.path("name").asString()).isEqualTo("居家服务");
+        assertThat(parent.path("color").asString()).isEqualTo("#345678");
+        assertThat(parent.path("defaultCategory").asBoolean()).isFalse();
+        assertThat(parent.path("createdAt").asString()).isEqualTo("2026-09-03T02:00:00Z");
         assertThat(parent.path("level").asInt()).isEqualTo(1);
         assertThat(parent.path("parentId").isNull()).isTrue();
+        assertThat(parent.path("children")).hasSize(1);
         JsonNode child = findById(parent.path("children"), childId);
+        assertThat(child.path("id").asLong()).isEqualTo(childId);
+        assertThat(child.path("kind").asString()).isEqualTo("expense");
+        assertThat(child.path("name").asString()).isEqualTo("物业费");
+        assertThat(child.path("color").asString()).isEqualTo("#456789");
+        assertThat(child.path("defaultCategory").asBoolean()).isFalse();
+        assertThat(child.path("createdAt").asString()).isEqualTo("2026-09-03T02:00:00Z");
         assertThat(child.path("level").asInt()).isEqualTo(2);
         assertThat(child.path("parentId").asLong()).isEqualTo(parentId);
+        assertThat(child.path("children")).isEmpty();
     }
 
-    private static long assertBudgetRevision(Api api, long budgetId, long userId, Long expectedRevisionId)
+    private static long assertBudgetRevision(
+            Api api, long budgetId, long categoryId, long userId, Long expectedRevisionId)
             throws Exception {
         JsonNode revisions = api.data(api.get("/api/budgets/" + budgetId + "/revisions"));
         assertThat(revisions).hasSize(1);
@@ -180,9 +205,20 @@ class StageTwoLedgerSmokeTest {
             assertThat(revisionId).isEqualTo(expectedRevisionId);
         }
         assertThat(revision.path("budgetId").asLong()).isEqualTo(budgetId);
+        assertThat(revision.path("oldPeriodMonth").asString()).isEqualTo(PERIOD);
+        assertThat(revision.path("newPeriodMonth").asString()).isEqualTo(PERIOD);
+        assertThat(revision.path("oldScopeType").asString()).isEqualTo("CATEGORY");
+        assertThat(revision.path("newScopeType").asString()).isEqualTo("CATEGORY");
+        assertThat(revision.path("oldCategoryId").asLong()).isEqualTo(categoryId);
+        assertThat(revision.path("newCategoryId").asLong()).isEqualTo(categoryId);
+        assertThat(revision.path("oldMemberId").isNull()).isTrue();
+        assertThat(revision.path("newMemberId").isNull()).isTrue();
         assertThat(revision.path("oldAmount").asString()).isEqualTo("500.00");
         assertThat(revision.path("newAmount").asString()).isEqualTo("1000.00");
+        assertThat(revision.path("oldActive").asBoolean()).isTrue();
+        assertThat(revision.path("newActive").asBoolean()).isTrue();
         assertThat(revision.path("changedByUserId").asLong()).isEqualTo(userId);
+        assertThat(revision.path("changedAt").asString()).isEqualTo("2026-09-03T02:00:00Z");
         return revisionId;
     }
 
@@ -192,6 +228,10 @@ class StageTwoLedgerSmokeTest {
         assertThat(usage.get(0).at("/budget/id").asLong()).isEqualTo(budgetId);
         assertThat(usage.get(0).path("spent").asString()).isEqualTo(spent);
         assertThat(usage.get(0).path("remaining").asString()).isEqualTo(remaining);
+        assertThat(new BigDecimal(usage.get(0).path("percent").asString()))
+                .isEqualByComparingTo("0.00".equals(spent) ? "0.00" : "12.35");
+        assertThat(usage.get(0).path("status").asString()).isEqualTo("ON_TRACK");
+        assertThat(usage.get(0).path("rollupCategories").asBoolean()).isFalse();
     }
 
     private static void assertExactlyOneRecurringTransaction(
@@ -210,48 +250,56 @@ class StageTwoLedgerSmokeTest {
         assertThat(transaction.path("amount").asString()).isEqualTo("123.45");
         assertThat(transaction.path("occurredOn").asString()).isEqualTo("2026-09-03");
         assertThat(transaction.path("accountId").asLong()).isEqualTo(accountId);
+        assertThat(transaction.path("accountName").asString()).isEqualTo("验收银行卡");
         assertThat(transaction.path("memberId").asLong()).isEqualTo(memberId);
+        assertThat(transaction.path("memberName").asString()).isEqualTo("第二阶段所有者");
         assertThat(transaction.path("categoryId").asLong()).isEqualTo(childCategoryId);
+        assertThat(transaction.path("categoryName").asString()).isEqualTo("物业费");
         assertThat(transaction.path("categoryParentId").asLong()).isEqualTo(parentCategoryId);
+        assertThat(transaction.path("categoryLevel").asInt()).isEqualTo(2);
+        assertThat(transaction.path("merchant").isNull()).isTrue();
+        assertThat(transaction.path("location").isNull()).isTrue();
+        assertThat(transaction.path("note").asString()).isEqualTo("周期账单");
+        assertThat(transaction.path("createdAt").asString()).isEqualTo("2026-09-03T02:00:00Z");
+        assertThat(transaction.path("updatedAt").asString()).isEqualTo("2026-09-03T02:00:00Z");
     }
 
     private static void assertPersistedState(Api api, State state) throws Exception {
         JsonNode session = api.data(api.get("/api/session"));
         assertThat(session.path("householdId").asLong()).isEqualTo(state.householdId());
         assertThat(session.path("userId").asLong()).isEqualTo(state.userId());
+        assertThat(session.path("email").asString()).isEqualTo(EMAIL);
+        assertThat(session.path("displayName").asString()).isEqualTo("第二阶段所有者");
+        assertThat(session.path("role").asString()).isEqualTo("OWNER");
+        assertThat(session.path("username").asString()).isEqualTo(EMAIL);
 
-        JsonNode account = api.data(api.get("/api/accounts/" + state.accountId()));
-        assertThat(account.path("id").asLong()).isEqualTo(state.accountId());
-        assertThat(account.path("name").asString()).isEqualTo("验收银行卡");
-        assertThat(account.path("type").asString()).isEqualTo("BANK");
-        assertThat(account.path("openingBalance").asString()).isEqualTo("1000.00");
-        assertThat(findById(api.data(api.get("/api/members")), state.memberId()).path("name").asString())
-                .isEqualTo("第二阶段所有者");
+        JsonNode accounts = api.data(api.get("/api/accounts?page=0&size=50")).path("items");
+        assertThat(ids(accounts)).containsExactlyInAnyOrder(state.defaultAccountId(), state.accountId());
+        assertAccount(api.data(api.get("/api/accounts/" + state.defaultAccountId())),
+                state.defaultAccountId(), "默认账户", "CASH", "0.00");
+        assertAccount(api.data(api.get("/api/accounts/" + state.accountId())),
+                state.accountId(), "验收银行卡", "BANK", "1000.00");
+
+        JsonNode member = findById(api.data(api.get("/api/members")), state.memberId());
+        assertThat(member.path("id").asLong()).isEqualTo(state.memberId());
+        assertThat(member.path("name").asString()).isEqualTo("第二阶段所有者");
+        assertThat(member.path("roleLabel").asString()).isEqualTo("所有者");
         assertHierarchy(api, state.parentCategoryId(), state.childCategoryId());
 
         JsonNode budget = api.data(api.get("/api/budgets/" + state.budgetId()));
-        assertThat(budget.path("id").asLong()).isEqualTo(state.budgetId());
-        assertThat(budget.path("categoryId").asLong()).isEqualTo(state.childCategoryId());
-        assertThat(budget.path("amount").asString()).isEqualTo("1000.00");
-        assertThat(budget.path("version").asInt()).isEqualTo(state.budgetVersion());
-        assertBudgetRevision(api, state.budgetId(), state.userId(), state.revisionId());
+        assertBudget(budget, state);
+        assertBudgetRevision(
+                api, state.budgetId(), state.childCategoryId(), state.userId(), state.revisionId());
 
         JsonNode rules = api.data(api.get("/api/recurring-rules?includeInactive=true"));
         JsonNode rule = findById(rules, state.ruleId());
-        assertThat(rule.path("id").asLong()).isEqualTo(state.ruleId());
-        assertThat(rule.path("accountId").asLong()).isEqualTo(state.accountId());
-        assertThat(rule.path("categoryId").asLong()).isEqualTo(state.childCategoryId());
-        assertThat(rule.path("amount").asString()).isEqualTo("123.45");
-        assertThat(rule.path("active").asBoolean()).isTrue();
-        assertThat(rule.path("paused").asBoolean()).isFalse();
-        assertThat(rule.path("nextDueOn").asString()).isEqualTo("2026-10-03");
+        assertRule(rule, state.ruleId(), state.accountId(), state.memberId(),
+                state.childCategoryId(), state.userId(), "2026-10-03");
 
         JsonNode occurrences = api.data(api.get("/api/recurring-occurrences?status=CONFIRMED"));
         JsonNode occurrence = findById(occurrences, state.occurrenceId());
-        assertThat(occurrence.path("id").asLong()).isEqualTo(state.occurrenceId());
-        assertThat(occurrence.path("ruleId").asLong()).isEqualTo(state.ruleId());
-        assertThat(occurrence.path("status").asString()).isEqualTo("CONFIRMED");
-        assertThat(occurrence.path("confirmedTransactionId").asLong()).isEqualTo(state.transactionId());
+        assertOccurrence(occurrence, state.occurrenceId(), state.ruleId(), state.userId(),
+                "CONFIRMED", state.transactionId());
 
         JsonNode repeatedConfirmation = api.data(api.write(
                 "POST", "/api/recurring-occurrences/" + state.occurrenceId() + "/confirm", null));
@@ -260,6 +308,83 @@ class StageTwoLedgerSmokeTest {
                 api, state.transactionId(), state.accountId(), state.memberId(),
                 state.parentCategoryId(), state.childCategoryId());
         assertBudgetUsage(api, state.budgetId(), "123.45", "876.55");
+    }
+
+    private static void assertAccount(
+            JsonNode account, long id, String name, String type, String openingBalance) {
+        assertThat(account.path("id").asLong()).isEqualTo(id);
+        assertThat(account.path("name").asString()).isEqualTo(name);
+        assertThat(account.path("type").asString()).isEqualTo(type);
+        assertThat(account.path("currency").asString()).isEqualTo("CNY");
+        assertThat(account.path("openingBalance").asString()).isEqualTo(openingBalance);
+        assertThat(account.path("archivedAt").isNull()).isTrue();
+    }
+
+    private static void assertBudget(JsonNode budget, State state) {
+        assertThat(budget.path("id").asLong()).isEqualTo(state.budgetId());
+        assertThat(budget.path("periodMonth").asString()).isEqualTo(PERIOD);
+        assertThat(budget.path("scopeType").asString()).isEqualTo("CATEGORY");
+        assertThat(budget.path("categoryId").asLong()).isEqualTo(state.childCategoryId());
+        assertThat(budget.path("memberId").isNull()).isTrue();
+        assertThat(budget.path("amount").asString()).isEqualTo("1000.00");
+        assertThat(budget.path("version").asInt()).isEqualTo(state.budgetVersion());
+        assertThat(budget.path("active").asBoolean()).isTrue();
+    }
+
+    private static void assertRule(
+            JsonNode rule,
+            long ruleId,
+            long accountId,
+            long memberId,
+            long categoryId,
+            long userId,
+            String nextDueOn) {
+        assertThat(rule.path("id").asLong()).isEqualTo(ruleId);
+        assertThat(rule.path("kind").asString()).isEqualTo("expense");
+        assertThat(rule.path("amount").asString()).isEqualTo("123.45");
+        assertThat(rule.path("scheduleType").asString()).isEqualTo("MONTHLY");
+        assertThat(rule.path("intervalValue").asInt()).isEqualTo(1);
+        assertThat(rule.path("dayOfMonth").asInt()).isEqualTo(3);
+        assertThat(rule.path("dayOfWeek").isNull()).isTrue();
+        assertThat(rule.path("startOn").asString()).isEqualTo("2026-09-03");
+        assertThat(rule.path("endOn").isNull()).isTrue();
+        assertThat(rule.path("nextDueOn").asString()).isEqualTo(nextDueOn);
+        assertThat(rule.path("accountId").asLong()).isEqualTo(accountId);
+        assertThat(rule.path("accountName").asString()).isEqualTo("验收银行卡");
+        assertThat(rule.path("memberId").asLong()).isEqualTo(memberId);
+        assertThat(rule.path("memberName").asString()).isEqualTo("第二阶段所有者");
+        assertThat(rule.path("categoryId").asLong()).isEqualTo(categoryId);
+        assertThat(rule.path("categoryName").asString()).isEqualTo("物业费");
+        assertThat(rule.path("assignedUserId").asLong()).isEqualTo(userId);
+        assertThat(rule.path("assignedUserName").asString()).isEqualTo("第二阶段所有者");
+        assertThat(rule.path("active").asBoolean()).isTrue();
+        assertThat(rule.path("paused").asBoolean()).isFalse();
+        assertThat(rule.path("createdByUserId").asLong()).isEqualTo(userId);
+    }
+
+    private static void assertOccurrence(
+            JsonNode occurrence,
+            long occurrenceId,
+            long ruleId,
+            long assignedUserId,
+            String status,
+            Long transactionId) {
+        assertThat(occurrence.path("id").asLong()).isEqualTo(occurrenceId);
+        assertThat(occurrence.path("ruleId").asLong()).isEqualTo(ruleId);
+        assertThat(occurrence.path("dueOn").asString()).isEqualTo("2026-09-03");
+        assertThat(occurrence.path("status").asString()).isEqualTo(status);
+        assertThat(occurrence.path("assignedUserId").asLong()).isEqualTo(assignedUserId);
+        if (transactionId == null) {
+            assertThat(occurrence.path("confirmedTransactionId").isNull()).isTrue();
+        } else {
+            assertThat(occurrence.path("confirmedTransactionId").asLong()).isEqualTo(transactionId);
+        }
+    }
+
+    private static List<Long> ids(JsonNode items) {
+        List<Long> ids = new ArrayList<>();
+        items.forEach(item -> ids.add(item.path("id").asLong()));
+        return ids;
     }
 
     private static JsonNode findById(JsonNode items, long id) {
@@ -324,6 +449,7 @@ class StageTwoLedgerSmokeTest {
             long householdId,
             long userId,
             long memberId,
+            long defaultAccountId,
             long accountId,
             long parentCategoryId,
             long childCategoryId,
