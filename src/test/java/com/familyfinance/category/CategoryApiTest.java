@@ -9,11 +9,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import com.familyfinance.transaction.TransactionTestFixtures;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -48,6 +51,12 @@ class CategoryApiTest {
 
     @Autowired
     FinancialTransactionRepository transactionRepository;
+
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
 
     @Test
     void listCreateUpdateAndDeleteCategoriesWithinCurrentHousehold() throws Exception {
@@ -175,7 +184,9 @@ class CategoryApiTest {
                 .findFirst()
                 .orElseThrow();
 
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 category,

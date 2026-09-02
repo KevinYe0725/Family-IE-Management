@@ -6,11 +6,14 @@ import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import com.familyfinance.transaction.TransactionTestFixtures;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -42,6 +45,12 @@ class DashboardServiceTest {
     @Autowired
     FinancialTransactionRepository transactionRepository;
 
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
+
     @Test
     void monthlyDashboardAggregatesHouseholdTransactionsWithStableOrdering() {
         Household household = householdRepository.save(new Household("测试家庭", TEST_TIME));
@@ -54,7 +63,9 @@ class DashboardServiceTest {
         Category transport = categoryRepository.save(new Category(
                 household, TransactionKind.EXPENSE, "交通", "#17324D", true, TEST_TIME));
 
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 kevin,
                 salary,
@@ -66,7 +77,9 @@ class DashboardServiceTest {
                 "工资",
                 TEST_TIME,
                 TEST_TIME));
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 lily,
                 food,
@@ -78,7 +91,9 @@ class DashboardServiceTest {
                 "餐饮",
                 TEST_TIME,
                 TEST_TIME));
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 kevin,
                 transport,

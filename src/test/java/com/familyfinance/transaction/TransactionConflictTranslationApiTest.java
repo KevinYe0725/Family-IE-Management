@@ -10,9 +10,11 @@ import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -49,6 +51,12 @@ class TransactionConflictTranslationApiTest {
     @MockitoSpyBean
     FinancialTransactionRepository transactionRepository;
 
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
+
     @Test
     void createTranslatesAnIntegrityFailureAtSaveAndFlush() throws Exception {
         MockHttpSession session = login();
@@ -75,7 +83,9 @@ class TransactionConflictTranslationApiTest {
         Household household = householdRepository.findAll().get(0);
         FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
         Category category = expenseCategory(household);
-        FinancialTransaction transaction = transactionRepository.saveAndFlush(new FinancialTransaction(
+        FinancialTransaction transaction = transactionRepository.saveAndFlush(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 category,

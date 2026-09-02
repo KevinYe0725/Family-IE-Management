@@ -13,6 +13,8 @@ import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.DefaultFinancialAccountFactory;
+import com.familyfinance.ledger.FinancialAccount;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
 import java.time.Instant;
@@ -37,6 +39,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final CategoryRepository categories;
     private final FinancialTransactionRepository transactions;
     private final HouseholdMembershipRepository memberships;
+    private final DefaultFinancialAccountFactory defaultAccounts;
     private final PasswordEncoder passwordEncoder;
 
     public DemoDataInitializer(
@@ -46,6 +49,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             CategoryRepository categories,
             FinancialTransactionRepository transactions,
             HouseholdMembershipRepository memberships,
+            DefaultFinancialAccountFactory defaultAccounts,
             PasswordEncoder passwordEncoder) {
         this.users = users;
         this.households = households;
@@ -53,6 +57,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         this.categories = categories;
         this.transactions = transactions;
         this.memberships = memberships;
+        this.defaultAccounts = defaultAccounts;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -77,6 +82,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 HouseholdRole.OWNER,
                 MembershipStatus.ACTIVE,
                 SEED_TIME));
+        FinancialAccount defaultAccount = defaultAccounts.createFor(household);
 
         List<FamilyMember> seededMembers = members.saveAll(List.of(
                 new FamilyMember(household, demo, "Kevin", "爸爸", SEED_TIME),
@@ -111,22 +117,24 @@ public class DemoDataInitializer implements ApplicationRunner {
         FamilyMember grandma = seededMembers.get(4);
 
         transactions.saveAll(List.of(
-                tx(household, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-06-05", "公司", "杭州", "六月工资"),
-                tx(household, lily, food, TransactionKind.EXPENSE, 12850L, "2026-06-08", "盒马", "杭州", "一周食材"),
-                tx(household, annie, education, TransactionKind.EXPENSE, 360000L, "2026-06-15", "培训中心", "杭州", "暑期课程"),
-                tx(household, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-07-05", "公司", "杭州", "七月工资"),
-                tx(household, grandma, medical, TransactionKind.EXPENSE, 86500L, "2026-07-13", "社区医院", "杭州", "体检配药"),
-                tx(household, lily, home, TransactionKind.EXPENSE, 239900L, "2026-07-22", "宜家", "杭州", "收纳家具"),
-                tx(household, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-08-05", "公司", "杭州", "八月工资"),
-                tx(household, lily, bonus, TransactionKind.INCOME, 600000L, "2026-08-18", "项目奖金", "杭州", "季度奖金"),
-                tx(household, grandpa, transport, TransactionKind.EXPENSE, 4200L, "2026-08-20", "地铁", "杭州", "出行"),
-                tx(household, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-09-05", "公司", "杭州", "九月工资"),
-                tx(household, lily, food, TransactionKind.EXPENSE, 15680L, "2026-09-06", "菜场", "杭州", "家庭餐饮"),
-                tx(household, annie, shopping, TransactionKind.EXPENSE, 32800L, "2026-09-12", "银泰", "杭州", "开学用品")));
+                tx(household, defaultAccount, demo, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-06-05", "公司", "杭州", "六月工资"),
+                tx(household, defaultAccount, demo, lily, food, TransactionKind.EXPENSE, 12850L, "2026-06-08", "盒马", "杭州", "一周食材"),
+                tx(household, defaultAccount, demo, annie, education, TransactionKind.EXPENSE, 360000L, "2026-06-15", "培训中心", "杭州", "暑期课程"),
+                tx(household, defaultAccount, demo, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-07-05", "公司", "杭州", "七月工资"),
+                tx(household, defaultAccount, demo, grandma, medical, TransactionKind.EXPENSE, 86500L, "2026-07-13", "社区医院", "杭州", "体检配药"),
+                tx(household, defaultAccount, demo, lily, home, TransactionKind.EXPENSE, 239900L, "2026-07-22", "宜家", "杭州", "收纳家具"),
+                tx(household, defaultAccount, demo, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-08-05", "公司", "杭州", "八月工资"),
+                tx(household, defaultAccount, demo, lily, bonus, TransactionKind.INCOME, 600000L, "2026-08-18", "项目奖金", "杭州", "季度奖金"),
+                tx(household, defaultAccount, demo, grandpa, transport, TransactionKind.EXPENSE, 4200L, "2026-08-20", "地铁", "杭州", "出行"),
+                tx(household, defaultAccount, demo, kevin, salary, TransactionKind.INCOME, 2800000L, "2026-09-05", "公司", "杭州", "九月工资"),
+                tx(household, defaultAccount, demo, lily, food, TransactionKind.EXPENSE, 15680L, "2026-09-06", "菜场", "杭州", "家庭餐饮"),
+                tx(household, defaultAccount, demo, annie, shopping, TransactionKind.EXPENSE, 32800L, "2026-09-12", "银泰", "杭州", "开学用品")));
     }
 
     private static FinancialTransaction tx(
             Household household,
+            FinancialAccount account,
+            AppUser creator,
             FamilyMember member,
             Category category,
             TransactionKind kind,
@@ -137,6 +145,8 @@ public class DemoDataInitializer implements ApplicationRunner {
             String note) {
         return new FinancialTransaction(
                 household,
+                account,
+                creator,
                 member,
                 category,
                 kind,

@@ -4,6 +4,8 @@ import com.familyfinance.category.Category;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.Household;
+import com.familyfinance.household.AppUser;
+import com.familyfinance.ledger.FinancialAccount;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -37,6 +39,14 @@ public class FinancialTransaction {
     private FamilyMember member;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "account_id", nullable = false)
+    private FinancialAccount account;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "created_by_user_id", nullable = false, updatable = false)
+    private AppUser createdByUser;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
@@ -64,11 +74,20 @@ public class FinancialTransaction {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false, length = 16, updatable = false)
+    private TransactionSourceType sourceType = TransactionSourceType.MANUAL;
+
+    @Column(name = "source_id", updatable = false)
+    private Long sourceId;
+
     protected FinancialTransaction() {
     }
 
     public FinancialTransaction(
             Household household,
+            FinancialAccount account,
+            AppUser createdByUser,
             FamilyMember member,
             Category category,
             TransactionKind kind,
@@ -79,8 +98,10 @@ public class FinancialTransaction {
             String note,
             Instant createdAt,
             Instant updatedAt) {
-        requireValidTransactionScope(household, member, category, kind);
+        requireValidTransactionScope(household, account, createdByUser, member, category, kind);
         this.household = household;
+        this.account = account;
+        this.createdByUser = createdByUser;
         this.member = member;
         this.category = category;
         this.kind = kind;
@@ -103,6 +124,14 @@ public class FinancialTransaction {
 
     public FamilyMember getMember() {
         return member;
+    }
+
+    public FinancialAccount getAccount() {
+        return account;
+    }
+
+    public AppUser getCreatedByUser() {
+        return createdByUser;
     }
 
     public Category getCategory() {
@@ -141,6 +170,14 @@ public class FinancialTransaction {
         return updatedAt;
     }
 
+    public TransactionSourceType getSourceType() {
+        return sourceType;
+    }
+
+    public Long getSourceId() {
+        return sourceId;
+    }
+
     void updateDetails(
             FamilyMember member,
             Category category,
@@ -151,7 +188,7 @@ public class FinancialTransaction {
             String location,
             String note,
             Instant updatedAt) {
-        requireValidTransactionScope(household, member, category, kind);
+        requireValidTransactionScope(household, account, createdByUser, member, category, kind);
         this.member = member;
         this.category = category;
         this.kind = kind;
@@ -165,13 +202,23 @@ public class FinancialTransaction {
 
     private static void requireValidTransactionScope(
             Household household,
+            FinancialAccount account,
+            AppUser createdByUser,
             FamilyMember member,
             Category category,
             TransactionKind kind) {
         Objects.requireNonNull(household, "household must not be null");
+        Objects.requireNonNull(account, "account must not be null");
+        Objects.requireNonNull(createdByUser, "creator must not be null");
         Objects.requireNonNull(member, "member must not be null");
         Objects.requireNonNull(category, "category must not be null");
         Objects.requireNonNull(kind, "kind must not be null");
+        if (!sameHousehold(household, account.getHousehold())) {
+            throw new IllegalArgumentException("Transaction account must belong to the transaction household");
+        }
+        if (!sameHousehold(household, createdByUser.getHousehold())) {
+            throw new IllegalArgumentException("Transaction creator must belong to the transaction household");
+        }
         if (!sameHousehold(household, member.getHousehold())) {
             throw new IllegalArgumentException("Transaction member must belong to the transaction household");
         }

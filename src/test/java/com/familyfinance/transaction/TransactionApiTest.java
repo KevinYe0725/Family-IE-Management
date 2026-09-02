@@ -13,9 +13,11 @@ import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -51,6 +53,12 @@ class TransactionApiTest {
 
     @Autowired
     FinancialTransactionRepository transactionRepository;
+
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
 
     @Autowired
     EntityManager entityManager;
@@ -147,7 +155,9 @@ class TransactionApiTest {
     void patchMerchantAndNotePreservesOtherFields() throws Exception {
         MockHttpSession session = login();
         Household household = demoHousehold();
-        FinancialTransaction transaction = transactionRepository.save(new FinancialTransaction(
+        FinancialTransaction transaction = transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 memberRepository.findByHouseholdOrderById(household).get(0),
                 expenseCategory(household, "餐饮"),
@@ -286,7 +296,9 @@ class TransactionApiTest {
         FamilyMember outsiderMember = memberRepository.save(new FamilyMember(outsider, "外部成员", "访客", TEST_TIME));
         Category outsiderCategory = categoryRepository.save(
                 new Category(outsider, TransactionKind.EXPENSE, "外部分类", "#123456", false, TEST_TIME));
-        FinancialTransaction outsiderTransaction = transactionRepository.save(new FinancialTransaction(
+        FinancialTransaction outsiderTransaction = transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 outsider,
                 outsiderMember,
                 outsiderCategory,
@@ -318,7 +330,9 @@ class TransactionApiTest {
     void deleteTransactionRemovesItFromHousehold() throws Exception {
         MockHttpSession session = login();
         Household household = demoHousehold();
-        FinancialTransaction transaction = transactionRepository.save(new FinancialTransaction(
+        FinancialTransaction transaction = transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 memberRepository.findByHouseholdOrderById(household).get(0),
                 expenseCategory(household, "餐饮"),
@@ -368,7 +382,9 @@ class TransactionApiTest {
             FamilyMember member,
             Category category,
             String note) {
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 category,

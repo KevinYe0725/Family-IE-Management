@@ -7,6 +7,13 @@ import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.household.AppUser;
+import com.familyfinance.household.AppUserStatus;
+import com.familyfinance.family.HouseholdMembershipRepository;
+import com.familyfinance.family.HouseholdRole;
+import com.familyfinance.family.MembershipStatus;
+import com.familyfinance.ledger.FinancialAccount;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import com.familyfinance.shared.Money;
 import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.shared.ResourceConflictException;
@@ -34,6 +41,8 @@ public class TransactionService {
     private final FamilyMemberRepository memberRepository;
     private final CategoryRepository categoryRepository;
     private final FinancialTransactionRepository transactionRepository;
+    private final FinancialAccountRepository accountRepository;
+    private final HouseholdMembershipRepository membershipRepository;
     private final TransactionFilterParser filterParser;
 
     public TransactionService(
@@ -41,11 +50,15 @@ public class TransactionService {
             FamilyMemberRepository memberRepository,
             CategoryRepository categoryRepository,
             FinancialTransactionRepository transactionRepository,
+            FinancialAccountRepository accountRepository,
+            HouseholdMembershipRepository membershipRepository,
             TransactionFilterParser filterParser) {
         this.householdRepository = householdRepository;
         this.memberRepository = memberRepository;
         this.categoryRepository = categoryRepository;
         this.transactionRepository = transactionRepository;
+        this.accountRepository = accountRepository;
+        this.membershipRepository = membershipRepository;
         this.filterParser = filterParser;
     }
 
@@ -74,12 +87,16 @@ public class TransactionService {
         LocalDate occurredOn = parseDate(require(request.occurredOn(), "occurredOn", "日期不能为空", fields), "occurredOn", fields);
         FamilyMember member = resolveMember(householdId, request.memberId(), fields);
         Category category = resolveCategory(householdId, request.categoryId(), kind, fields);
+        FinancialAccount account = defaultAccount(householdId);
+        AppUser creator = legacyCreator(householdId, member);
         throwIfInvalid(fields);
 
         Instant now = Instant.now();
         try {
             FinancialTransaction transaction = transactionRepository.saveAndFlush(new FinancialTransaction(
                     household,
+                    account,
+                    creator,
                     member,
                     category,
                     kind,
@@ -178,6 +195,29 @@ public class TransactionService {
             fields.put("categoryId", "分类类型必须和收支类型一致");
         }
         return category;
+    }
+
+    private FinancialAccount defaultAccount(long householdId) {
+        return accountRepository.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(householdId)
+                .orElseThrow(() -> new ResourceConflictException("ACCOUNT_REQUIRED", "家庭尚未配置可用账户"));
+    }
+
+    private AppUser legacyCreator(long householdId, FamilyMember member) {
+        if (member != null
+                && member.getLinkedUser() != null
+                && member.getLinkedUser().getStatus() == AppUserStatus.ACTIVE
+                && membershipRepository.findByHouseholdIdAndUserIdAndStatus(
+                                householdId, member.getLinkedUser().getId(), MembershipStatus.ACTIVE)
+                        .isPresent()) {
+            return member.getLinkedUser();
+        }
+        return membershipRepository.findByHouseholdIdOrderById(householdId).stream()
+                .filter(membership -> membership.getRole() == HouseholdRole.OWNER)
+                .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
+                .map(membership -> membership.getUser())
+                .filter(user -> user.getStatus() == AppUserStatus.ACTIVE)
+                .min(java.util.Comparator.comparing(AppUser::getId))
+                .orElseThrow(() -> new ResourceConflictException("CREATOR_REQUIRED", "家庭尚未配置有效所有者"));
     }
 
     private static <T> T require(T value, String field, String message, Map<String, String> fields) {

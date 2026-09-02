@@ -6,9 +6,11 @@ import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceUnitUtil;
 import java.time.Instant;
@@ -40,6 +42,12 @@ class FinancialTransactionRepositoryReportingTest {
     CategoryRepository categoryRepository;
 
     @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
+
+    @Autowired
     EntityManager entityManager;
 
     @Test
@@ -53,7 +61,9 @@ class FinancialTransactionRepositoryReportingTest {
         Category outsiderFood = categoryRepository.save(new Category(
                 outsider, TransactionKind.EXPENSE, "外部餐饮", "#17324D", true, TEST_TIME));
 
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 food,
@@ -65,7 +75,9 @@ class FinancialTransactionRepositoryReportingTest {
                 "范围内",
                 TEST_TIME,
                 TEST_TIME));
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 food,
@@ -77,7 +89,9 @@ class FinancialTransactionRepositoryReportingTest {
                 "范围外日期",
                 TEST_TIME,
                 TEST_TIME));
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 outsider,
                 outsiderMember,
                 outsiderFood,
@@ -105,5 +119,12 @@ class FinancialTransactionRepositoryReportingTest {
         PersistenceUnitUtil persistenceUnitUtil = entityManager.getEntityManagerFactory().getPersistenceUnitUtil();
         assertThat(persistenceUnitUtil.isLoaded(transaction.getMember())).isTrue();
         assertThat(persistenceUnitUtil.isLoaded(transaction.getCategory())).isTrue();
+        assertThat(persistenceUnitUtil.isLoaded(transaction.getAccount())).isFalse();
+        assertThat(persistenceUnitUtil.isLoaded(transaction.getCreatedByUser())).isFalse();
+
+        entityManager.clear();
+        FinancialTransaction reloaded = transactionRepository.findById(transaction.getId()).orElseThrow();
+        assertThat(persistenceUnitUtil.isLoaded(reloaded.getAccount())).isFalse();
+        assertThat(persistenceUnitUtil.isLoaded(reloaded.getCreatedByUser())).isFalse();
     }
 }

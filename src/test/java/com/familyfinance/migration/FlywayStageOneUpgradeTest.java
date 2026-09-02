@@ -18,7 +18,7 @@ class FlywayStageOneUpgradeTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("3");
+        assertThat(result.version()).isEqualTo("4");
         assertThat(result.queryLong("select count(*) from financial_transactions")).isEqualTo(12);
         assertThat(result.queryString("select email from app_users where username='demo'"))
                 .isEqualTo("demo@local.family");
@@ -45,7 +45,7 @@ class FlywayStageOneUpgradeTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("3");
+        assertThat(result.version()).isEqualTo("4");
         assertThat(result.queryString("select email from app_users where username='demo'"))
                 .isEqualTo("demo@local.family");
         assertThat(result.queryString("select email from app_users where username='legacy'"))
@@ -109,7 +109,7 @@ class FlywayStageOneUpgradeTest {
 
     private static void assertDemoOwnerAndStableLink(
             MigrationResult result, long expectedMemberId, long expectedTransactionCount) {
-        assertThat(result.version()).isEqualTo("3");
+        assertThat(result.version()).isEqualTo("4");
         assertThat(result.queryLong("select count(*) from household_memberships "
                 + "where household_id=1 and user_id=1 and role='OWNER' and status='ACTIVE'"))
                 .isEqualTo(1);

@@ -13,6 +13,8 @@ import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import com.familyfinance.transaction.TransactionTestFixtures;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,12 @@ class MemberApiTest {
 
     @Autowired
     FinancialTransactionRepository transactionRepository;
+
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
 
     @Test
     void listCreateUpdateAndDeleteMembersWithinCurrentHousehold() throws Exception {
@@ -104,7 +112,9 @@ class MemberApiTest {
                 .findFirst()
                 .orElseThrow();
 
-        transactionRepository.save(new FinancialTransaction(
+        transactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 otherHousehold,
                 member,
                 category,

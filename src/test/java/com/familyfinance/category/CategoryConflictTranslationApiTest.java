@@ -6,11 +6,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.familyfinance.household.FamilyMember;
+import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import com.familyfinance.transaction.TransactionTestFixtures;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -53,6 +56,12 @@ class CategoryConflictTranslationApiTest {
 
     @Autowired
     FinancialTransactionRepository realTransactionRepository;
+
+    @Autowired
+    FinancialAccountRepository accountRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
 
     @MockitoSpyBean
     CategoryRepository categoryRepository;
@@ -120,7 +129,9 @@ class CategoryConflictTranslationApiTest {
                 .findFirst()
                 .orElseThrow();
 
-        realTransactionRepository.save(new FinancialTransaction(
+        realTransactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 category,
@@ -156,7 +167,9 @@ class CategoryConflictTranslationApiTest {
                 .findFirst()
                 .orElseThrow();
 
-        realTransactionRepository.save(new FinancialTransaction(
+        realTransactionRepository.save(TransactionTestFixtures.newTransaction(
+                accountRepository,
+                appUserRepository,
                 household,
                 member,
                 category,
