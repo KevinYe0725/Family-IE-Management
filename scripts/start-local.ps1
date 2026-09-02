@@ -22,7 +22,11 @@ function Get-JavaMajorVersion {
         throw 'Java was not found. Install a Java 17 or newer JDK, then reopen the terminal.'
     }
 
-    $VersionLine = ((& java -version 2>&1) | Select-Object -First 1).ToString()
+    # Windows PowerShell 5.1 turns native stderr into NativeCommandError when
+    # ErrorActionPreference is Stop. java -version writes its normal output to
+    # stderr, so merge the streams inside cmd.exe before PowerShell reads it.
+    $VersionLine = ((& $env:ComSpec /d /s /c 'java -version 2>&1') |
+        Select-Object -First 1).ToString()
     if ($VersionLine -notmatch '"(?<major>\d+)(?:\.(?<minor>\d+))?') {
         throw "Could not read the Java version from: $VersionLine"
     }
@@ -141,4 +145,3 @@ finally {
     Stop-Job $BrowserJob -ErrorAction SilentlyContinue
     Remove-Job $BrowserJob -Force -ErrorAction SilentlyContinue
 }
-
