@@ -230,6 +230,87 @@ wait_for_file() {
     fail "$description was not created within 30 seconds."
 }
 
+run_owner_marker_tamper() {
+    tamper_name=$1
+    scenario=$(new_scenario "owner-marker-$tamper_name")
+    new_stage_one_fixture "$scenario"
+    real_copy=$(command -v cp)
+    blocking_copy_bin=$scenario/blocking-copy
+    copy_ready=$scenario/copy.ready
+    copy_release=$scenario/copy.release
+    mkdir "$blocking_copy_bin"
+    cat >"$blocking_copy_bin/cp" <<'OWNER_MARKER_BLOCKING_COPY'
+#!/bin/sh
+set -eu
+: >"$GATE_COPY_READY"
+attempts=0
+while [ ! -f "$GATE_COPY_RELEASE" ] && [ "$attempts" -lt 30 ]; do
+    attempts=$((attempts + 1))
+    sleep 1
+done
+[ -f "$GATE_COPY_RELEASE" ] || exit 49
+exec "$GATE_REAL_CP" "$@"
+OWNER_MARKER_BLOCKING_COPY
+    chmod +x "$blocking_copy_bin/cp"
+    marker=$scenario/launched
+    (
+        cd "$scenario"
+        PATH=$blocking_copy_bin:$PATH GATE_REAL_CP=$real_copy \
+            GATE_COPY_READY=$copy_ready GATE_COPY_RELEASE=$copy_release \
+            TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker \
+            ./start-local.sh
+    ) >"$scenario/owner-marker-$tamper_name.log" 2>&1 &
+    preflight_pid=$!
+    wait_for_file "$copy_ready" "The $tamper_name owner-marker copy-ready marker"
+    lock_directory=$scenario/data-backups/.family-finance-backup.lock
+    owner_marker=$lock_directory/OWNER.txt
+    [ -f "$owner_marker" ] || fail "The $tamper_name scenario did not create a regular owner marker."
+    owner_token=$(sed -n '1p' "$owner_marker")
+
+    case "$tamper_name" in
+        appended)
+            printf '%s\n' 'unexpected-appended-owner-bytes' >>"$owner_marker"
+            ;;
+        no-newline)
+            printf '%s' "$owner_token" >"$owner_marker"
+            ;;
+        symlink)
+            replacement=$scenario/replacement-owner.txt
+            printf '%s\n' "$owner_token" >"$replacement"
+            mv "$owner_marker" "$scenario/original-owner.txt"
+            ln -s "$replacement" "$owner_marker"
+            ;;
+        unreadable)
+            chmod 000 "$owner_marker"
+            if [ -r "$owner_marker" ]; then
+                chmod 600 "$owner_marker"
+                : >"$copy_release"
+                wait "$preflight_pid"
+                printf '%s\n' 'Unreadable owner-marker check skipped: this effective user can read mode 000 files.'
+                return 0
+            fi
+            ;;
+        *) fail "Unknown owner-marker tamper scenario: $tamper_name" ;;
+    esac
+
+    : >"$copy_release"
+    set +e
+    wait "$preflight_pid"
+    preflight_status=$?
+    set -e
+    [ "$preflight_status" -ne 0 ] || fail "The launcher accepted the $tamper_name owner marker."
+    [ ! -e "$marker" ] || fail "The application launched with the $tamper_name owner marker."
+    [ -d "$lock_directory" ] || fail "The $tamper_name owner marker did not preserve its unknown lock directory."
+    if [ "$tamper_name" = symlink ]; then
+        [ -L "$owner_marker" ] || fail 'The replaced owner-marker symlink was removed.'
+    else
+        [ -f "$owner_marker" ] || fail "The $tamper_name owner marker was removed."
+    fi
+    if [ "$tamper_name" = unreadable ]; then
+        chmod 600 "$owner_marker"
+    fi
+}
+
 start_application() {
     scenario=$1
     port=$2
@@ -288,7 +369,7 @@ h2_jar=$(tr ':' '\n' <"$test_classpath_file" | awk '/\/com\/h2database\/h2\/2[.]
 [ -n "$h2_jar" ] || fail 'The pinned H2 2.3.232 jar was not present in the test runtime classpath.'
 assert_equal 1 "$(printf '%s\n' "$h2_jar" | awk 'NF { count++ } END { print count+0 }')" 'The gate resolved more than one pinned H2 jar.'
 
-printf '%s\n' 'Gate 1/9: Java 17 and the project wrapper are mandatory.'
+printf '%s\n' 'Gate 1/10: Java 17 and the project wrapper are mandatory.'
 scenario=$(new_scenario prerequisites)
 marker=$scenario/launched
 fake_bin=$scenario/fake-java
@@ -327,7 +408,7 @@ if ! (cd "$scenario" && TMPDIR=$scenario/tmp PATH="$spaced_java_parent/bin:$PATH
 fi
 [ -f "$marker" ] || fail 'The spaced-path Java 17 scenario did not reach application launch.'
 
-printf '%s\n' 'Gate 2/9: No database launches without creating a backup path.'
+printf '%s\n' 'Gate 2/10: No database launches without creating a backup path.'
 scenario=$(new_scenario no-data)
 marker=$scenario/launched
 (cd "$scenario" && TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh >no-data.log 2>&1)
@@ -344,7 +425,7 @@ fi
 [ -f "$marker" ] || fail 'External-directory invocation did not reach application launch.'
 assert_equal 1 "$(count_completed_backups "$scenario/data-backups")" 'External-directory invocation did not create the required legacy backup.'
 
-printf '%s\n' 'Gate 3/9: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
+printf '%s\n' 'Gate 3/10: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
 scenario=$(new_scenario inspection-failure)
 mkdir "$scenario/data"
 printf '%s\n' 'not an H2 database' >"$scenario/data/family-finance.mv.db"
@@ -366,7 +447,7 @@ fi
 [ ! -e "$marker" ] || fail 'The application launched after H2 resolution failed.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'H2 resolution failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 4/9: Copy and hash failures retain partial data and prevent launch.'
+printf '%s\n' 'Gate 4/10: Copy and hash failures retain partial data and prevent launch.'
 scenario=$(new_scenario copy-failure)
 new_stage_one_fixture "$scenario"
 marker=$scenario/launched
@@ -403,7 +484,7 @@ fi
 assert_equal 0 "$(count_completed_backups "$scenario/data-backups")" 'Hash failure published a completed backup.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'Hash failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 5/9: A publish-time destination collision preserves nested partial evidence and prevents launch.'
+printf '%s\n' 'Gate 5/10: A publish-time destination collision preserves nested partial evidence and prevents launch.'
 scenario=$(new_scenario publish-time-collision)
 new_stage_one_fixture "$scenario"
 real_move=$(command -v mv)
@@ -469,7 +550,7 @@ assert_equal 'external collision sentinel' "$(sed -n '1p' "$collision_destinatio
 grep -F "$collision_destination/$collision_partial_name" "$scenario/publish-collision.log" >/dev/null ||
     fail 'The publish-time collision did not report the retained nested partial path.'
 
-printf '%s\n' 'Gate 6/9: Active and unknown stale locks fail closed without competing publication.'
+printf '%s\n' 'Gate 6/10: Active and unknown stale locks fail closed without competing publication.'
 scenario=$(new_scenario concurrent-preflights)
 new_stage_one_fixture "$scenario"
 real_copy=$(command -v cp)
@@ -546,7 +627,13 @@ set -e
 assert_equal 'unknown-owner-must-remain' "$(sed -n '1p' "$unknown_lock/OWNER.txt")" 'The launcher deleted or changed an unknown backup lock.'
 assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'The stale-lock refusal created a partial backup.'
 
-printf '%s\n' 'Gate 7/9: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
+printf '%s\n' 'Gate 7/10: Owner-marker corruption is preserved by normal release and EXIT cleanup.'
+run_owner_marker_tamper appended
+run_owner_marker_tamper no-newline
+run_owner_marker_tamper symlink
+run_owner_marker_tamper unreadable
+
+printf '%s\n' 'Gate 8/10: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
 scenario=$(new_scenario 'backup restore')
 new_stage_one_fixture "$scenario"
 printf '%s\n' 'synthetic companion' >"$scenario/data/family-finance.trace.db"
@@ -590,7 +677,7 @@ for collision in "$scenario/data-backups"/*; do
 done
 stop_process "$first_process_id"
 
-printf '%s\n' 'Gate 8/9: A migrated database skips backup, and restore preserves login plus 12 rows.'
+printf '%s\n' 'Gate 9/10: A migrated database skips backup, and restore preserves login plus 12 rows.'
 completed_before_restart=$(count_completed_backups "$scenario/data-backups")
 restart_port=$(get_free_port)
 restart_log=$scenario/restart.log
@@ -622,7 +709,7 @@ wait_for_ready "$restore_port" "$restore_process_id" "$restore_log"
 verify_demo_login_and_ledger "$scenario" "$restore_port"
 stop_process "$restore_process_id"
 
-printf '%s\n' 'Gate 9/9: Successful launch replaces the shell process and propagates application status.'
+printf '%s\n' 'Gate 10/10: Successful launch replaces the shell process and propagates application status.'
 scenario=$(new_scenario foreground-exec)
 marker=$scenario/launched
 set +e

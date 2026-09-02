@@ -39,15 +39,19 @@ ff_cleanup_startup_resources() {
     ff_cleanup_owned_backup_lock
 }
 
+ff_owner_marker_is_exact() {
+    ff_marker_path=$1
+    ff_expected_token=$2
+    if [ ! -f "$ff_marker_path" ] || [ -L "$ff_marker_path" ] || [ ! -r "$ff_marker_path" ]; then
+        return 1
+    fi
+    printf '%s\n' "$ff_expected_token" | cmp -s - "$ff_marker_path"
+}
+
 ff_cleanup_owned_backup_lock() {
     [ "$ff_backup_lock_owned" -eq 1 ] || return 0
-    if [ ! -f "$ff_backup_lock_owner_file" ]; then
-        printf '%s\n' "[family-finance] Backup lock ownership marker is missing; the unknown lock was left at $ff_backup_lock_directory" >&2
-        return 0
-    fi
-    ff_cleanup_lock_token=$(sed -n '1p' "$ff_backup_lock_owner_file" 2>/dev/null || true)
-    if [ "$ff_cleanup_lock_token" != "$ff_backup_lock_token" ]; then
-        printf '%s\n' "[family-finance] Backup lock ownership changed; the unknown lock was left at $ff_backup_lock_directory" >&2
+    if ! ff_owner_marker_is_exact "$ff_backup_lock_owner_file" "$ff_backup_lock_token"; then
+        printf '%s\n' "[family-finance] Backup lock ownership marker is missing, unreadable, replaced, or changed; the unknown lock was left at $ff_backup_lock_directory" >&2
         return 0
     fi
     if ! rm -f "$ff_backup_lock_owner_file" || ! rmdir "$ff_backup_lock_directory"; then
@@ -180,12 +184,8 @@ ff_acquire_backup_lock() {
 
 ff_release_backup_lock() {
     [ "$ff_backup_lock_owned" -eq 1 ] || return 0
-    [ -f "$ff_backup_lock_owner_file" ] ||
-        ff_fail "Backup lock ownership marker is missing at $ff_backup_lock_directory. Startup was refused and the unknown lock was preserved."
-    ff_release_lock_token=$(sed -n '1p' "$ff_backup_lock_owner_file") ||
-        ff_fail "Could not read backup lock ownership at $ff_backup_lock_directory. Startup was refused and the lock was preserved."
-    [ "$ff_release_lock_token" = "$ff_backup_lock_token" ] ||
-        ff_fail "Backup lock ownership changed at $ff_backup_lock_directory. Startup was refused and the unknown lock was preserved."
+    ff_owner_marker_is_exact "$ff_backup_lock_owner_file" "$ff_backup_lock_token" ||
+        ff_fail "Backup lock ownership marker is missing, unreadable, replaced, or changed at $ff_backup_lock_directory. Startup was refused and the unknown lock was preserved."
     rm -f "$ff_backup_lock_owner_file" ||
         ff_fail "Could not remove the owned backup lock marker at $ff_backup_lock_owner_file. Startup was refused."
     rmdir "$ff_backup_lock_directory" ||
