@@ -40,16 +40,32 @@ export function configureAccountSelect(select, activeAccounts, selectedAccountId
   return { canSubmit: true, message: '' };
 }
 
-export function transactionPayload(formEntries, { activeAccounts, existingAccountId = null } = {}) {
+export function transactionPayload(
+  formEntries,
+  { activeAccounts, availableCategories, existingAccountId = null, existingCategoryId = null } = {}
+) {
   const payload = Object.fromEntries(formEntries);
   payload.memberId = Number(payload.memberId);
-  payload.categoryId = Number(payload.categoryId);
+  const categoryId = Number(payload.categoryId);
+  const categoryIsAvailable = !Array.isArray(availableCategories)
+    || availableCategories.some(category => Number(category.id) === categoryId);
+  const preservesExistingCategory = existingCategoryId != null
+    && Number(existingCategoryId) === categoryId;
+  if (categoryIsAvailable || !preservesExistingCategory) {
+    payload.categoryId = categoryId;
+  } else {
+    delete payload.categoryId;
+  }
   const accountId = Number(payload.accountId);
   const active = (activeAccounts || []).some(account => Number(account.id) === accountId);
+  const preservesExistingAccount = existingAccountId != null
+    && Number(existingAccountId) === accountId;
   if (active) {
     payload.accountId = accountId;
-  } else {
+  } else if (preservesExistingAccount) {
     delete payload.accountId;
+  } else {
+    payload.accountId = accountId;
   }
   return payload;
 }

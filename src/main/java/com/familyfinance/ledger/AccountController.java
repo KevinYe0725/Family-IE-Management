@@ -2,6 +2,7 @@ package com.familyfinance.ledger;
 
 import com.familyfinance.shared.ApiEnvelope;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,11 +26,18 @@ public class AccountController {
     }
 
     @GetMapping
-    ApiEnvelope<AccountPage> list(
+    ResponseEntity<ApiEnvelope<AccountPage>> list(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiEnvelope.data(accounts.list(authentication, page, size));
+        AccountPage result = accounts.list(authentication, page, size);
+        return ResponseEntity.ok()
+                .header("X-Page", Integer.toString(result.page()))
+                .header("X-Page-Size", Integer.toString(result.size()))
+                .header("X-Total-Elements", Long.toString(result.totalElements()))
+                .header("X-Total-Pages", Integer.toString(result.totalPages()))
+                .header("X-Has-Next", Boolean.toString(result.hasNext()))
+                .body(ApiEnvelope.data(result));
     }
 
     @GetMapping("/{id}")

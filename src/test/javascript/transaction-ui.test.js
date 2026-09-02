@@ -48,6 +48,17 @@ test('account select is required and defaults to the first active account', () =
   assert.deepEqual(select.options.map(option => option.textContent), ['工资卡', '现金']);
 });
 
+test('account select preserves loaded page-two id 51 instead of defaulting to the first account', () => {
+  const select = selectHarness();
+  const accounts = Array.from({ length: 54 }, (_, index) => ({ id: index + 1, name: `账户${index + 1}` }));
+
+  const result = configureAccountSelect(select, accounts, 51, '账户51');
+
+  assert.equal(result.canSubmit, true);
+  assert.equal(select.value, '51');
+  assert.equal(select.options.find(option => option.selected).textContent, '账户51');
+});
+
 test('zero active accounts disable creation with an accessible explanation', () => {
   const select = selectHarness();
 
@@ -77,6 +88,30 @@ test('archived account remains visible during edit while payload preserves it un
     ['accountId', '7'], ['memberId', '1'], ['categoryId', '2'], ['amount', '8.80']
   ]), { activeAccounts: active, existingAccountId: 5 });
   assert.equal(replaced.accountId, 7);
+});
+
+test('paged-out category is omitted on edit to preserve it and page-two category 51 is submitted when loaded', () => {
+  const accounts = [{ id: 5, name: '现金' }];
+  const categories = Array.from({ length: 54 }, (_, index) => ({ id: index + 1 }));
+  const base = [
+    ['accountId', '5'], ['memberId', '1'], ['kind', 'expense'], ['amount', '8.80']
+  ];
+
+  const preserved = transactionPayload(new Map([...base, ['categoryId', '99']]), {
+    activeAccounts: accounts,
+    availableCategories: categories,
+    existingAccountId: 5,
+    existingCategoryId: 99
+  });
+  assert.equal(preserved.categoryId, undefined);
+
+  const selectedPageTwo = transactionPayload(new Map([...base, ['categoryId', '51']]), {
+    activeAccounts: accounts,
+    availableCategories: categories,
+    existingAccountId: 5,
+    existingCategoryId: 99
+  });
+  assert.equal(selectedPageTwo.categoryId, 51);
 });
 
 test('transaction page metadata is read from response headers with safe defaults', () => {

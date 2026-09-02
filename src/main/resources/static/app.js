@@ -8,7 +8,12 @@ import {
   readTransactionPage,
   transactionPayload
 } from './transaction-ui.js';
-import { availableCategoryParents, categoryPayload } from './category-ui.js';
+import {
+  availableCategoryParents,
+  categoryPayload,
+  configureCategorySelect
+} from './category-ui.js';
+import { loadAllBoundedPages } from './bounded-pages.js';
 
 (function () {
   const app = document.getElementById('app');
@@ -94,12 +99,23 @@ import { availableCategoryParents, categoryPayload } from './category-ui.js';
     };
     return refreshGate.run(
       () => Promise.all([
-        api('/api/members'), api('/api/categories?projection=flat&page=0&size=50'), api('/api/accounts?page=0&size=50'),
+        api('/api/members'),
+        loadAllBoundedPages({
+          resourceName: '分类',
+          fetchPage: (page, size) => apiWithMetadata(
+            `/api/categories?projection=flat&page=${page}&size=${size}`),
+          itemsFrom: data => data
+        }),
+        loadAllBoundedPages({
+          resourceName: '账户',
+          fetchPage: (page, size) => apiWithMetadata(`/api/accounts?page=${page}&size=${size}`),
+          itemsFrom: data => data?.items
+        }),
         apiWithMetadata(`/api/transactions?${query(filter)}`),
         api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
       ]),
-      ([members, categories, accountPage, transactionResult, dashboard, analysis]) => {
-        const accounts = normalizeActiveAccounts(accountPage);
+      ([members, categories, accountItems, transactionResult, dashboard, analysis]) => {
+        const accounts = normalizeActiveAccounts({ items: accountItems });
         const transactions = transactionResult.data;
         Object.assign(state.data, { members, categories, accounts, transactions, dashboard, analysis });
         state.transactionPage = readTransactionPage(transactionResult.headers);
@@ -220,25 +236,37 @@ import { availableCategoryParents, categoryPayload } from './category-ui.js';
   function transactionDialog(row) {
     const isEdit = Boolean(row);
     const values = row || { kind: 'expense', amount: '', occurredOn: `${state.month}-01`, accountId: state.data.accounts[0]?.id, memberId: state.data.members[0]?.id, categoryId: '', merchant: '', location: '', note: '' };
-    const categoryOptions = state.data.categories.map(c => `<option value="${c.id}" data-kind="${c.kind}"${selected(values.categoryId,c.id)}>${esc(c.name)}（${c.kind === 'income' ? '收入' : '支出'}）</option>`).join('');
     const focusSelector = isEdit ? `[data-focus-key="transaction-${row.id}-edit"]` : '#new-transaction';
     const dialog = appendDialog(
       isEdit ? '编辑收支' : '记一笔收支',
-      `<div class="modal-grid"><div class="field"><label for="tx-kind">类型</label><select id="tx-kind" name="kind"><option value="expense"${selected(values.kind,'expense')}>支出</option><option value="income"${selected(values.kind,'income')}>收入</option></select></div><div class="field"><label for="tx-amount">金额</label><input id="tx-amount" name="amount" inputmode="decimal" required value="${esc(values.amount)}" placeholder="例如 88.60"></div><div class="field"><label for="tx-date">日期</label><input id="tx-date" name="occurredOn" type="date" required value="${esc(values.occurredOn)}"></div><div class="field"><label for="tx-account">账户</label><select id="tx-account" name="accountId" required></select></div><div class="field"><label for="tx-member">成员</label><select id="tx-member" name="memberId" required>${state.data.members.map(m => `<option value="${m.id}"${selected(values.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="tx-category">分类</label><select id="tx-category" name="categoryId" required>${categoryOptions}</select></div><div class="field"><label for="tx-merchant">商家</label><input id="tx-merchant" name="merchant" value="${esc(values.merchant)}"></div><div class="field wide"><label for="tx-location">地点</label><input id="tx-location" name="location" value="${esc(values.location)}"></div><div class="field wide"><label for="tx-note">备注</label><textarea id="tx-note" name="note">${esc(values.note)}</textarea></div></div>`,
+      `<div class="modal-grid"><div class="field"><label for="tx-kind">类型</label><select id="tx-kind" name="kind"><option value="expense"${selected(values.kind,'expense')}>支出</option><option value="income"${selected(values.kind,'income')}>收入</option></select></div><div class="field"><label for="tx-amount">金额</label><input id="tx-amount" name="amount" inputmode="decimal" required value="${esc(values.amount)}" placeholder="例如 88.60"></div><div class="field"><label for="tx-date">日期</label><input id="tx-date" name="occurredOn" type="date" required value="${esc(values.occurredOn)}"></div><div class="field"><label for="tx-account">账户</label><select id="tx-account" name="accountId" required></select></div><div class="field"><label for="tx-member">成员</label><select id="tx-member" name="memberId" required>${state.data.members.map(m => `<option value="${m.id}"${selected(values.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="tx-category">分类</label><select id="tx-category" name="categoryId" required></select></div><div class="field"><label for="tx-merchant">商家</label><input id="tx-merchant" name="merchant" value="${esc(values.merchant)}"></div><div class="field wide"><label for="tx-location">地点</label><input id="tx-location" name="location" value="${esc(values.location)}"></div><div class="field wide"><label for="tx-note">备注</label><textarea id="tx-note" name="note">${esc(values.note)}</textarea></div></div>`,
       isEdit ? '保存修改' : '保存收支',
       form => write(
         isEdit ? `/api/transactions/${row.id}` : '/api/transactions',
         isEdit ? 'PATCH' : 'POST',
-        transactionPayload(form, { activeAccounts: state.data.accounts, existingAccountId: row?.accountId }),
+        transactionPayload(form, {
+          activeAccounts: state.data.accounts,
+          availableCategories: state.data.categories,
+          existingAccountId: row?.accountId,
+          existingCategoryId: row?.categoryId
+        }),
         '收支已保存'
       ),
       focusSelector
     );
     const accountState = configureAccountSelect(
       dialog.querySelector('#tx-account'), state.data.accounts, values.accountId, values.accountName);
-    if (!accountState.canSubmit) {
+    const categoryState = configureCategorySelect(
+      dialog.querySelector('#tx-category'),
+      state.data.categories,
+      values.categoryId,
+      values.categoryName,
+      values.kind
+    );
+    if (!accountState.canSubmit || !categoryState.canSubmit) {
       dialog.querySelector('[type="submit"]').disabled = true;
-      dialog.querySelector('.status').textContent = accountState.message;
+      dialog.querySelector('.status').textContent = [accountState.message, categoryState.message]
+        .filter(Boolean).join('；');
     }
     const kind = dialog.querySelector('#tx-kind');
     const category = dialog.querySelector('#tx-category');
@@ -250,7 +278,7 @@ import { availableCategoryParents, categoryPayload } from './category-ui.js';
       }
     };
     kind.onchange = matchCategories;
-    matchCategories();
+    if (categoryState.canSubmit) matchCategories();
   }
   function memberDialog(member) { const value = member || { name: '', roleLabel: '' }; appendDialog(member ? '编辑成员' : '新增成员', `<div class="form-grid"><div class="field"><label for="member-name">姓名</label><input id="member-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="member-role">身份说明</label><input id="member-role" name="roleLabel" value="${esc(value.roleLabel)}" placeholder="例如 爸爸"></div></div>`, member ? '保存修改' : '新增成员', form => write(member ? `/api/members/${member.id}` : '/api/members', member ? 'PATCH' : 'POST', Object.fromEntries(form), '成员已保存'), member ? `[data-member-edit="${member.id}"]` : '#new-member'); }
   function categoryDialog(category) {

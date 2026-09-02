@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.familyfinance.category.CategoryRepository;
@@ -178,6 +179,11 @@ class AccountApiTest {
                 .andExpect(jsonPath("$.data.size").value(50))
                 .andExpect(jsonPath("$.data.items.length()").value(50))
                 .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(header().string("X-Page", "0"))
+                .andExpect(header().string("X-Page-Size", "50"))
+                .andExpect(header().string("X-Total-Elements", "53"))
+                .andExpect(header().string("X-Total-Pages", "2"))
+                .andExpect(header().string("X-Has-Next", "true"))
                 .andReturn()).path("data").path("items");
 
         List<Long> ids = new ArrayList<>();
