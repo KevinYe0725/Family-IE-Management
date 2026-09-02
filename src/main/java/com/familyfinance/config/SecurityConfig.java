@@ -15,6 +15,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
@@ -53,6 +54,10 @@ public class SecurityConfig {
                                                         ? "demo"
                                                         : principal.email())));
                             } catch (AccessDeniedException exception) {
+                                SecurityContextHolder.clearContext();
+                                if (request.getSession(false) != null) {
+                                    request.getSession(false).invalidate();
+                                }
                                 writeJson(response, HttpServletResponse.SC_FORBIDDEN, objectMapper,
                                         ApiEnvelope.error(ApiError.of("FORBIDDEN", "没有权限执行此操作")));
                             }

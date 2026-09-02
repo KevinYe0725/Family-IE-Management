@@ -1,8 +1,11 @@
 package com.familyfinance.auth;
 
+import com.familyfinance.family.CurrentMembership;
 import com.familyfinance.household.AppUser;
 import com.familyfinance.household.AppUserRepository;
 import java.util.Locale;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -13,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class DatabaseUserDetailsService implements UserDetailsService {
 
     private final AppUserRepository users;
+    private final CurrentMembership currentMembership;
 
-    public DatabaseUserDetailsService(AppUserRepository users) {
+    public DatabaseUserDetailsService(AppUserRepository users, CurrentMembership currentMembership) {
         this.users = users;
+        this.currentMembership = currentMembership;
     }
 
     @Override
@@ -23,11 +28,22 @@ public class DatabaseUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String login) {
         AppUser user = users.findByEmail(normalizeLogin(login))
                 .orElseThrow(() -> new UsernameNotFoundException("Invalid username or password"));
-        return new FamilyUserPrincipal(
+        FamilyUserPrincipal principal = new FamilyUserPrincipal(
                 user.getId(),
                 user.getEmail(),
                 user.getDisplayName(),
                 user.getPasswordHash());
+        requireActiveMembership(principal);
+        return principal;
+    }
+
+    private void requireActiveMembership(FamilyUserPrincipal principal) {
+        try {
+            currentMembership.require(new UsernamePasswordAuthenticationToken(
+                    principal, null, principal.getAuthorities()));
+        } catch (AccessDeniedException exception) {
+            throw new UsernameNotFoundException("Invalid username or password");
+        }
     }
 
     private static String normalizeLogin(String login) {
