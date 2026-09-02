@@ -114,6 +114,25 @@ public class FinancialTransaction {
         this.updatedAt = updatedAt;
     }
 
+    public static FinancialTransaction recurring(
+            Household household,
+            FinancialAccount account,
+            AppUser createdByUser,
+            FamilyMember member,
+            Category category,
+            TransactionKind kind,
+            Long amountCents,
+            LocalDate occurredOn,
+            Long occurrenceId,
+            Instant createdAt) {
+        FinancialTransaction transaction = new FinancialTransaction(
+                household, account, createdByUser, member, category, kind, amountCents, occurredOn,
+                null, null, "周期账单", createdAt, createdAt);
+        transaction.sourceType = TransactionSourceType.RECURRING;
+        transaction.sourceId = Objects.requireNonNull(occurrenceId, "occurrenceId must not be null");
+        return transaction;
+    }
+
     public Long getId() {
         return id;
     }

@@ -13,6 +13,11 @@ import org.springframework.data.repository.query.Param;
 public interface FinancialTransactionRepository
         extends JpaRepository<FinancialTransaction, Long>, JpaSpecificationExecutor<FinancialTransaction> {
 
+    long countBySourceTypeAndSourceId(TransactionSourceType sourceType, Long sourceId);
+
+    java.util.Optional<FinancialTransaction> findBySourceTypeAndSourceId(
+            TransactionSourceType sourceType, Long sourceId);
+
     boolean existsByHouseholdIdAndMemberId(Long householdId, Long memberId);
 
     boolean existsByHouseholdIdAndCategoryId(Long householdId, Long categoryId);

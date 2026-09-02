@@ -23,7 +23,7 @@ class BudgetRevisionMigrationTest {
                 + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
                 + "(1," + budgetId + ",9000,10000,1,current_timestamp)");
 
-        MigrationResult v5 = MigrationTestSupport.migrateExistingDatabase(database);
+        MigrationResult v5 = MigrationTestSupport.migrateExistingDatabaseTo(database, "5");
 
         assertThat(v5.version()).isEqualTo("5");
         assertThat(v5.queryString("select old_period_month from budget_revisions where budget_id=" + budgetId))

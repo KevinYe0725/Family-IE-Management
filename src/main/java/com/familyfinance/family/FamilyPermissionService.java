@@ -18,7 +18,10 @@ public class FamilyPermissionService {
         if (!canMutateTransaction(context, createdByUserId)) forbidden();
     }
     public boolean canConfirmAssignedOccurrence(MembershipContext context, Long assigneeUserId) {
-        return assigneeUserId == null || context.userId().equals(assigneeUserId);
+        return assigneeUserId != null && context.userId().equals(assigneeUserId);
+    }
+    public void requireCanConfirmAssignedOccurrence(MembershipContext context, Long assigneeUserId) {
+        if (!canConfirmAssignedOccurrence(context, assigneeUserId)) forbidden();
     }
     private static void forbidden() { throw new AccessDeniedException("没有权限执行此操作"); }
 }
