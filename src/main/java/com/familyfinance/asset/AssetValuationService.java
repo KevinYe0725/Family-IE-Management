@@ -5,6 +5,7 @@ import com.familyfinance.family.FamilyMutationAuthorization;
 import com.familyfinance.shared.ResourceConflictException;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +21,7 @@ public class AssetValuationService {
 
     private static final Sort HISTORY_SORT = Sort.by(
             Sort.Order.desc("valuedOn"), Sort.Order.desc("fetchedAt"), Sort.Order.desc("id"));
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private final AssetRepository assets;
     private final AssetValuationRepository valuations;
@@ -70,7 +72,7 @@ public class AssetValuationService {
         }
         Map<String, String> fields = new LinkedHashMap<>();
         LocalDate valuedOn = request == null ? null : request.valuedOn();
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = LocalDate.now(clock.withZone(SHANGHAI));
         if (valuedOn == null) fields.put("valuedOn", "估值日期不能为空");
         else if (valuedOn.isAfter(today)) fields.put("valuedOn", "估值日期不能晚于今天");
         Long value = AssetService.parseRequiredMoney(request == null ? null : request.value(), "value", fields);

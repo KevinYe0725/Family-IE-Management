@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -37,6 +38,7 @@ public class AssetService {
     private static final BigInteger MAX_CENTS_INTEGER = BigInteger.valueOf(MAX_CENTS);
     private static final BigDecimal MAX_AREA = new BigDecimal("9999999999.99");
     private static final Sort ASSET_SORT = Sort.by(Sort.Direction.DESC, "id");
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private final AssetRepository assets;
     private final AssetValuationRepository valuations;
@@ -97,7 +99,8 @@ public class AssetService {
         if (type == null) fields.put("type", "资产类型不能为空");
         FamilyMember owner = resolveOwner(householdId, request == null ? null : request.ownerMemberId(), fields);
         LocalDate acquiredOn = request == null ? null : request.acquiredOn();
-        if (acquiredOn != null && acquiredOn.isAfter(LocalDate.now(clock))) {
+        LocalDate today = LocalDate.now(clock.withZone(SHANGHAI));
+        if (acquiredOn != null && acquiredOn.isAfter(today)) {
             fields.put("acquiredOn", "取得日期不能晚于今天");
         }
         Long purchaseValue = parseOptionalMoney(
@@ -126,11 +129,9 @@ public class AssetService {
         }
         try {
             asset = assets.saveAndFlush(asset);
-            if (purchaseValue != null) {
-                valuations.saveAndFlush(new AssetValuation(
-                        access.household(), asset, acquiredOn, purchaseValue, AssetValuationSource.PURCHASE,
-                        null, access.membership().getUser(), clock.instant()));
-            }
+            valuations.saveAndFlush(new AssetValuation(
+                    access.household(), asset, today, currentValue, AssetValuationSource.MANUAL,
+                    null, access.membership().getUser(), clock.instant()));
             return AssetResponse.from(asset);
         } catch (DataIntegrityViolationException exception) {
             throw new ResourceConflictException("RESOURCE_CONFLICT", "资产无法保存，请刷新后重试");

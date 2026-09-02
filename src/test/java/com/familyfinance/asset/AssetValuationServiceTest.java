@@ -56,9 +56,122 @@ class AssetValuationServiceTest {
     @MockitoSpyBean AssetValuationRepository valuations;
 
     @Test
+    void creationAlwaysPersistsCurrentValueAsTodaysManualBaselineWithOrWithoutPurchaseFacts() throws Exception {
+        MockHttpSession owner = login();
+        long purchased = createOther(owner, "多年以前购入", "500.00", "550.00", "2024-01-01");
+        long gifted = createOther(owner, "无购买价值", null, "88.00", null);
+
+        JsonNode history = body(mvc.perform(get("/api/assets/{id}/valuations", purchased).session(owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].valuedOn").value("2026-09-03"))
+                .andExpect(jsonPath("$.data.items[0].value").value("550.00"))
+                .andExpect(jsonPath("$.data.items[0].source").value("MANUAL"))
+                .andExpect(jsonPath("$.data.items[0].fetchedAt").value("2026-09-03T02:00:00Z"))
+                .andReturn()).path("data").path("items").get(0);
+        assertThat(history.path("createdBy").asLong()).isEqualTo(jdbc.queryForObject(
+                "select created_by from assets where id=?", Long.class, purchased));
+        assertThat(jdbc.queryForObject("""
+                select count(*) from asset_valuations
+                where asset_id=? and valued_on=date '2026-09-03'
+                  and value_cents=8800 and source='MANUAL' and created_by=1
+                """, Long.class, gifted)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from asset_valuations where asset_id=? and source='PURCHASE'",
+                Long.class, purchased)).isZero();
+    }
+
+    @Test
+    void creationCurrentBaselinePreventsAChronologicallyLaterButBackdatedFactFromRegressingCurrentValue()
+            throws Exception {
+        MockHttpSession owner = login();
+        long assetId = createOther(owner, "历史回填资产", "500.00", "550.00", "2024-01-01");
+
+        createValuation(owner, assetId, "2025-01-01", "400.00", "补录旧估值");
+
+        assertCurrent(assetId, 55_000L);
+    }
+
+    @Test
+    void creationRollsBackBaseAndSubtypeWhenCurrentBaselineCannotBePersisted() throws Exception {
+        MockHttpSession owner = login();
+        long assetsBefore = jdbc.queryForObject("select count(*) from assets", Long.class);
+        long vehiclesBefore = jdbc.queryForObject("select count(*) from vehicle_assets", Long.class);
+        long valuationsBefore = jdbc.queryForObject("select count(*) from asset_valuations", Long.class);
+        Mockito.doThrow(new DataIntegrityViolationException("forced creation baseline conflict"))
+                .when(valuations).saveAndFlush(Mockito.any(AssetValuation.class));
+
+        mvc.perform(post("/api/assets").session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"应整体回滚车辆","type":"VEHICLE","ownerMemberId":null,
+                                 "acquiredOn":null,"purchaseValue":null,"currentValue":"180000.00",
+                                 "vehicle":{"brandModel":"回滚车型","plateHint":null,"purchaseYear":2025}}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"));
+
+        assertThat(jdbc.queryForObject("select count(*) from assets", Long.class)).isEqualTo(assetsBefore);
+        assertThat(jdbc.queryForObject("select count(*) from vehicle_assets", Long.class)).isEqualTo(vehiclesBefore);
+        assertThat(jdbc.queryForObject("select count(*) from asset_valuations", Long.class))
+                .isEqualTo(valuationsBefore);
+    }
+
+    @Test
+    void acquiredOnChangesFromFutureToTodayExactlyAtShanghaiMidnight() throws Exception {
+        MockHttpSession owner = login();
+        clock.setInstant(Instant.parse("2026-09-02T15:59:59Z"));
+        String body = """
+                {"name":"上海零点资产","type":"OTHER","ownerMemberId":null,
+                 "acquiredOn":"2026-09-03","purchaseValue":null,"currentValue":"1.00"}
+                """;
+        mvc.perform(post("/api/assets").session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.fields.acquiredOn").exists());
+
+        clock.setInstant(Instant.parse("2026-09-02T16:00:00Z"));
+        mvc.perform(post("/api/assets").session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.acquiredOn").value("2026-09-03"));
+    }
+
+    @Test
+    void localTodayValuationReplacesInPlaceExactlyAtShanghaiMidnight() throws Exception {
+        MockHttpSession owner = login();
+        clock.setInstant(Instant.parse("2026-09-02T15:59:59Z"));
+        long assetId = createOther(owner, "上海零点估值", null, "88.00", null);
+        jdbc.update("""
+                insert into asset_valuations
+                    (household_id,asset_id,valued_on,value_cents,source,note,created_by,fetched_at)
+                values (1,?,date '2026-09-03',8800,'MANUAL','零点前预置',1,
+                        timestamp with time zone '2026-09-02 15:59:59+00')
+                """, assetId);
+        long valuationId = jdbc.queryForObject("""
+                select id from asset_valuations
+                where asset_id=? and valued_on=date '2026-09-03' and source='MANUAL'
+                """, Long.class, assetId);
+
+        clock.setInstant(Instant.parse("2026-09-02T16:00:00Z"));
+        long replacedId = createValuation(owner, assetId, "2026-09-03", "99.00", "零点后修订");
+
+        assertThat(replacedId).isEqualTo(valuationId);
+        assertThat(jdbc.queryForObject("select created_by from asset_valuations where id=?", Long.class, valuationId))
+                .isEqualTo(1L);
+        assertCurrent(assetId, 9_900L);
+    }
+
+    @Test
     void manualCurrentDayValuationReplacesInPlaceWhileOlderDatesStayImmutable() throws Exception {
         MockHttpSession owner = login();
         long assetId = createOther(owner, "估值历史资产", "100.00", "100.00", "2026-08-01");
+        long creationBaselineId = jdbc.queryForObject("""
+                select id from asset_valuations
+                where asset_id=? and valued_on=date '2026-09-03' and source='MANUAL'
+                """, Long.class, assetId);
+        long creationBaselineCreator = jdbc.queryForObject(
+                "select created_by from asset_valuations where id=?", Long.class, creationBaselineId);
         long firstManualId = createValuation(owner, assetId, "2026-09-03", "200.00", "上午估值");
         long creatorId = jdbc.queryForObject(
                 "select created_by from asset_valuations where id=?", Long.class, firstManualId);
@@ -68,7 +181,9 @@ class AssetValuationServiceTest {
 
         long replacementId = createValuation(owner, assetId, "2026-09-03", "210.00", "下午估值");
 
+        assertThat(firstManualId).isEqualTo(creationBaselineId);
         assertThat(replacementId).isEqualTo(firstManualId);
+        assertThat(creatorId).isEqualTo(creationBaselineCreator);
         assertThat(jdbc.queryForObject("select created_by from asset_valuations where id=?", Long.class, firstManualId))
                 .isEqualTo(creatorId);
         assertThat(jdbc.queryForObject("select fetched_at from asset_valuations where id=?", Instant.class, firstManualId))
@@ -108,8 +223,7 @@ class AssetValuationServiceTest {
         assertThat(items.get(0).path("id").asLong()).isEqualTo(todayId);
         assertThat(items.get(0).path("source").asText()).isEqualTo("MANUAL");
         assertThat(items.get(0).path("fetchedAt").asText()).isNotBlank();
-        assertThat(items.get(1).path("source").asText()).isEqualTo("PURCHASE");
-        assertThat(items.get(2).path("id").asLong()).isEqualTo(backdatedId);
+        assertThat(items.get(1).path("id").asLong()).isEqualTo(backdatedId);
     }
 
     @Test
@@ -193,7 +307,7 @@ class AssetValuationServiceTest {
                 .andExpect(jsonPath("$.error.code").value("VALUATION_CONFLICT"));
 
         assertThat(jdbc.queryForObject("select count(*) from asset_valuations where asset_id=?", Long.class, assetId))
-                .isZero();
+                .isEqualTo(1L);
         assertCurrent(assetId, 8_800L);
     }
 
@@ -297,10 +411,16 @@ class AssetValuationServiceTest {
 
     static final class MutableClock extends Clock {
         private final AtomicReference<Instant> instant;
-        MutableClock(Instant initial) { this.instant = new AtomicReference<>(initial); }
+        private final ZoneId zone;
+        MutableClock(Instant initial) { this(new AtomicReference<>(initial), ZoneOffset.UTC); }
+        private MutableClock(AtomicReference<Instant> instant, ZoneId zone) {
+            this.instant = instant;
+            this.zone = zone;
+        }
+        void setInstant(Instant next) { instant.set(next); }
         void advanceSeconds(long seconds) { instant.updateAndGet(current -> current.plusSeconds(seconds)); }
-        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
-        @Override public Clock withZone(ZoneId zone) { return this; }
+        @Override public ZoneId getZone() { return zone; }
+        @Override public Clock withZone(ZoneId nextZone) { return new MutableClock(instant, nextZone); }
         @Override public Instant instant() { return instant.get(); }
     }
 }

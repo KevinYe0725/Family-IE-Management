@@ -10,6 +10,7 @@ import com.familyfinance.shared.ApiEnvelope;
 import com.familyfinance.shared.ApiError;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Clock;
+import java.time.ZoneId;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -103,7 +104,7 @@ public class SecurityConfig {
 
     @Bean
     Clock clock() {
-        return Clock.systemUTC();
+        return Clock.system(ZoneId.of("Asia/Shanghai"));
     }
 
     private static void writeJson(
