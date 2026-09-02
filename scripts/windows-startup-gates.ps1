@@ -230,6 +230,35 @@ function Test-ExitedProcessLogRetrieval {
     Assert-NoScenarioProcesses $Scenario
 }
 
+function Test-FlywayHistoryOutputParser {
+    $Scenario = New-Scenario 'flyway-parser-regression'
+    . (Join-Path $Scenario 'scripts\startup-output-parsing.ps1')
+    $RepresentativeAbsentOutput = @(
+        "CASE WHEN EXISTS (...) THEN 'FLYWAY_HISTORY_PRESENT' ELSE 'FLYWAY_HISTORY_ABSENT' END",
+        'FLYWAY_HISTORY_ABSENT',
+        '(1 row, 3 ms)'
+    )
+    $Parsed = ConvertFrom-FlywayHistoryShellOutput -Output $RepresentativeAbsentOutput
+    Assert-True (-not $Parsed) 'The H2 Shell header produced a false Flyway-history positive.'
+
+    $InvalidOutputs = @(
+        [pscustomobject]@{ Lines = @() },
+        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT', 'FLYWAY_HISTORY_PRESENT') },
+        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT', 'FLYWAY_HISTORY_ABSENT') },
+        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT FLYWAY_HISTORY_ABSENT') }
+    )
+    $RejectedInvalidOutputs = 0
+    foreach ($InvalidOutput in $InvalidOutputs) {
+        try {
+            ConvertFrom-FlywayHistoryShellOutput -Output @($InvalidOutput.Lines) | Out-Null
+        }
+        catch {
+            $RejectedInvalidOutputs++
+        }
+    }
+    Assert-Equal 4 $RejectedInvalidOutputs 'The Flyway-history parser accepted a zero, duplicate, multiple, or ambiguous status.'
+}
+
 function Get-DirectorySnapshot([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         return 'ABSENT'
@@ -396,9 +425,10 @@ function Test-BackupRestartCollisionAndRestore {
     $Process = Start-Launcher $Scenario $Port 'first-migration'
     try {
         Wait-ForReady $Port $Process 180
-        $Completed = Get-CompletedBackups $BackupRoot
+        $Completed = @(Get-CompletedBackups $BackupRoot)
+        $PartialsAfterBackup = @(Get-PartialBackups $BackupRoot)
         Assert-Equal 1 $Completed.Count 'Legacy startup did not create exactly one completed backup.'
-        Assert-Equal 0 (Get-PartialBackups $BackupRoot).Count 'Successful backup left a partial directory.'
+        Assert-Equal 0 $PartialsAfterBackup.Count 'Successful backup left a partial directory.'
         Assert-True ($Completed[0].Name -match '^\d{8}-\d{6}-\d+$') 'Backup did not choose a collision-safe suffixed destination.'
         $Manifest = Get-Content -LiteralPath (Join-Path $Completed[0].FullName 'RESTORE.txt') -Raw
         foreach ($Name in $BeforeHashes.Keys) {
@@ -420,7 +450,8 @@ function Test-BackupRestartCollisionAndRestore {
     Assert-PortReleased $Port
     Assert-NoScenarioProcesses $Scenario
 
-    $CompletedCount = (Get-CompletedBackups $BackupRoot).Count
+    $CompletedAfterMigration = @(Get-CompletedBackups $BackupRoot)
+    $CompletedCount = $CompletedAfterMigration.Count
     $RestartPort = Get-FreePort
     $Restart = Start-Launcher $Scenario $RestartPort 'already-migrated-restart'
     try {
@@ -430,8 +461,10 @@ function Test-BackupRestartCollisionAndRestore {
         Stop-ProcessTree $Restart
     }
     Assert-True ((Get-ProcessLog $Restart) -match 'already has Flyway history; no migration backup is required') 'Already-migrated restart did not take the explicit backup-skip branch.'
-    Assert-Equal $CompletedCount (Get-CompletedBackups $BackupRoot).Count 'Already-migrated restart created another legacy backup.'
-    Assert-Equal 0 (Get-PartialBackups $BackupRoot).Count 'Already-migrated restart left a partial backup.'
+    $CompletedAfterRestart = @(Get-CompletedBackups $BackupRoot)
+    $PartialsAfterRestart = @(Get-PartialBackups $BackupRoot)
+    Assert-Equal $CompletedCount $CompletedAfterRestart.Count 'Already-migrated restart created another legacy backup.'
+    Assert-Equal 0 $PartialsAfterRestart.Count 'Already-migrated restart left a partial backup.'
     Assert-PortReleased $RestartPort
     Assert-NoScenarioProcesses $Scenario
 
@@ -488,8 +521,10 @@ function Test-InterruptedCompanionCopy {
         }
     }
     $BackupRoot = Join-Path $Scenario 'data-backups'
-    Assert-Equal 0 (Get-CompletedBackups $BackupRoot).Count 'Interrupted backup published a completed destination.'
-    Assert-Equal 1 (Get-PartialBackups $BackupRoot).Count 'Interrupted backup did not retain exactly one partial destination.'
+    $CompletedAfterInterruption = @(Get-CompletedBackups $BackupRoot)
+    $PartialsAfterInterruption = @(Get-PartialBackups $BackupRoot)
+    Assert-Equal 0 $CompletedAfterInterruption.Count 'Interrupted backup published a completed destination.'
+    Assert-Equal 1 $PartialsAfterInterruption.Count 'Interrupted backup did not retain exactly one partial destination.'
     Assert-PortReleased $Port
     Assert-NoScenarioProcesses $Scenario
 }
@@ -519,6 +554,8 @@ try {
             (Get-Content -LiteralPath $TestClasspathFile -Raw).Trim()
         ))
 
+    Write-Host 'Parser regression: H2 Shell output requires one exact status line.'
+    Test-FlywayHistoryOutputParser
     Write-Host 'Gate 0/6: Exited-process logs use immutable launch metadata.'
     Test-ExitedProcessLogRetrieval
     Write-Host 'Gate 1/6: Smoke leaves absent production paths absent.'

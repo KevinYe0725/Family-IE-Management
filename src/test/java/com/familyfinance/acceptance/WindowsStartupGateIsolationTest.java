@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +53,62 @@ class WindowsStartupGateIsolationTest {
                         .filter(line -> line.contains("-MemberType NoteProperty")
                                 && line.contains("GateLogDirectory")))
                 .isEmpty();
+    }
+
+    @Test
+    void flywayHistoryParserIgnoresShellHeadersAndRequiresOneExactStatus() throws Exception {
+        Path parserPath = Path.of("scripts", "startup-output-parsing.ps1");
+        List<String> parserLines = Files.exists(parserPath) ? executableLines(parserPath) : List.of();
+        List<String> startupLines = executableLines(Path.of("scripts", "start-local.ps1"));
+        List<String> gateLines = executableLines(Path.of("scripts", "windows-startup-gates.ps1"));
+
+        List<String> representativeAbsentOutput = List.of(
+                "CASE WHEN EXISTS (...) THEN 'FLYWAY_HISTORY_PRESENT' ELSE 'FLYWAY_HISTORY_ABSENT' END",
+                "FLYWAY_HISTORY_ABSENT",
+                "(1 row, 3 ms)");
+        Set<String> allowed = Set.of("FLYWAY_HISTORY_PRESENT", "FLYWAY_HISTORY_ABSENT");
+        assertThat(representativeAbsentOutput.stream()
+                        .map(String::trim)
+                        .filter(allowed::contains))
+                .containsExactly("FLYWAY_HISTORY_ABSENT");
+
+        assertThat(parserLines).contains(
+                "$StatusLines = @($Output |",
+                "$_ -ceq 'FLYWAY_HISTORY_PRESENT' -or",
+                "$_ -ceq 'FLYWAY_HISTORY_ABSENT'",
+                "if ($StatusLines.Count -ne 1) {",
+                "return ($StatusLines[0] -ceq 'FLYWAY_HISTORY_PRESENT')");
+        assertThat(parserLines.stream()
+                        .filter(line -> line.contains("-match") && line.contains("FLYWAY_HISTORY_")))
+                .isEmpty();
+        assertThat(startupLines).contains(
+                ". (Join-Path $PSScriptRoot 'startup-output-parsing.ps1')",
+                "$Sql = \"select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end as HISTORY_STATUS\"",
+                "$HasHistory = ConvertFrom-FlywayHistoryShellOutput -Output @($Output)",
+                "return $HasHistory");
+        assertThat(gateLines).contains(
+                ". (Join-Path $Scenario 'scripts\\startup-output-parsing.ps1')",
+                "$Parsed = ConvertFrom-FlywayHistoryShellOutput -Output $RepresentativeAbsentOutput",
+                "Assert-True (-not $Parsed) 'The H2 Shell header produced a false Flyway-history positive.'",
+                "Assert-Equal 4 $RejectedInvalidOutputs 'The Flyway-history parser accepted a zero, duplicate, multiple, or ambiguous status.'");
+    }
+
+    @Test
+    void backupCollectionsAreArrayWrappedAtEveryCallSite() throws Exception {
+        List<String> backupCalls = executableLines(Path.of("scripts", "windows-startup-gates.ps1")).stream()
+                .filter(line -> line.contains("Get-CompletedBackups") || line.contains("Get-PartialBackups"))
+                .filter(line -> !line.startsWith("function Get-"))
+                .toList();
+
+        assertThat(backupCalls).isNotEmpty().allMatch(line -> line.matches(
+                "^\\$[A-Za-z][A-Za-z0-9]* = @\\(Get-(Completed|Partial)Backups \\$BackupRoot\\)$"));
+    }
+
+    private static List<String> executableLines(Path path) throws Exception {
+        return Files.readAllLines(path).stream()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .filter(line -> !line.startsWith("#"))
+                .toList();
     }
 }

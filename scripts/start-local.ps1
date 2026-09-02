@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'startup-output-parsing.ps1')
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $MavenWrapper = Join-Path $ProjectRoot 'mvnw.cmd'
 $AppUrl = "http://127.0.0.1:$Port"
@@ -93,20 +94,14 @@ function Test-FlywayHistoryPresent([string]$DatabaseBasePath) {
     $H2Jar = Get-ProjectH2Jar
     $JdbcPath = $DatabaseBasePath.Replace('\', '/')
     $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
-    $Sql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end"
+    $Sql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end as HISTORY_STATUS"
     $Command = "`"java`" -cp `"$H2Jar`" org.h2.tools.Shell -url `"$JdbcUrl`" -user sa -password `"`" -sql `"$Sql`" 2>&1"
     $Output = & $env:ComSpec /d /s /c $Command
     if ($LASTEXITCODE -ne 0) {
         throw 'Could not inspect the existing H2 database for Flyway history. The application was not started and the database was left unchanged.'
     }
-    $Text = [string]::Join("`n", @($Output))
-    if ($Text -match 'FLYWAY_HISTORY_PRESENT') {
-        return $true
-    }
-    if ($Text -match 'FLYWAY_HISTORY_ABSENT') {
-        return $false
-    }
-    throw 'Could not determine whether the existing H2 database has Flyway history. The application was not started and the database was left unchanged.'
+    $HasHistory = ConvertFrom-FlywayHistoryShellOutput -Output @($Output)
+    return $HasHistory
 }
 
 function New-LegacyDatabaseBackup([System.IO.FileInfo[]]$DatabaseFiles, [string]$BackupRoot) {

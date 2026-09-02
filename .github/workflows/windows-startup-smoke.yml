@@ -9,6 +9,7 @@ on:
     paths:
       - start-local.cmd
       - scripts/start-local.ps1
+      - scripts/startup-output-parsing.ps1
       - scripts/windows-cmd-quote-regression.ps1
       - scripts/windows-startup-gates.ps1
       - .github/workflows/windows-startup-smoke.yml
@@ -20,6 +21,7 @@ on:
     paths:
       - start-local.cmd
       - scripts/start-local.ps1
+      - scripts/startup-output-parsing.ps1
       - scripts/windows-cmd-quote-regression.ps1
       - scripts/windows-startup-gates.ps1
       - .github/workflows/windows-startup-smoke.yml
