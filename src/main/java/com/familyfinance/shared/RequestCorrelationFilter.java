@@ -33,7 +33,12 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/");
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        String applicationPath = requestUri.startsWith(contextPath)
+                ? requestUri.substring(contextPath.length())
+                : requestUri;
+        return !applicationPath.startsWith("/api/");
     }
 
     static String requestId(HttpServletRequest request) {

@@ -20,6 +20,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ServletRequestPathUtils;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
@@ -27,6 +30,7 @@ import tools.jackson.databind.ObjectMapper;
 public class RegistrationRequestBodyLimitFilter extends OncePerRequestFilter {
 
     static final int MAX_BODY_BYTES = 4_096;
+    private static final PathPattern REGISTRATION_PATH = new PathPatternParser().parse("/api/auth/register");
 
     private final ObjectMapper objectMapper;
 
@@ -48,7 +52,8 @@ public class RegistrationRequestBodyLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !"/api/auth/register".equals(request.getRequestURI());
+        return !"POST".equals(request.getMethod())
+                || !REGISTRATION_PATH.matches(ServletRequestPathUtils.parse(request).pathWithinApplication());
     }
 
     private void writeValidationError(HttpServletResponse response) throws IOException {

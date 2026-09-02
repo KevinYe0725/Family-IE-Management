@@ -22,8 +22,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @ActiveProfiles("test")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "app.seed.enabled=false")
-class RegistrationRequestBodyLimitIntegrationTest {
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"app.seed.enabled=false", "server.servlet.context-path=/family"})
+class RegistrationRequestBodyLimitContextPathIntegrationTest {
 
     @LocalServerPort
     int port;
@@ -41,56 +43,30 @@ class RegistrationRequestBodyLimitIntegrationTest {
                 .version(HttpClient.Version.HTTP_1_1)
                 .cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL))
                 .build();
-        JsonNode csrf = json(send(HttpRequest.newBuilder(uri("/api/csrf")).GET().build())).path("data");
+        JsonNode csrf = json(send(HttpRequest.newBuilder(uri("/family/api/csrf")).GET().build())).path("data");
         csrfHeader = csrf.path("headerName").asString();
         csrfToken = csrf.path("token").asString();
     }
 
     @Test
-    void chunkedOversizedRegistrationBodyIsRejectedBeforeMvcDeserialization() throws Exception {
-        HttpRequest request = chunkedOversizedRequest("/api/auth/register");
-        assertThat(request.bodyPublisher().orElseThrow().contentLength()).isEqualTo(-1);
-        assertRequestBodyValidation(send(request));
-    }
-
-    @Test
-    void encodedRegistrationRouteStillAppliesChunkedBodyLimitBeforeMvcDeserialization() throws Exception {
-        assertRequestBodyValidation(send(chunkedOversizedRequest("/api/auth/%72egister")));
-    }
-
-    private HttpRequest chunkedOversizedRequest(String path) {
+    void contextPathRegistrationRouteStillAppliesChunkedBodyLimit() throws Exception {
         byte[] body = """
                 {"email":"%s","displayName":"大请求","password":"family-pass-2026","mode":"CREATE","householdName":"大请求家庭"}
                 """.formatted("a".repeat(5_000)).getBytes(StandardCharsets.UTF_8);
-        return HttpRequest.newBuilder(uri(path))
+        HttpRequest request = HttpRequest.newBuilder(uri("/family/api/auth/register"))
                 .version(HttpClient.Version.HTTP_1_1)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header(csrfHeader, csrfToken)
                 .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream(body)))
                 .build();
-    }
 
-    private void assertRequestBodyValidation(HttpResponse<String> response) throws Exception {
+        assertThat(request.bodyPublisher().orElseThrow().contentLength()).isEqualTo(-1);
+        HttpResponse<String> response = send(request);
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(response.headers().firstValue("X-Request-ID")).isPresent();
         JsonNode error = json(response).path("error");
         assertThat(error.path("code").asText()).isEqualTo("VALIDATION_ERROR");
         assertThat(error.path("fields").path("request").asText()).isNotBlank();
-    }
-
-    @Test
-    void registrationBodyLimitFilterPreservesCsrfRejection() throws Exception {
-        HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/api/auth/register"))
-                .version(HttpClient.Version.HTTP_1_1)
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream("""
-                        {"email":"csrf-filter@example.com","displayName":"CSRF","password":"family-pass-2026","mode":"CREATE","householdName":"CSRF 家庭"}
-                        """.getBytes(StandardCharsets.UTF_8))))
-                .build());
-
-        assertThat(response.statusCode()).isEqualTo(403);
-        assertThat(response.headers().firstValue("X-Request-ID")).isPresent();
-        assertThat(json(response).path("error").path("code").asText()).isEqualTo("FORBIDDEN");
     }
 
     private HttpResponse<String> send(HttpRequest request) throws Exception {
