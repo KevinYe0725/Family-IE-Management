@@ -64,38 +64,35 @@ function Get-FamilyFinanceDatabaseFiles([string]$DataDirectory) {
         return @()
     }
     return @(Get-ChildItem -LiteralPath $DataDirectory -File |
-            Where-Object { $_.Name -like 'family-finance.*.db' -and $_.Length -gt 0 })
+            Where-Object { $_.Name -like 'family-finance.*.db' })
 }
 
-function Get-H2Jar {
-    $MavenHome = if ([string]::IsNullOrWhiteSpace($env:MAVEN_USER_HOME)) {
-        Join-Path $env:USERPROFILE '.m2'
+function Get-ProjectH2Jar {
+    $ClasspathFile = Join-Path $ProjectRoot 'target\startup-runtime-classpath.txt'
+    New-Item -ItemType Directory -Force -Path (Split-Path $ClasspathFile -Parent) | Out-Null
+    Write-Step 'Resolving the project runtime H2 version for the migration safety check...'
+    & $MavenWrapper -q dependency:build-classpath '-Dmdep.includeScope=runtime' "-Dmdep.outputFile=$ClasspathFile"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ClasspathFile -PathType Leaf)) {
+        throw 'Could not resolve the project runtime H2 dependency. The application was not started and the database was left unchanged.'
     }
-    else {
-        $env:MAVEN_USER_HOME
+    $ExpectedH2Jar = 'h2-2.3.232.jar'
+    $H2Jars = @(Get-Content -LiteralPath $ClasspathFile -Raw -ErrorAction Stop |
+            ForEach-Object { $_.Split([System.IO.Path]::PathSeparator) } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object {
+                (Split-Path $_ -Leaf) -eq $ExpectedH2Jar -and
+                    $_ -match '[\\/]com[\\/]h2database[\\/]h2[\\/]2\.3\.232[\\/]h2-2\.3\.232\.jar$'
+            })
+    if ($H2Jars.Count -ne 1) {
+        throw "Could not resolve exactly one project runtime $ExpectedH2Jar. The application was not started and the database was left unchanged."
     }
-    $H2Repository = Join-Path $MavenHome 'repository\com\h2database\h2'
-    $H2Jar = Get-ChildItem -LiteralPath $H2Repository -Filter 'h2-*.jar' -File -Recurse -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending | Select-Object -First 1
-    if ($null -eq $H2Jar) {
-        Write-Step 'Preparing the local H2 inspection tool for the migration safety check...'
-        & $MavenWrapper -q dependency:go-offline
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Could not prepare the H2 inspection tool. The application was not started and the database was left unchanged.'
-        }
-        $H2Jar = Get-ChildItem -LiteralPath $H2Repository -Filter 'h2-*.jar' -File -Recurse -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
-    }
-    if ($null -eq $H2Jar) {
-        throw 'Could not locate the H2 inspection tool. The application was not started and the database was left unchanged.'
-    }
-    return $H2Jar.FullName
+    return $H2Jars[0]
 }
 
 function Test-FlywayHistoryPresent([string]$DatabaseBasePath) {
-    $H2Jar = Get-H2Jar
+    $H2Jar = Get-ProjectH2Jar
     $JdbcPath = $DatabaseBasePath.Replace('\', '/')
-    $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE"
+    $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
     $Sql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end"
     $Command = "`"java`" -cp `"$H2Jar`" org.h2.tools.Shell -url `"$JdbcUrl`" -user sa -password `"`" -sql `"$Sql`" 2>&1"
     $Output = & $env:ComSpec /d /s /c $Command
@@ -202,7 +199,6 @@ if (Test-PortInUse) {
     throw "Port $Port is already in use by another program. Stop it or run: start-local.cmd -Port <another-port>"
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot 'data') | Out-Null
 Set-Location $ProjectRoot
 
 if ($Smoke) {
@@ -233,8 +229,12 @@ if ($Smoke) {
 }
 
 $DataDirectory = Join-Path $ProjectRoot 'data'
+New-Item -ItemType Directory -Force -Path $DataDirectory | Out-Null
 $DatabaseFiles = Get-FamilyFinanceDatabaseFiles $DataDirectory
-if ($DatabaseFiles.Count -gt 0) {
+$PrimaryDatabase = @($DatabaseFiles | Where-Object {
+        ($_.Name -eq 'family-finance.mv.db' -or $_.Name -eq 'family-finance.h2.db') -and $_.Length -gt 0
+    } | Select-Object -First 1)
+if ($PrimaryDatabase.Count -eq 1) {
     $DatabaseBasePath = Join-Path $DataDirectory 'family-finance'
     if (-not (Test-FlywayHistoryPresent $DatabaseBasePath)) {
         $BackupPath = New-LegacyDatabaseBackup $DatabaseFiles (Join-Path $ProjectRoot 'data-backups')
