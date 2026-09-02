@@ -135,6 +135,34 @@ class MemberApiTest {
     }
 
     @Test
+    void deletingMemberReferencedOnlyByBudgetHistoryNamesTheActualReference() throws Exception {
+        MockHttpSession session = login();
+        MvcResult createdMember = mvc.perform(post("/api/members")
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content("{\"name\":\"历史预算成员\",\"roleLabel\":\"成员\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long memberId = JsonTestUtils.readId(createdMember);
+        MvcResult createdBudget = mvc.perform(post("/api/budgets")
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content("""
+                                {"periodMonth":"2029-01","scopeType":"MEMBER","memberId":%d,"amount":"100.00"}
+                                """.formatted(memberId)))
+                .andExpect(status().isCreated()).andReturn();
+        long budgetId = JsonTestUtils.readId(createdBudget);
+        int version = JsonTestUtils.readInt(createdBudget, "version");
+        mvc.perform(patch("/api/budgets/{id}", budgetId)
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content("{\"version\":" + version + ",\"scopeType\":\"TOTAL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memberId").isEmpty());
+
+        mvc.perform(delete("/api/members/{id}", memberId).session(session).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value("该成员已被预算或预算历史使用，无法删除"));
+    }
+
+    @Test
     void memberFromAnotherHouseholdReturnsNotFound() throws Exception {
         MockHttpSession session = login();
         Household outsider = householdRepository.save(new Household("其他家庭", TEST_TIME));
@@ -182,6 +210,15 @@ class MemberApiTest {
                 end++;
             }
             return Long.valueOf(body.substring(start, end));
+        }
+
+        static int readInt(MvcResult result, String field) throws Exception {
+            String body = result.getResponse().getContentAsString();
+            int index = body.indexOf("\"" + field + "\":");
+            int start = index + field.length() + 3;
+            int end = start;
+            while (end < body.length() && Character.isDigit(body.charAt(end))) end++;
+            return Integer.parseInt(body.substring(start, end));
         }
     }
 }

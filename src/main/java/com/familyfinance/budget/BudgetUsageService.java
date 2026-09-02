@@ -59,23 +59,24 @@ public class BudgetUsageService {
 
     private BudgetUsage response(
             long householdId, Budget budget, LocalDate from, LocalDate to, boolean rollupCategories) {
-        String rawSpent = switch (budget.getScopeType()) {
-            case TOTAL -> transactions.sumExpenseCentsForMonth(householdId, from, to);
-            case CATEGORY -> rollupCategories
-                    ? transactions.sumExpenseCentsForCategoryTree(
-                            householdId, from, to, budget.getCategory().getId())
-                    : transactions.sumExpenseCentsForExactCategory(
-                            householdId, from, to, budget.getCategory().getId());
-            case MEMBER -> transactions.sumExpenseCentsForMember(
-                    householdId, from, to, budget.getMember().getId());
-        };
+        Long categoryId = budget.getCategory() == null ? null : budget.getCategory().getId();
+        Long memberId = budget.getMember() == null ? null : budget.getMember().getId();
+        String rawSpent = transactions.sumBudgetExpenseCents(
+                householdId,
+                from,
+                to,
+                budget.getScopeType().name(),
+                categoryId,
+                memberId,
+                rollupCategories);
         long spent = boundedCents(rawSpent);
         long remaining = Math.subtractExact(budget.getAmountCents(), spent);
         BigDecimal percent = BigDecimal.valueOf(spent)
                 .multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(budget.getAmountCents()), 2, RoundingMode.HALF_UP);
         return new BudgetUsage(
-                BudgetResponse.from(budget), spent, remaining, percent, status(percent), rollupCategories);
+                BudgetResponse.from(budget), spent, remaining, percent,
+                status(spent, budget.getAmountCents()), rollupCategories);
     }
 
     private static long boundedCents(String raw) {
@@ -86,10 +87,12 @@ public class BudgetUsageService {
         return value.longValueExact();
     }
 
-    private static BudgetUsageStatus status(BigDecimal percent) {
-        if (percent.compareTo(BigDecimal.valueOf(100)) > 0) return BudgetUsageStatus.OVER_BUDGET;
-        if (percent.compareTo(BigDecimal.valueOf(100)) == 0) return BudgetUsageStatus.AT_LIMIT;
-        if (percent.compareTo(BigDecimal.valueOf(80)) >= 0) return BudgetUsageStatus.NEAR_LIMIT;
+    static BudgetUsageStatus status(long spentCents, long amountCents) {
+        if (spentCents > amountCents) return BudgetUsageStatus.OVER_BUDGET;
+        if (spentCents == amountCents) return BudgetUsageStatus.AT_LIMIT;
+        BigInteger spentPercent = BigInteger.valueOf(spentCents).multiply(BigInteger.valueOf(100));
+        BigInteger nearLimitThreshold = BigInteger.valueOf(amountCents).multiply(BigInteger.valueOf(80));
+        if (spentPercent.compareTo(nearLimitThreshold) >= 0) return BudgetUsageStatus.NEAR_LIMIT;
         return BudgetUsageStatus.ON_TRACK;
     }
 }

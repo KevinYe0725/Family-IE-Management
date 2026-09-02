@@ -136,6 +136,40 @@ class BudgetUsageServiceTest {
     }
 
     @Test
+    void statusUsesExactAmountsAtJustOverEqualJustBelowAndEightyPercentBoundaries() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        FamilyMember member = members.findByHouseholdOrderById(household).get(0);
+        Category justOver = category(household, TransactionKind.EXPENSE, "刚超预算", null);
+        Category equal = category(household, TransactionKind.EXPENSE, "正好用完", null);
+        Category justBelowEighty = category(household, TransactionKind.EXPENSE, "略低八成", null);
+        Category atEighty = category(household, TransactionKind.EXPENSE, "正好八成", null);
+        Category longBoundary = category(household, TransactionKind.EXPENSE, "长整型边界", null);
+        long justOverBudget = createBudget(session, categoryBudgetBody(justOver.getId(), "1000.00"));
+        long equalBudget = createBudget(session, categoryBudgetBody(equal.getId(), "1000.00"));
+        long justBelowBudget = createBudget(session, categoryBudgetBody(justBelowEighty.getId(), "200.01"));
+        long atEightyBudget = createBudget(session, categoryBudgetBody(atEighty.getId(), "200.00"));
+        long longBoundaryBudget = createBudget(
+                session, categoryBudgetBody(longBoundary.getId(), "999999999.99"));
+        transaction(household, member, justOver, TransactionKind.EXPENSE, 100_001L, "2026-09-02");
+        transaction(household, member, equal, TransactionKind.EXPENSE, 100_000L, "2026-09-02");
+        transaction(household, member, justBelowEighty, TransactionKind.EXPENSE, 16_000L, "2026-09-02");
+        transaction(household, member, atEighty, TransactionKind.EXPENSE, 16_000L, "2026-09-02");
+        transaction(household, member, longBoundary, TransactionKind.EXPENSE, Long.MAX_VALUE, "2026-09-02");
+
+        JsonNode usages = usage(session, false);
+        assertThat(find(usages, justOverBudget).path("percent").decimalValue()).isEqualByComparingTo("100.00");
+        assertThat(find(usages, justOverBudget).path("status").asText()).isEqualTo("OVER_BUDGET");
+        assertThat(find(usages, equalBudget).path("status").asText()).isEqualTo("AT_LIMIT");
+        assertThat(find(usages, justBelowBudget).path("percent").decimalValue()).isEqualByComparingTo("80.00");
+        assertThat(find(usages, justBelowBudget).path("status").asText()).isEqualTo("ON_TRACK");
+        assertThat(find(usages, atEightyBudget).path("status").asText()).isEqualTo("NEAR_LIMIT");
+        assertThat(find(usages, longBoundaryBudget).path("status").asText()).isEqualTo("OVER_BUDGET");
+        assertThat(BudgetUsageService.status(Long.MAX_VALUE - 1, Long.MAX_VALUE))
+                .isEqualTo(BudgetUsageStatus.NEAR_LIMIT);
+    }
+
+    @Test
     void inactiveBudgetsAndOtherHouseholdsNeverAppearAndPagesAreBounded() throws Exception {
         MockHttpSession session = login();
         Household household = currentHousehold();
@@ -293,6 +327,12 @@ class BudgetUsageServiceTest {
         assertThat(usage.path("percent").decimalValue()).isEqualByComparingTo(percent);
         assertThat(usage.path("status").asText()).isEqualTo(status);
         assertThat(usage.path("rollupCategories").asBoolean()).isEqualTo(rollup);
+    }
+
+    private static String categoryBudgetBody(long categoryId, String amount) {
+        return """
+                {"periodMonth":"2026-09","scopeType":"CATEGORY","categoryId":%d,"amount":"%s"}
+                """.formatted(categoryId, amount);
     }
 
     private static List<Long> budgetIds(JsonNode rows) {

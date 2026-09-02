@@ -62,11 +62,14 @@ public class MemberService {
         if (transactionRepository.existsByHouseholdIdAndMemberId(householdId, memberId)) {
             throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被收支记录使用，无法删除");
         }
+        if (memberRepository.countBudgetReferences(householdId, memberId) > 0) {
+            throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被预算或预算历史使用，无法删除");
+        }
         try {
             memberRepository.delete(member);
             memberRepository.flush();
         } catch (DataIntegrityViolationException exception) {
-            throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被收支记录使用，无法删除");
+            throw new ResourceConflictException("RESOURCE_IN_USE", "该成员已被历史财务数据使用，无法删除");
         }
     }
 
