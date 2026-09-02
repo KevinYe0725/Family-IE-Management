@@ -1,9 +1,14 @@
 package com.familyfinance.identity;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -21,24 +26,27 @@ class RegistrationRateLimiter {
         this.clock = clock;
     }
 
-    synchronized boolean allows(String key) {
-        Bucket bucket = buckets.get(key);
-        return bucket == null || refill(bucket, clock.instant()).tokens() >= 1;
+    // Every admitted attempt consumes a token; successful requests are intentionally not refunded.
+    synchronized boolean tryAcquire(String email, String remoteIp) {
+        String normalizedEmail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        return consume(normalizedEmail + '\u0000' + remoteIp);
     }
 
-    synchronized void recordFailure(String key) {
+    private boolean consume(String rawKey) {
+        String key = digest(rawKey);
         Instant now = clock.instant();
         Bucket bucket = buckets.get(key);
         Bucket refilled = bucket == null ? new Bucket(CAPACITY, now) : refill(bucket, now);
+        if (refilled.tokens() < 1) {
+            put(key, refilled);
+            return false;
+        }
         put(key, new Bucket(refilled.tokens() - 1, now));
-    }
-
-    synchronized void recordSuccess(String key) {
-        buckets.remove(key);
+        return true;
     }
 
     private void put(String key, Bucket bucket) {
-        if (buckets.size() >= MAX_BUCKETS) {
+        if (buckets.size() >= MAX_BUCKETS && !buckets.containsKey(key)) {
             String oldestKey = buckets.keySet().iterator().next();
             buckets.remove(oldestKey);
         }
@@ -49,6 +57,16 @@ class RegistrationRateLimiter {
         long elapsedMillis = Math.max(0, Duration.between(bucket.refilledAt(), now).toMillis());
         double replenished = elapsedMillis * CAPACITY / REFILL_PERIOD.toMillis();
         return new Bucket(Math.min(CAPACITY, bucket.tokens() + replenished), now);
+    }
+
+    private static String digest(String rawKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(rawKey.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private record Bucket(double tokens, Instant refilledAt) {

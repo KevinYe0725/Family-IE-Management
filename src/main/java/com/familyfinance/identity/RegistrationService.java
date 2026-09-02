@@ -12,6 +12,7 @@ import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.shared.ResourceConflictException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -24,6 +25,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RegistrationService {
+
+    private static final int MAX_EMAIL_INPUT_CODE_UNITS = 512;
+    private static final int MAX_DISPLAY_NAME_INPUT_CODE_UNITS = 128;
+    private static final int MAX_HOUSEHOLD_NAME_INPUT_CODE_UNITS = 1_024;
+    private static final int MAX_INVITE_TOKEN_CODE_UNITS = 512;
+    private static final int MIN_PASSWORD_CODE_POINTS = 8;
+    private static final int MAX_PASSWORD_CODE_POINTS = 72;
+    private static final int MAX_BCRYPT_PASSWORD_UTF8_BYTES = 72;
+    private static final int MAX_PASSWORD_CODE_UNITS = MAX_PASSWORD_CODE_POINTS * 2;
 
     private final AppUserRepository users;
     private final HouseholdRepository households;
@@ -88,19 +98,22 @@ public class RegistrationService {
 
     public CreateRegistration validateCreate(RegisterRequest request) {
         Map<String, String> fields = new LinkedHashMap<>();
-        String email = normalizeEmail(request.email());
+        String email = normalizeEmail(request.email(), fields);
         if (email.isEmpty() || email.length() > 254 || !email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             fields.put("email", "邮箱格式不正确");
         }
-        String displayName = normalize(request.displayName());
-        if (displayName.isEmpty() || displayName.length() > 40) {
+        String displayName = normalize(request.displayName(), "displayName", MAX_DISPLAY_NAME_INPUT_CODE_UNITS, fields);
+        if (displayName.isEmpty() || displayName.codePointCount(0, displayName.length()) > 40) {
             fields.put("displayName", "显示姓名长度应为 1 到 40 个字符");
         }
-        String householdName = normalize(request.householdName());
-        if (householdName.isEmpty() || householdName.length() > 255) {
+        String householdName = normalize(request.householdName(), "householdName", MAX_HOUSEHOLD_NAME_INPUT_CODE_UNITS, fields);
+        if (householdName.isEmpty() || householdName.codePointCount(0, householdName.length()) > 255) {
             fields.put("householdName", "家庭名称不能为空且不能超过 255 个字符");
         }
         validatePassword(fields, "password", request.password());
+        if (request.inviteToken() != null && request.inviteToken().length() > MAX_INVITE_TOKEN_CODE_UNITS) {
+            fields.put("inviteToken", "邀请码长度不能超过 512 个字符");
+        }
         if (!"CREATE".equals(request.mode())) {
             fields.put("mode", "当前暂不支持的注册方式");
         }
@@ -119,17 +132,33 @@ public class RegistrationService {
     }
 
     private static void validatePassword(Map<String, String> fields, String field, String password) {
-        if (password == null || password.length() < 8 || password.length() > 72) {
+        if (password == null || password.length() > MAX_PASSWORD_CODE_UNITS) {
             fields.put(field, "密码长度应为 8 到 72 个字符");
+            return;
+        }
+        int codePoints = password.codePointCount(0, password.length());
+        if (codePoints < MIN_PASSWORD_CODE_POINTS || codePoints > MAX_PASSWORD_CODE_POINTS) {
+            fields.put(field, "密码长度应为 8 到 72 个字符");
+            return;
+        }
+        if (password.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_UTF8_BYTES) {
+            fields.put(field, "密码不能超过 BCrypt 的 72 字节限制");
         }
     }
 
-    private static String normalizeEmail(String value) {
-        return normalize(value).toLowerCase(Locale.ROOT);
+    private static String normalizeEmail(String value, Map<String, String> fields) {
+        return normalize(value, "email", MAX_EMAIL_INPUT_CODE_UNITS, fields).toLowerCase(Locale.ROOT);
     }
 
-    private static String normalize(String value) {
-        return value == null ? "" : value.trim();
+    private static String normalize(String value, String field, int maxCodeUnits, Map<String, String> fields) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() > maxCodeUnits) {
+            fields.put(field, "字段内容过长");
+            return "";
+        }
+        return value.trim();
     }
 
     private static ResourceConflictException registrationFailed() {

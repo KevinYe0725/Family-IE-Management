@@ -2,14 +2,15 @@ package com.familyfinance.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
+import com.familyfinance.category.TransactionKind;
 import com.familyfinance.family.HouseholdMembershipRepository;
 import com.familyfinance.family.HouseholdRole;
 import com.familyfinance.family.MembershipStatus;
@@ -20,6 +21,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -65,6 +71,9 @@ class RegistrationApiTest {
     @Autowired
     RegistrationService registrationService;
 
+    @Autowired
+    RegistrationRateLimiter rateLimiter;
+
     @MockitoSpyBean
     RegistrationDefaults defaults;
 
@@ -95,8 +104,16 @@ class RegistrationApiTest {
         long membershipCount = memberships.count();
         long memberCount = members.count();
         long categoryCount = categories.count();
-        doThrow(new IllegalStateException("default data failure"))
-                .when(defaults).createFor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doAnswer(invocation -> {
+            categories.saveAndFlush(new Category(
+                    invocation.getArgument(0),
+                    TransactionKind.EXPENSE,
+                    "已写入后失败",
+                    "#112233",
+                    true,
+                    invocation.getArgument(1)));
+            throw new IllegalStateException("default data failure");
+        }).when(defaults).createFor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 
         assertThatThrownBy(() -> registrationService.register(new RegistrationService.CreateRegistration(
                 "rollback@example.com", "回滚", "family-pass-2026", "回滚家庭")))
@@ -138,6 +155,33 @@ class RegistrationApiTest {
     }
 
     @Test
+    void registrationCountsUnicodeCodePointsAndRejectsPasswordsOverBcryptUtf8Limit() throws Exception {
+        mvc.perform(register("emoji-too-short@example.com", "表情", emoji(4), "CREATE", "表情家庭"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.password").exists());
+        mvc.perform(register("emoji-valid@example.com", "表情", emoji(8), "CREATE", "表情家庭"))
+                .andExpect(status().isCreated());
+        mvc.perform(register("chinese-72-bytes@example.com", "中文", "中".repeat(24), "CREATE", "中文家庭"))
+                .andExpect(status().isCreated());
+        mvc.perform(register("chinese-75-bytes@example.com", "中文", "中".repeat(25), "CREATE", "中文家庭"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.password").exists());
+    }
+
+    @Test
+    void registrationRejectsDeclaredOversizedBodiesBeforeTheyReachLimiterState() throws Exception {
+        mvc.perform(post("/api/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s","displayName":"大请求","password":"family-pass-2026","mode":"CREATE","householdName":"大请求家庭"}
+                                """.formatted("a".repeat(5_000))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.request").exists());
+    }
+
+    @Test
     void joinModeIsNotImplementedInThisTask() throws Exception {
         mvc.perform(register("join-later@example.com", "稍后加入", "family-pass-2026", "JOIN", null))
                 .andExpect(status().isBadRequest())
@@ -159,7 +203,7 @@ class RegistrationApiTest {
     void registrationRateLimitUsesNormalizedEmailAndRemoteIpWithoutLeakingExistence() throws Exception {
         mvc.perform(register("limited@example.com", "限流", "family-pass-2026", "CREATE", "限流家庭", "203.0.113.10"))
                 .andExpect(status().isCreated());
-        for (int attempt = 0; attempt < 5; attempt++) {
+        for (int attempt = 0; attempt < 4; attempt++) {
             mvc.perform(register(" LIMITED@example.com ", "限流", "family-pass-2026", "CREATE", "限流家庭", "203.0.113.10"))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.error.message").value("注册暂时无法完成"));
@@ -176,6 +220,46 @@ class RegistrationApiTest {
         mvc.perform(register("limited@example.com", "限流", "family-pass-2026", "CREATE", "限流家庭", "203.0.113.10"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.message").value("注册暂时无法完成"));
+    }
+
+    @Test
+    void rateLimitAdmissionIsAtomicUnderAConcurrentBurst() throws Exception {
+        int workers = 16;
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        CountDownLatch ready = new CountDownLatch(workers);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            var results = java.util.stream.IntStream.range(0, workers)
+                    .mapToObj(ignored -> executor.submit(() -> {
+                        ready.countDown();
+                        start.await();
+                        return rateLimiter.tryAcquire("burst@example.com", "203.0.113.11");
+                    }))
+                    .toList();
+            assertThat(ready.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            int admitted = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get()) {
+                    admitted++;
+                }
+            }
+            assertThat(admitted).isEqualTo(5);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void rateLimiterStoresOnlyFixedSizeDigestKeysForOversizedInputs() throws Exception {
+        rateLimiter.tryAcquire("very-long-email-" + "x".repeat(20_000), "203.0.113.12");
+
+        java.lang.reflect.Field bucketsField = RegistrationRateLimiter.class.getDeclaredField("buckets");
+        bucketsField.setAccessible(true);
+        Map<?, ?> buckets = (Map<?, ?>) bucketsField.get(rateLimiter);
+        assertThat(buckets.keySet()).allSatisfy(key -> assertThat((String) key)
+                .hasSize(64)
+                .matches("[0-9a-f]{64}"));
     }
 
     @Test
@@ -196,17 +280,25 @@ class RegistrationApiTest {
         mvc.perform(changePassword(session, "family-pass-2026", password(73)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.fields.newPassword").exists());
+        mvc.perform(changePassword(session, "family-pass-2026", emoji(4)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.newPassword").exists());
+        mvc.perform(changePassword(session, "family-pass-2026", "中".repeat(25)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.newPassword").exists());
 
-        mvc.perform(changePassword(session, "family-pass-2026", "new-family-pass-2026"))
+        mvc.perform(changePassword(session, "family-pass-2026", "中".repeat(24)))
+                .andExpect(status().isNoContent());
+        mvc.perform(changePassword(session, "中".repeat(24), emoji(8)))
                 .andExpect(status().isNoContent())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .doesNotContain("family-pass-2026")
-                        .doesNotContain("new-family-pass-2026"));
+                        .doesNotContain(emoji(8)));
         mvc.perform(get("/api/session").session(session))
                 .andExpect(status().isOk());
         mvc.perform(post("/api/auth/logout").session(session).with(csrf()))
                 .andExpect(status().isNoContent());
-        login("password@example.com", "new-family-pass-2026");
+        login("password@example.com", emoji(8));
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder register(
@@ -252,6 +344,10 @@ class RegistrationApiTest {
 
     private static String password(int length) {
         return "a".repeat(length);
+    }
+
+    private static String emoji(int count) {
+        return "😀".repeat(count);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
