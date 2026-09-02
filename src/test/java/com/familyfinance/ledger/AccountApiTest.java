@@ -19,6 +19,7 @@ import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -69,6 +70,9 @@ class AccountApiTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    EntityManager entityManager;
 
     @Test
     void ownerAndAdminManageAllAccountTypesWhileMemberCanOnlyRead() throws Exception {
@@ -275,13 +279,17 @@ class AccountApiTest {
         mvc.perform(delete("/api/accounts/{id}", accountId).session(owner).with(csrf()))
                 .andExpect(status().isNoContent());
         accounts.flush();
+        entityManager.clear();
         Instant firstArchivedAt = accounts.findById(accountId).orElseThrow().getArchivedAt();
         assertThat(firstArchivedAt).isNotNull();
         assertThat(transactions.findById(transaction.getId())).isPresent();
 
         mvc.perform(delete("/api/accounts/{id}", accountId).session(owner).with(csrf()))
                 .andExpect(status().isNoContent());
-        assertThat(accounts.findById(accountId).orElseThrow().getArchivedAt()).isEqualTo(firstArchivedAt);
+        accounts.flush();
+        entityManager.clear();
+        Instant secondArchivedAt = accounts.findById(accountId).orElseThrow().getArchivedAt();
+        assertThat(secondArchivedAt).isEqualTo(firstArchivedAt);
         mvc.perform(get("/api/accounts/{id}", accountId).session(owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.archivedAt").exists());
