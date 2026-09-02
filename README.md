@@ -53,7 +53,15 @@ start-local.cmd -Port 8090
 - `POST /api/auth/register` 支持 `CREATE` 创建新家庭及其 `OWNER`，或携带邀请 Token 以 `JOIN` 加入已有家庭。
 - 所有者或管理员可创建 `MEMBER` 邀请；只有所有者可以调整家庭成员角色。邀请 Token 仅在创建响应中显示一次，请通过受信任方式转交。
 - 第一阶段的 `demo` 数据升级后会对应 `demo@local.family` 和 `OWNER` 角色；旧用户名仅保留为登录兼容别名。
-- 当前随应用提供的原生 HTML/JavaScript 界面仍是第一阶段界面，尚未显示注册、邀请、家庭资料、成员角色和所有权转让入口；这些能力目前通过下方 API 提供，计划在后续 React 前端阶段接入。
+- 当前随应用提供的原生 HTML/JavaScript 界面仍是第一阶段界面的渐进增强版本，尚未显示注册、邀请、家庭资料、成员角色和所有权转让入口；这些能力目前通过下方 API 提供，计划在后续 React 前端阶段接入。
+
+### 第二阶段账本、预算与周期账单
+
+- 家庭可维护现金、银行卡和钱包账户；新建收支必须选择一个有效账户。注册并创建家庭时会在同一事务中创建默认账户。
+- 分类支持两级结构，父子分类必须同为收入或同为支出；收支可直接使用一级或二级分类。
+- 月度预算支持家庭总额、分类和成员范围，修改会保留不可变修订记录。预算使用额由已确认支出实时计算，不保存可能漂移的累计值。
+- 周期规则支持月度和周度计划。到期时先生成待确认项，分配用户确认后才创建一笔真实收支；重复确认返回同一笔收支，不会重复记账。
+- `StageTwoLedgerSmokeTest` 使用真实随机端口、HTTP Cookie/CSRF 和临时文件型 H2，完成一次创建、生成、确认和预算核对，完全关闭应用后再以同一数据库重启并核对持久化状态与 Flyway V1–V6。
 
 ## 测试
 
@@ -61,7 +69,13 @@ start-local.cmd -Port 8090
 ./mvnw test
 ```
 
-测试使用独立数据库；不会读取或写入 `data/family-finance.mv.db`。其中的端到端冒烟测试以真实随机端口、HTTP 会话 Cookie 与 CSRF 令牌验证完整流程。
+测试使用独立数据库；不会读取或写入 `data/family-finance.mv.db`。其中的端到端冒烟测试以真实随机端口、HTTP 会话 Cookie 与 CSRF 令牌验证完整流程。只运行第二阶段账本验收可使用：
+
+```bash
+./mvnw -q -Dtest=StageTwoLedgerSmokeTest test
+```
+
+详细覆盖范围和平台边界见 `docs/acceptance/stage-2-ledger-checklist.md`。
 
 ## 安全地重置本地数据
 
@@ -88,6 +102,8 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `src/main/java/com/familyfinance/family`：家庭 Membership、邀请、角色与权限。
 - `src/main/java/com/familyfinance/household`：家庭与成员。
 - `src/main/java/com/familyfinance/category`：收入和支出分类。
+- `src/main/java/com/familyfinance/ledger`：家庭账户与周期账单。
+- `src/main/java/com/familyfinance/budget`：月度预算、修订历史与实时使用额。
 - `src/main/java/com/familyfinance/transaction`：收支记录与筛选。
 - `src/main/java/com/familyfinance/reporting`：看板、规则分析与 CSV。
 - `src/main/resources/static`：原生 HTML、CSS、JavaScript 单页界面。
@@ -101,8 +117,13 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `GET /api/family/memberships?page={page}&size={size}`、`PATCH /api/family/memberships/{id}`
 - `POST /api/family/transfer-ownership`
 - `GET|POST /api/members`、`PATCH|DELETE /api/members/{id}`
-- `GET|POST /api/categories`、`PATCH|DELETE /api/categories/{id}`
-- `GET|POST /api/transactions`、`GET|PATCH|DELETE /api/transactions/{id}`
+- `GET|POST /api/accounts`、`GET|PATCH|DELETE /api/accounts/{id}`
+- `GET|POST /api/categories`、`PATCH|DELETE /api/categories/{id}`（支持 `parentId`；`projection=tree` 返回两级树）
+- `GET|POST /api/transactions`、`GET|PATCH|DELETE /api/transactions/{id}`（新建需要 `accountId`）
+- `GET|POST /api/budgets`、`GET|PATCH /api/budgets/{id}`
+- `GET /api/budgets/{id}/revisions`、`GET /api/budgets/usage?periodMonth=YYYY-MM`
+- `GET|POST /api/recurring-rules`、`PATCH|DELETE /api/recurring-rules/{id}`
+- `GET /api/recurring-occurrences`、`POST /api/recurring-occurrences/{id}/confirm`
 - `GET /api/dashboard?month=YYYY-MM`、`GET /api/analysis?month=YYYY-MM`
 - `GET /api/export.csv`（接受收支列表的筛选参数）
 
@@ -112,4 +133,4 @@ API 响应通过 `X-Request-ID` 返回请求关联 ID；未预期的服务器异
 
 ## 当前静态界面不包含
 
-当前第一阶段静态界面尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、预算、周期账单、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
+当前原生静态界面已经支持收支的账户选择/筛选和两级分类维护，但没有独立的账户管理、预算管理或周期账单页面，也尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
