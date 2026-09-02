@@ -10,6 +10,7 @@ on:
       - start-local.cmd
       - scripts/start-local.ps1
       - scripts/startup-file-hashing.ps1
+      - scripts/startup-h2-inspection.ps1
       - scripts/startup-output-parsing.ps1
       - scripts/windows-cmd-quote-regression.ps1
       - scripts/windows-startup-gates.ps1
@@ -23,6 +24,7 @@ on:
       - start-local.cmd
       - scripts/start-local.ps1
       - scripts/startup-file-hashing.ps1
+      - scripts/startup-h2-inspection.ps1
       - scripts/startup-output-parsing.ps1
       - scripts/windows-cmd-quote-regression.ps1
       - scripts/windows-startup-gates.ps1

@@ -265,6 +265,23 @@ function Test-FlywayHistoryOutputParser {
     Assert-Equal 5 $RejectedInvalidOutputs 'The migration-state parser accepted a zero, duplicate, multiple, future, or ambiguous state.'
 }
 
+function Test-QuotedFlywayIdentifierInspection {
+    $Scenario = New-Scenario 'quoted-flyway-identifiers'
+    New-StageOneFixture $Scenario | Out-Null
+    Invoke-MigrationFixture $Scenario 'migrate-to-6'
+    . (Join-Path $Scenario 'scripts\startup-h2-inspection.ps1')
+    . (Join-Path $Scenario 'scripts\startup-output-parsing.ps1')
+    $H2Jar = @($script:FixtureClasspath.Split([System.IO.Path]::PathSeparator) |
+            Where-Object { (Split-Path $_ -Leaf) -eq 'h2-2.3.232.jar' })
+    Assert-Equal 1 $H2Jar.Count 'Quoted-identifier regression did not resolve exactly one H2 jar.'
+    $DatabaseBase = Join-Path $Scenario 'data\family-finance'
+    $JdbcUrl = "jdbc:h2:file:$($DatabaseBase.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
+    $Sql = 'select case when exists (select 1 from "flyway_schema_history" where "success" = true and "version" = ''6'') then ''BEHIND_CURRENT'' else ''FAILED'' end as MIGRATION_STATE'
+    $Output = @(Invoke-H2Inspection $H2Jar[0] $JdbcUrl $Sql)
+    $State = ConvertFrom-FlywayMigrationStateShellOutput -Output $Output
+    Assert-Equal 'BEHIND_CURRENT' $State 'Literal quoted lowercase Flyway identifiers did not survive native invocation.'
+}
+
 function Test-StartupSha256Helper {
     $Scenario = New-Scenario 'sha256-regression'
     . (Join-Path $Scenario 'scripts\startup-file-hashing.ps1')
@@ -611,6 +628,37 @@ function Test-ExactMigrationStatesAndRecovery {
     Assert-Equal 2 $RecoveredBackups.Count 'Repaired V6 state did not receive a fresh verified retry backup.'
     $RecoveredPartials = @(Get-PartialBackups $FailedBackupRoot)
     Assert-Equal 0 $RecoveredPartials.Count 'Repaired V7 retry left partial backup evidence.'
+
+    foreach ($Case in @(
+            [pscustomobject]@{
+                Name = 'future'
+                Make = 'make-future-history'
+                Assert = 'assert-future-history'
+                Message = 'migration newer than repository V7'
+            },
+            [pscustomobject]@{
+                Name = 'ambiguous'
+                Make = 'make-ambiguous-history'
+                Assert = 'assert-ambiguous-history'
+                Message = 'Flyway history is ambiguous'
+            })) {
+        $RefusedScenario = New-Scenario ("history-" + $Case.Name)
+        New-StageOneFixture $RefusedScenario | Out-Null
+        Invoke-MigrationFixture $RefusedScenario 'migrate-to-6'
+        Invoke-MigrationFixture $RefusedScenario $Case.Make
+        $RefusedBackupRoot = Join-Path $RefusedScenario 'data-backups'
+        $RefusedPort = Get-FreePort
+        $Refused = Start-Launcher $RefusedScenario $RefusedPort ("history-" + $Case.Name)
+        Wait-ForExit $Refused 180 ("Refused " + $Case.Name + " history")
+        Assert-True ($Refused.ExitCode -ne 0) ("Launcher accepted " + $Case.Name + " history.")
+        Assert-True ((Get-ProcessLog $Refused) -match $Case.Message) ("Refusal omitted the " + $Case.Name + " diagnostic.")
+        $RefusedBackups = @(Get-CompletedBackups $RefusedBackupRoot)
+        Assert-Equal 1 $RefusedBackups.Count ($Case.Name + ' history did not receive the documented verified state backup.')
+        $RefusedPartials = @(Get-PartialBackups $RefusedBackupRoot)
+        Assert-Equal 0 $RefusedPartials.Count ($Case.Name + ' refusal left partial backup evidence.')
+        Invoke-MigrationFixture $RefusedScenario $Case.Assert
+        Assert-NoScenarioProcesses $RefusedScenario
+    }
     Assert-NoScenarioProcesses $PendingScenario
     Assert-NoScenarioProcesses $FailedScenario
 }
@@ -642,6 +690,8 @@ try {
 
     Write-Host 'Parser regression: H2 Shell output requires one exact status line.'
     Test-FlywayHistoryOutputParser
+    Write-Host 'Native invocation regression: quoted lowercase Flyway identifiers reach H2 unchanged.'
+    Test-QuotedFlywayIdentifierInspection
     Write-Host 'Hash regression: startup SHA-256 is independent of module autoload.'
     Test-StartupSha256Helper
     Write-Host 'Gate 0/7: Exited-process logs use immutable launch metadata.'
@@ -654,7 +704,7 @@ try {
     Test-UnrelatedPortRejection
     Write-Host 'Gate 4/7: Legacy backup, collision, restart, restore, login, and ledger checks.'
     Test-BackupRestartCollisionAndRestore
-    Write-Host 'Gate 5/7: Exact V6, V7, failed V7, and repaired V7 states are handled safely.'
+    Write-Host 'Gate 5/7: Exact V6, V7, failed, repaired, future, and ambiguous states are handled safely.'
     Test-ExactMigrationStatesAndRecovery
     Write-Host 'Gate 6/7: A locked companion retains only a partial backup and prevents startup.'
     Test-InterruptedCompanionCopy

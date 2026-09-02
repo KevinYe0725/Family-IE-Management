@@ -118,6 +118,27 @@ class WindowsStartupGateIsolationTest {
     }
 
     @Test
+    void h2InspectionPassesQuotedSqlAsOneNativeArgumentWithoutCmdStringParsing() throws Exception {
+        String function = Files.readString(Path.of("scripts", "startup-h2-inspection.ps1"));
+
+        assertThat(function).contains(
+                "$PreviousErrorActionPreference = $ErrorActionPreference",
+                "$ErrorActionPreference = 'Continue'",
+                "$Output = @(& java -cp $H2Jar org.h2.tools.Shell -url $JdbcUrl -user sa -password '' -sql $Sql 2>&1)",
+                "$NativeExitCode = $LASTEXITCODE",
+                "$ErrorActionPreference = $PreviousErrorActionPreference");
+        assertThat(function).doesNotContain("$env:ComSpec", "$Command =");
+        assertThat(Files.readString(Path.of("scripts", "start-local.ps1")))
+                .contains(". (Join-Path $PSScriptRoot 'startup-h2-inspection.ps1')");
+        assertThat(Files.readString(Path.of("scripts", "windows-startup-gates.ps1"))).contains(
+                "function Test-QuotedFlywayIdentifierInspection",
+                ". (Join-Path $Scenario 'scripts\\startup-h2-inspection.ps1')",
+                "Literal quoted lowercase Flyway identifiers did not survive native invocation.");
+        assertThat(Files.readString(Path.of(".github", "workflows", "windows-startup-smoke.yml")))
+                .contains("- scripts/startup-h2-inspection.ps1");
+    }
+
+    @Test
     void backupCollectionsAreArrayWrappedAtEveryCallSite() throws Exception {
         List<String> backupCalls = executableLines(Path.of("scripts", "windows-startup-gates.ps1")).stream()
                 .filter(line -> line.contains("Get-CompletedBackups") || line.contains("Get-PartialBackups"))

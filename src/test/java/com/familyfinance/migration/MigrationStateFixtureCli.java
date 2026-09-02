@@ -20,6 +20,10 @@ public final class MigrationStateFixtureCli {
             case "fail-v7-budget" -> createExpectedFailedV7(url);
             case "repair-v7-budget" -> repairExpectedFailedV7(url);
             case "assert-version-7" -> assertVersionSeven(url);
+            case "make-future-history" -> updateHistoryVersion(url, "6", "99");
+            case "make-ambiguous-history" -> updateHistoryVersion(url, "6", "not-numeric");
+            case "assert-future-history" -> assertHistoryVersion(url, "99");
+            case "assert-ambiguous-history" -> assertHistoryVersion(url, "not-numeric");
             default -> throw new IllegalArgumentException("Unknown migration fixture action: " + args[1]);
         }
     }
@@ -60,6 +64,32 @@ public final class MigrationStateFixtureCli {
                                 + "where \"version\"='7' and \"success\"=true")) {
             rows.next();
             if (rows.getLong(1) != 1) throw new AssertionError("Expected one successful V7 row");
+        }
+    }
+
+    private static void updateHistoryVersion(String url, String from, String to) throws Exception {
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+                var statement = connection.prepareStatement(
+                        "update \"flyway_schema_history\" set \"version\"=? where \"version\"=?")) {
+            statement.setString(1, to);
+            statement.setString(2, from);
+            if (statement.executeUpdate() != 1) {
+                throw new AssertionError("Expected exactly one migration history row to change");
+            }
+        }
+    }
+
+    private static void assertHistoryVersion(String url, String expected) throws Exception {
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+                var statement = connection.prepareStatement(
+                        "select count(*) from \"flyway_schema_history\" where \"version\"=?")) {
+            statement.setString(1, expected);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                if (rows.getLong(1) != 1) {
+                    throw new AssertionError("Expected migration history version " + expected);
+                }
+            }
         }
     }
 

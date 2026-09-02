@@ -21,7 +21,7 @@
 /bin/sh scripts/unix-startup-gates.sh
 ```
 
-Unix 脚本的 13 个隔离场景依次验证：Java 17 与项目 Wrapper；无数据库路径；检查/H2 解析失败；复制/哈希失败；发布目标冲突；活动锁与归属未知的陈旧锁；所有者标记损坏；旧库主文件、伴随文件、清单与冲突处理；V6 待迁移备份；V7 当前态跳过；恢复后的演示登录与 12 条账目；失败 V7 的状态备份、拒绝、人工修复与无陈旧守卫重试；以及前台退出状态传播。当前本机 macOS 运行只证明 macOS 路径；`.github/workflows/unix-startup-smoke.yml` 会在 `ubuntu-latest` 上重跑完整 Java 测试和这 13 个 Unix 场景，作为 Linux 证据。
+Unix 脚本的 14 个隔离场景依次验证：Java 17 与项目 Wrapper；无数据库路径；检查/H2 解析失败；复制/哈希失败；发布目标冲突；活动锁与归属未知的陈旧锁；所有者标记损坏；旧库主文件、伴随文件、清单与冲突处理；V6 待迁移备份；V7 当前态跳过；恢复后的演示登录与 12 条账目；失败 V7 的状态备份、拒绝、人工修复与无陈旧守卫重试；真实 FUTURE/AMBIGUOUS history 的备份、拒绝与不改写；以及前台退出状态传播。当前本机 macOS 运行只证明 macOS 路径；`.github/workflows/unix-startup-smoke.yml` 会在 `ubuntu-latest` 上重跑完整 Java 测试和这 14 个 Unix 场景，作为 Linux 证据。
 
 Windows runner 需独立执行：
 

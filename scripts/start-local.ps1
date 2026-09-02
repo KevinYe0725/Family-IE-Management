@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'startup-file-hashing.ps1')
+. (Join-Path $PSScriptRoot 'startup-h2-inspection.ps1')
 . (Join-Path $PSScriptRoot 'startup-output-parsing.ps1')
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $MavenWrapper = Join-Path $ProjectRoot 'mvnw.cmd'
@@ -105,15 +106,6 @@ function Get-LatestMigrationVersion {
     return [long](($Versions | Measure-Object -Maximum).Maximum)
 }
 
-function Invoke-H2Inspection([string]$H2Jar, [string]$JdbcUrl, [string]$Sql) {
-    $Command = "`"java`" -cp `"$H2Jar`" org.h2.tools.Shell -url `"$JdbcUrl`" -user sa -password `"`" -sql `"$Sql`" 2>&1"
-    $Output = & $env:ComSpec /d /s /c $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Could not inspect the existing H2 database migration state. The application was not started and the database was left unchanged.'
-    }
-    return @($Output)
-}
-
 function Get-FlywayMigrationState([string]$DatabaseBasePath, [long]$LatestMigrationVersion) {
     $H2Jar = Get-ProjectH2Jar
     $JdbcPath = $DatabaseBasePath.Replace('\', '/')
@@ -131,10 +123,10 @@ function Get-FlywayMigrationState([string]$DatabaseBasePath, [long]$LatestMigrat
             ForEach-Object { ([string]$_).Trim() } |
             Where-Object { $_ -ceq 'FUTURE' -or $_ -ceq 'AMBIGUOUS' })
     if ($UnsupportedStates.Count -eq 1 -and $UnsupportedStates[0] -ceq 'FUTURE') {
-        throw "The database contains a migration newer than repository V$LatestMigrationVersion. Startup was refused; use matching application code."
+        return 'FUTURE'
     }
     if ($UnsupportedStates.Count -eq 1 -and $UnsupportedStates[0] -ceq 'AMBIGUOUS') {
-        throw 'Flyway history is ambiguous. Startup was refused; inspect and repair history manually.'
+        return 'AMBIGUOUS'
     }
     return (ConvertFrom-FlywayMigrationStateShellOutput -Output $StateOutput)
 }
@@ -277,6 +269,12 @@ if ($PrimaryDatabase.Count -eq 1) {
         Write-Step "Created a verified pre-migration backup at $BackupPath"
         if ($MigrationState -ceq 'FAILED') {
             throw 'Flyway history contains a failed migration. Startup was refused: repair the invalid data, then run Flyway repair, review the verified state backup, and retry.'
+        }
+        if ($MigrationState -ceq 'FUTURE') {
+            throw "The database contains a migration newer than repository V$LatestMigrationVersion. Startup was refused after a verified state backup; use matching application code."
+        }
+        if ($MigrationState -ceq 'AMBIGUOUS') {
+            throw 'Flyway history is ambiguous. Startup was refused after a verified state backup; inspect and repair history manually.'
         }
         if ($MigrationState -ceq 'BEHIND_CURRENT') {
             Write-Step "Existing database is behind repository migration V$LatestMigrationVersion; backup completed before migration."

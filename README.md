@@ -87,7 +87,7 @@ start-local.cmd -Port 8090
 
 Windows `start-local.cmd` 与 macOS/Linux `./start-local.sh` 会用项目固定的 H2 2.3.232 运行时只读检查非空主库 `data/family-finance.mv.db` 的 Flyway history，并与仓库最新数字迁移版本比较。`NO_HISTORY` 或 `BEHIND_CURRENT`（例如 V6 等待 V7）都会在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`；只有 `CURRENT` 跳过迁移备份。macOS/Linux 还会比较检查前后的主库哈希。自动升级仅支持该项目实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
 
-备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查。若 history 含失败迁移，脚本会先保存一份校验通过的当前状态备份，再拒绝启动并提示：先修复无效数据，再显式运行 Flyway `repair`，检查备份后重试；启动器绝不会自动 `repair`。未来版本或含糊 history 会被拒绝。没有现有主库时不会创建备份。
+备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查。若 history 含失败迁移，脚本会先保存一份校验通过的当前状态备份，再拒绝启动并提示：先修复无效数据，再显式运行 Flyway `repair`，检查备份后重试；启动器绝不会自动 `repair`。未来版本或含糊 history 同样会先备份当前状态，再拒绝启动且保持 history 不变。没有现有主库时不会创建备份。
 
 macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串行化备份。若另一个启动仍在执行，或异常终止留下了无法确认归属的锁，脚本会拒绝启动且不会自行删除该锁；请先确认没有启动或迁移进程仍在运行，再人工检查锁目录和 `.partial` 证据。
 

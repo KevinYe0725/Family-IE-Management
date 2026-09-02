@@ -190,6 +190,35 @@ migration_fixture() {
         fail "Could not prepare migration state '$migration_fixture_action' in $migration_fixture_scenario"
 }
 
+run_refused_history_state() {
+    refused_state_name=$1
+    refused_state_make_action=$2
+    refused_state_assert_action=$3
+    refused_state_message=$4
+    refused_state_scenario=$(new_scenario "history-$refused_state_name")
+    new_stage_one_fixture "$refused_state_scenario"
+    migration_fixture "$refused_state_scenario" migrate-to-6
+    migration_fixture "$refused_state_scenario" "$refused_state_make_action"
+    refused_state_marker=$refused_state_scenario/launched
+    set +e
+    (
+        cd "$refused_state_scenario"
+        TMPDIR=$refused_state_scenario/tmp GATE_H2_JAR=$h2_jar \
+            GATE_LAUNCH_MARKER=$refused_state_marker ./start-local.sh
+    ) >"$refused_state_scenario/refused.log" 2>&1
+    refused_state_status=$?
+    set -e
+    [ "$refused_state_status" -ne 0 ] || fail "The launcher accepted $refused_state_name history."
+    [ ! -e "$refused_state_marker" ] || fail "The application launched with $refused_state_name history."
+    assert_equal 1 "$(count_completed_backups "$refused_state_scenario/data-backups")" \
+        "$refused_state_name history did not receive the documented verified state backup."
+    assert_equal 0 "$(count_partial_backups "$refused_state_scenario/data-backups")" \
+        "$refused_state_name refusal left partial backup evidence."
+    grep -F "$refused_state_message" "$refused_state_scenario/refused.log" >/dev/null ||
+        fail "$refused_state_name refusal omitted its explicit diagnostic."
+    migration_fixture "$refused_state_scenario" "$refused_state_assert_action"
+}
+
 get_free_port() {
     python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
 }
@@ -382,7 +411,7 @@ h2_jar=$(tr ':' '\n' <"$test_classpath_file" | awk '/\/com\/h2database\/h2\/2[.]
 [ -n "$h2_jar" ] || fail 'The pinned H2 2.3.232 jar was not present in the test runtime classpath.'
 assert_equal 1 "$(printf '%s\n' "$h2_jar" | awk 'NF { count++ } END { print count+0 }')" 'The gate resolved more than one pinned H2 jar.'
 
-printf '%s\n' 'Gate 1/13: Java 17 and the project wrapper are mandatory.'
+printf '%s\n' 'Gate 1/14: Java 17 and the project wrapper are mandatory.'
 scenario=$(new_scenario prerequisites)
 marker=$scenario/launched
 fake_bin=$scenario/fake-java
@@ -421,7 +450,7 @@ if ! (cd "$scenario" && TMPDIR=$scenario/tmp PATH="$spaced_java_parent/bin:$PATH
 fi
 [ -f "$marker" ] || fail 'The spaced-path Java 17 scenario did not reach application launch.'
 
-printf '%s\n' 'Gate 2/13: No database launches without creating a backup path.'
+printf '%s\n' 'Gate 2/14: No database launches without creating a backup path.'
 scenario=$(new_scenario no-data)
 marker=$scenario/launched
 (cd "$scenario" && TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh >no-data.log 2>&1)
@@ -438,7 +467,7 @@ fi
 [ -f "$marker" ] || fail 'External-directory invocation did not reach application launch.'
 assert_equal 1 "$(count_completed_backups "$scenario/data-backups")" 'External-directory invocation did not create the required legacy backup.'
 
-printf '%s\n' 'Gate 3/13: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
+printf '%s\n' 'Gate 3/14: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
 scenario=$(new_scenario inspection-failure)
 mkdir "$scenario/data"
 printf '%s\n' 'not an H2 database' >"$scenario/data/family-finance.mv.db"
@@ -460,7 +489,7 @@ fi
 [ ! -e "$marker" ] || fail 'The application launched after H2 resolution failed.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'H2 resolution failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 4/13: Copy and hash failures retain partial data and prevent launch.'
+printf '%s\n' 'Gate 4/14: Copy and hash failures retain partial data and prevent launch.'
 scenario=$(new_scenario copy-failure)
 new_stage_one_fixture "$scenario"
 marker=$scenario/launched
@@ -497,7 +526,7 @@ fi
 assert_equal 0 "$(count_completed_backups "$scenario/data-backups")" 'Hash failure published a completed backup.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'Hash failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 5/13: A publish-time destination collision preserves nested partial evidence and prevents launch.'
+printf '%s\n' 'Gate 5/14: A publish-time destination collision preserves nested partial evidence and prevents launch.'
 scenario=$(new_scenario publish-time-collision)
 new_stage_one_fixture "$scenario"
 real_move=$(command -v mv)
@@ -563,7 +592,7 @@ assert_equal 'external collision sentinel' "$(sed -n '1p' "$collision_destinatio
 grep -F "$collision_destination/$collision_partial_name" "$scenario/publish-collision.log" >/dev/null ||
     fail 'The publish-time collision did not report the retained nested partial path.'
 
-printf '%s\n' 'Gate 6/13: Active and unknown stale locks fail closed without competing publication.'
+printf '%s\n' 'Gate 6/14: Active and unknown stale locks fail closed without competing publication.'
 scenario=$(new_scenario concurrent-preflights)
 new_stage_one_fixture "$scenario"
 real_copy=$(command -v cp)
@@ -640,13 +669,13 @@ set -e
 assert_equal 'unknown-owner-must-remain' "$(sed -n '1p' "$unknown_lock/OWNER.txt")" 'The launcher deleted or changed an unknown backup lock.'
 assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'The stale-lock refusal created a partial backup.'
 
-printf '%s\n' 'Gate 7/13: Owner-marker corruption is preserved by normal release and EXIT cleanup.'
+printf '%s\n' 'Gate 7/14: Owner-marker corruption is preserved by normal release and EXIT cleanup.'
 run_owner_marker_tamper appended
 run_owner_marker_tamper no-newline
 run_owner_marker_tamper symlink
 run_owner_marker_tamper unreadable
 
-printf '%s\n' 'Gate 8/13: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
+printf '%s\n' 'Gate 8/14: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
 scenario=$(new_scenario 'backup restore')
 backup_restore_scenario=$scenario
 new_stage_one_fixture "$scenario"
@@ -691,7 +720,7 @@ for collision in "$scenario/data-backups"/*; do
 done
 stop_process "$first_process_id"
 
-printf '%s\n' 'Gate 9/13: A V6 database is backed up before its pending V7 migration.'
+printf '%s\n' 'Gate 9/14: A V6 database is backed up before its pending V7 migration.'
 pending_scenario=$(new_scenario v6-pending-migration)
 new_stage_one_fixture "$pending_scenario"
 migration_fixture "$pending_scenario" migrate-to-6
@@ -707,7 +736,7 @@ assert_equal 1 "$(count_completed_backups "$pending_scenario/data-backups")" \
 grep -F 'behind repository migration V7' "$pending_scenario/pending.log" >/dev/null ||
     fail 'The V6 pending-migration branch was not reported explicitly.'
 
-printf '%s\n' 'Gate 10/13: Current V7 skips migration backup.'
+printf '%s\n' 'Gate 10/14: Current V7 skips migration backup.'
 scenario=$backup_restore_scenario
 completed_before_restart=$(count_completed_backups "$scenario/data-backups")
 restart_port=$(get_free_port)
@@ -721,7 +750,7 @@ assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'Already-migr
 grep -F 'is current at repository migration V7; no migration backup is required' "$restart_log" >/dev/null ||
     fail 'Current V7 restart did not take the explicit skip branch.'
 
-printf '%s\n' 'Gate 11/13: Restored legacy backup preserves login plus 12 rows.'
+printf '%s\n' 'Gate 11/14: Restored legacy backup preserves login plus 12 rows.'
 mkdir "$scenario/migrated-before-restore"
 for database_file in "$scenario/data"/family-finance.*.db; do
     [ -e "$database_file" ] || [ -h "$database_file" ] || continue
@@ -741,7 +770,7 @@ wait_for_ready "$restore_port" "$restore_process_id" "$restore_log"
 verify_demo_login_and_ledger "$scenario" "$restore_port"
 stop_process "$restore_process_id"
 
-printf '%s\n' 'Gate 12/13: Failed V7 backs up and refuses, then repaired V7 retries without stale guards.'
+printf '%s\n' 'Gate 12/14: Failed V7 backs up and refuses, then repaired V7 retries without stale guards.'
 failed_scenario=$(new_scenario failed-v7-recovery)
 new_stage_one_fixture "$failed_scenario"
 migration_fixture "$failed_scenario" migrate-to-6
@@ -775,7 +804,13 @@ assert_equal 2 "$(count_completed_backups "$failed_scenario/data-backups")" \
 assert_equal 0 "$(count_partial_backups "$failed_scenario/data-backups")" \
     'Repaired V7 retry left partial backup evidence.'
 
-printf '%s\n' 'Gate 13/13: Successful launch replaces the shell process and propagates application status.'
+printf '%s\n' 'Gate 13/14: Future and ambiguous histories back up, refuse launch, and remain unchanged.'
+run_refused_history_state FUTURE make-future-history assert-future-history \
+    'migration newer than repository V7'
+run_refused_history_state AMBIGUOUS make-ambiguous-history assert-ambiguous-history \
+    'Flyway history is ambiguous'
+
+printf '%s\n' 'Gate 14/14: Successful launch replaces the shell process and propagates application status.'
 scenario=$(new_scenario foreground-exec)
 marker=$scenario/launched
 set +e
@@ -785,5 +820,5 @@ set -e
 assert_equal 23 "$foreground_status" 'The launcher did not propagate the foreground application status.'
 [ -f "$marker" ] || fail 'The foreground application command was not invoked.'
 
-printf '%s\n' 'All 13 isolated macOS/Linux startup gates passed.'
+printf '%s\n' 'All 14 isolated macOS/Linux startup gates passed.'
 gate_succeeded=1
