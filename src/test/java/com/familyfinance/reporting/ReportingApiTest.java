@@ -96,6 +96,36 @@ class ReportingApiTest {
                 .andExpect(jsonPath("$.data.insights.length()").value(0));
     }
 
+    @Test
+    void annualStatsReturnsDeterministicYearData() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/annual-stats")
+                        .session(session)
+                        .param("year", "2026"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.year").value(2026))
+                .andExpect(jsonPath("$.data.monthlyCashFlows.length()").value(12))
+                .andExpect(jsonPath("$.data.summary.totalIncome").exists())
+                .andExpect(jsonPath("$.data.summary.totalExpense").exists())
+                .andExpect(jsonPath("$.data.summary.totalBalance").exists())
+                .andExpect(jsonPath("$.data.summary.monthlyAverageIncome").exists())
+                .andExpect(jsonPath("$.data.summary.monthlyAverageExpense").exists())
+                .andExpect(jsonPath("$.data.summary.monthlyAverageBalance").exists());
+    }
+
+    @Test
+    void annualStatsRejectsInvalidYearWithFieldError() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/annual-stats")
+                        .session(session)
+                        .param("year", "1899"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.year").value("年份必须在 1900-2100 之间"));
+    }
+
     private MockHttpSession login() throws Exception {
         MvcResult login = mvc.perform(post("/api/auth/login")
                         .with(csrf())
