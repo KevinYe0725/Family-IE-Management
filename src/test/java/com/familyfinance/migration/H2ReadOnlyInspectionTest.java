@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,6 +42,18 @@ class H2ReadOnlyInspectionTest {
         try (Connection connection = DriverManager.getConnection("jdbc:h2:mem:runtime-version", "sa", "")) {
             assertThat(connection.getMetaData().getDatabaseProductVersion()).startsWith("2.3.232");
         }
+    }
+
+    @Test
+    void pinnedRuntimeDoesNotTreatPageStoreNamedFileAsAnInspectablePrimary() throws Exception {
+        Path unsupportedPageStoreName = tempDir.resolve("family-finance.h2.db");
+        Files.writeString(unsupportedPageStoreName, "not an MVStore database");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> DriverManager.getConnection(
+                        "jdbc:h2:file:" + tempDir.resolve("family-finance") + ";IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+                        "sa", ""))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("not found");
     }
 
     private static byte[] sha256(Path file) throws Exception {

@@ -68,7 +68,7 @@ start-local.cmd -Port 8090
 
 ## 第一阶段数据升级备份与恢复
 
-首次使用 Windows `start-local.cmd` 升级一个非空主库 `data/family-finance.mv.db`（或旧式 `family-finance.h2.db`）、且尚未记录 Flyway 迁移历史时，启动脚本会先以只读方式检查版本，再在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。每个文件复制后都会校验 SHA-256；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
+首次使用 Windows `start-local.cmd` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先以只读方式检查版本，再在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件复制后都会校验 SHA-256；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
 
 如迁移失败或要回退，先停止应用，将当前 `data/` 目录保留到另一个安全位置，再把某个已验证备份目录中的全部数据库文件复制回 `data/`。不要复制 `.partial` 目录；它表示备份未完整完成。恢复后再启动应用并验证可登录和账目数据。
 

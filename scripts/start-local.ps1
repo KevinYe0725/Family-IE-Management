@@ -232,7 +232,7 @@ $DataDirectory = Join-Path $ProjectRoot 'data'
 New-Item -ItemType Directory -Force -Path $DataDirectory | Out-Null
 $DatabaseFiles = Get-FamilyFinanceDatabaseFiles $DataDirectory
 $PrimaryDatabase = @($DatabaseFiles | Where-Object {
-        ($_.Name -eq 'family-finance.mv.db' -or $_.Name -eq 'family-finance.h2.db') -and $_.Length -gt 0
+        $_.Name -eq 'family-finance.mv.db' -and $_.Length -gt 0
     } | Select-Object -First 1)
 if ($PrimaryDatabase.Count -eq 1) {
     $DatabaseBasePath = Join-Path $DataDirectory 'family-finance'
