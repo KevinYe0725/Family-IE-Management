@@ -39,7 +39,7 @@ start-local.cmd -Port 8090
 ./start-local.sh
 ```
 
-该入口会检查 Java 17、项目 Maven Wrapper 和现有数据库状态。若检测到尚未经过 Flyway 管理的第一阶段主库，它会先完成只读检查与 SHA-256 验证备份，再以前台进程启动应用；在终端按 `Ctrl+C` 即可停止。不要绕过这一入口直接启动 Spring Boot，否则会跳过迁移前备份检查。
+该入口会检查 Java 17、项目 Maven Wrapper 和现有数据库状态，并从仓库的 `V*.sql` 动态取得最新数字迁移版本。非空旧库没有 Flyway history 或落后于当前版本时，会先完成只读检查与 SHA-256 验证备份，再以前台进程启动应用；在终端按 `Ctrl+C` 即可停止。不要绕过这一入口直接启动 Spring Boot，否则会跳过迁移前备份检查。
 
 打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)，使用本地演示账户登录：
 
@@ -85,9 +85,9 @@ start-local.cmd -Port 8090
 
 ## 第一阶段数据升级备份与恢复
 
-首次使用 Windows `start-local.cmd` 或 macOS/Linux `./start-local.sh` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先使用项目固定的 H2 2.3.232 运行时以只读方式检查版本；macOS/Linux 启动脚本还会对比检查前后的主库哈希。确认需要兼容升级后，脚本会在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
+Windows `start-local.cmd` 与 macOS/Linux `./start-local.sh` 会用项目固定的 H2 2.3.232 运行时只读检查非空主库 `data/family-finance.mv.db` 的 Flyway history，并与仓库最新数字迁移版本比较。`NO_HISTORY` 或 `BEHIND_CURRENT`（例如 V6 等待 V7）都会在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`；只有 `CURRENT` 跳过迁移备份。macOS/Linux 还会比较检查前后的主库哈希。自动升级仅支持该项目实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
 
-备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查；已有 Flyway 历史的数据库会跳过这次兼容备份。没有现有主库时不会创建备份。
+备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查。若 history 含失败迁移，脚本会先保存一份校验通过的当前状态备份，再拒绝启动并提示：先修复无效数据，再显式运行 Flyway `repair`，检查备份后重试；启动器绝不会自动 `repair`。未来版本或含糊 history 会被拒绝。没有现有主库时不会创建备份。
 
 macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串行化备份。若另一个启动仍在执行，或异常终止留下了无法确认归属的锁，脚本会拒绝启动且不会自行删除该锁；请先确认没有启动或迁移进程仍在运行，再人工检查锁目录和 `.partial` 证据。
 

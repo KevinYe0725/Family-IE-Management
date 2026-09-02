@@ -78,11 +78,14 @@ sha256_file() {
 new_scenario() {
     scenario=$session_root/$1
     assert_under_session_root "$scenario"
-    mkdir -p "$scenario/scripts" "$scenario/.mvn/wrapper" "$scenario/tmp"
+    mkdir -p "$scenario/scripts" "$scenario/.mvn/wrapper" "$scenario/tmp" \
+        "$scenario/src/main/resources/db/migration"
     cp "$source_root/start-local.sh" "$scenario/start-local.sh"
     cp "$source_root/scripts/unix-startup-preflight.sh" "$scenario/scripts/unix-startup-preflight.sh"
     cp "$source_root/.mvn/wrapper/maven-wrapper.jar" "$scenario/.mvn/wrapper/maven-wrapper.jar"
     cp "$source_root/.mvn/wrapper/maven-wrapper.properties" "$scenario/.mvn/wrapper/maven-wrapper.properties"
+    cp "$source_root"/src/main/resources/db/migration/V*.sql \
+        "$scenario/src/main/resources/db/migration/"
     cat >"$scenario/mvnw" <<'FAKE_WRAPPER'
 #!/bin/sh
 set -eu
@@ -175,6 +178,16 @@ new_stage_one_fixture() {
     mkdir -p "$scenario/data"
     java -cp "$fixture_classpath" com.familyfinance.migration.StageOneDatabaseFixtureCli "$database_base" >/dev/null
     [ -s "$database_base.mv.db" ] || fail "The Stage 1 fixture is missing or empty in $scenario"
+}
+
+migration_fixture() {
+    migration_fixture_scenario=$1
+    migration_fixture_action=$2
+    migration_fixture_database_base=$migration_fixture_scenario/data/family-finance
+    assert_under_session_root "$migration_fixture_database_base"
+    java -cp "$fixture_classpath" com.familyfinance.migration.MigrationStateFixtureCli \
+        "$migration_fixture_database_base" "$migration_fixture_action" >/dev/null 2>&1 ||
+        fail "Could not prepare migration state '$migration_fixture_action' in $migration_fixture_scenario"
 }
 
 get_free_port() {
@@ -369,7 +382,7 @@ h2_jar=$(tr ':' '\n' <"$test_classpath_file" | awk '/\/com\/h2database\/h2\/2[.]
 [ -n "$h2_jar" ] || fail 'The pinned H2 2.3.232 jar was not present in the test runtime classpath.'
 assert_equal 1 "$(printf '%s\n' "$h2_jar" | awk 'NF { count++ } END { print count+0 }')" 'The gate resolved more than one pinned H2 jar.'
 
-printf '%s\n' 'Gate 1/10: Java 17 and the project wrapper are mandatory.'
+printf '%s\n' 'Gate 1/13: Java 17 and the project wrapper are mandatory.'
 scenario=$(new_scenario prerequisites)
 marker=$scenario/launched
 fake_bin=$scenario/fake-java
@@ -408,7 +421,7 @@ if ! (cd "$scenario" && TMPDIR=$scenario/tmp PATH="$spaced_java_parent/bin:$PATH
 fi
 [ -f "$marker" ] || fail 'The spaced-path Java 17 scenario did not reach application launch.'
 
-printf '%s\n' 'Gate 2/10: No database launches without creating a backup path.'
+printf '%s\n' 'Gate 2/13: No database launches without creating a backup path.'
 scenario=$(new_scenario no-data)
 marker=$scenario/launched
 (cd "$scenario" && TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh >no-data.log 2>&1)
@@ -425,7 +438,7 @@ fi
 [ -f "$marker" ] || fail 'External-directory invocation did not reach application launch.'
 assert_equal 1 "$(count_completed_backups "$scenario/data-backups")" 'External-directory invocation did not create the required legacy backup.'
 
-printf '%s\n' 'Gate 3/10: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
+printf '%s\n' 'Gate 3/13: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
 scenario=$(new_scenario inspection-failure)
 mkdir "$scenario/data"
 printf '%s\n' 'not an H2 database' >"$scenario/data/family-finance.mv.db"
@@ -447,7 +460,7 @@ fi
 [ ! -e "$marker" ] || fail 'The application launched after H2 resolution failed.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'H2 resolution failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 4/10: Copy and hash failures retain partial data and prevent launch.'
+printf '%s\n' 'Gate 4/13: Copy and hash failures retain partial data and prevent launch.'
 scenario=$(new_scenario copy-failure)
 new_stage_one_fixture "$scenario"
 marker=$scenario/launched
@@ -484,7 +497,7 @@ fi
 assert_equal 0 "$(count_completed_backups "$scenario/data-backups")" 'Hash failure published a completed backup.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'Hash failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 5/10: A publish-time destination collision preserves nested partial evidence and prevents launch.'
+printf '%s\n' 'Gate 5/13: A publish-time destination collision preserves nested partial evidence and prevents launch.'
 scenario=$(new_scenario publish-time-collision)
 new_stage_one_fixture "$scenario"
 real_move=$(command -v mv)
@@ -550,7 +563,7 @@ assert_equal 'external collision sentinel' "$(sed -n '1p' "$collision_destinatio
 grep -F "$collision_destination/$collision_partial_name" "$scenario/publish-collision.log" >/dev/null ||
     fail 'The publish-time collision did not report the retained nested partial path.'
 
-printf '%s\n' 'Gate 6/10: Active and unknown stale locks fail closed without competing publication.'
+printf '%s\n' 'Gate 6/13: Active and unknown stale locks fail closed without competing publication.'
 scenario=$(new_scenario concurrent-preflights)
 new_stage_one_fixture "$scenario"
 real_copy=$(command -v cp)
@@ -627,14 +640,15 @@ set -e
 assert_equal 'unknown-owner-must-remain' "$(sed -n '1p' "$unknown_lock/OWNER.txt")" 'The launcher deleted or changed an unknown backup lock.'
 assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'The stale-lock refusal created a partial backup.'
 
-printf '%s\n' 'Gate 7/10: Owner-marker corruption is preserved by normal release and EXIT cleanup.'
+printf '%s\n' 'Gate 7/13: Owner-marker corruption is preserved by normal release and EXIT cleanup.'
 run_owner_marker_tamper appended
 run_owner_marker_tamper no-newline
 run_owner_marker_tamper symlink
 run_owner_marker_tamper unreadable
 
-printf '%s\n' 'Gate 8/10: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
+printf '%s\n' 'Gate 8/13: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
 scenario=$(new_scenario 'backup restore')
+backup_restore_scenario=$scenario
 new_stage_one_fixture "$scenario"
 printf '%s\n' 'synthetic companion' >"$scenario/data/family-finance.trace.db"
 : >"$scenario/data/family-finance.empty.db"
@@ -677,7 +691,24 @@ for collision in "$scenario/data-backups"/*; do
 done
 stop_process "$first_process_id"
 
-printf '%s\n' 'Gate 9/10: A migrated database skips backup, and restore preserves login plus 12 rows.'
+printf '%s\n' 'Gate 9/13: A V6 database is backed up before its pending V7 migration.'
+pending_scenario=$(new_scenario v6-pending-migration)
+new_stage_one_fixture "$pending_scenario"
+migration_fixture "$pending_scenario" migrate-to-6
+pending_marker=$pending_scenario/launched
+(
+    cd "$pending_scenario"
+    TMPDIR=$pending_scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$pending_marker \
+        ./start-local.sh
+) >"$pending_scenario/pending.log" 2>&1
+[ -f "$pending_marker" ] || fail 'The V6 pending-migration scenario did not reach application launch.'
+assert_equal 1 "$(count_completed_backups "$pending_scenario/data-backups")" \
+    'The V6 pending-migration database did not receive exactly one verified backup.'
+grep -F 'behind repository migration V7' "$pending_scenario/pending.log" >/dev/null ||
+    fail 'The V6 pending-migration branch was not reported explicitly.'
+
+printf '%s\n' 'Gate 10/13: Current V7 skips migration backup.'
+scenario=$backup_restore_scenario
 completed_before_restart=$(count_completed_backups "$scenario/data-backups")
 restart_port=$(get_free_port)
 restart_log=$scenario/restart.log
@@ -687,9 +718,10 @@ wait_for_ready "$restart_port" "$restart_process_id" "$restart_log"
 stop_process "$restart_process_id"
 assert_equal "$completed_before_restart" "$(count_completed_backups "$scenario/data-backups")" 'Already-migrated restart created another backup.'
 assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'Already-migrated restart left a partial directory.'
-grep -F 'already has Flyway history; no migration backup is required' "$restart_log" >/dev/null ||
-    fail 'Already-migrated restart did not take the explicit skip branch.'
+grep -F 'is current at repository migration V7; no migration backup is required' "$restart_log" >/dev/null ||
+    fail 'Current V7 restart did not take the explicit skip branch.'
 
+printf '%s\n' 'Gate 11/13: Restored legacy backup preserves login plus 12 rows.'
 mkdir "$scenario/migrated-before-restore"
 for database_file in "$scenario/data"/family-finance.*.db; do
     [ -e "$database_file" ] || [ -h "$database_file" ] || continue
@@ -709,7 +741,41 @@ wait_for_ready "$restore_port" "$restore_process_id" "$restore_log"
 verify_demo_login_and_ledger "$scenario" "$restore_port"
 stop_process "$restore_process_id"
 
-printf '%s\n' 'Gate 10/10: Successful launch replaces the shell process and propagates application status.'
+printf '%s\n' 'Gate 12/13: Failed V7 backs up and refuses, then repaired V7 retries without stale guards.'
+failed_scenario=$(new_scenario failed-v7-recovery)
+new_stage_one_fixture "$failed_scenario"
+migration_fixture "$failed_scenario" migrate-to-6
+migration_fixture "$failed_scenario" fail-v7-budget
+failed_marker=$failed_scenario/launched
+set +e
+(
+    cd "$failed_scenario"
+    TMPDIR=$failed_scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$failed_marker \
+        ./start-local.sh
+) >"$failed_scenario/failed.log" 2>&1
+failed_status=$?
+set -e
+[ "$failed_status" -ne 0 ] || fail 'The launcher accepted a failed V7 history row.'
+[ ! -e "$failed_marker" ] || fail 'The application launched with failed V7 history.'
+assert_equal 1 "$(count_completed_backups "$failed_scenario/data-backups")" \
+    'Failed V7 history did not receive exactly one verified state backup.'
+grep -F 'repair the invalid data, then run Flyway repair' "$failed_scenario/failed.log" >/dev/null ||
+    fail 'Failed V7 refusal omitted data-repair and Flyway-repair remediation.'
+
+migration_fixture "$failed_scenario" repair-v7-budget
+recovery_port=$(get_free_port)
+recovery_log=$failed_scenario/recovery.log
+start_application "$failed_scenario" "$recovery_port" "$recovery_log"
+recovery_process_id=$started_process_id
+wait_for_ready "$recovery_port" "$recovery_process_id" "$recovery_log"
+stop_process "$recovery_process_id"
+migration_fixture "$failed_scenario" assert-version-7
+assert_equal 2 "$(count_completed_backups "$failed_scenario/data-backups")" \
+    'Repaired V6 state did not receive a fresh verified pre-V7 retry backup.'
+assert_equal 0 "$(count_partial_backups "$failed_scenario/data-backups")" \
+    'Repaired V7 retry left partial backup evidence.'
+
+printf '%s\n' 'Gate 13/13: Successful launch replaces the shell process and propagates application status.'
 scenario=$(new_scenario foreground-exec)
 marker=$scenario/launched
 set +e
@@ -719,5 +785,5 @@ set -e
 assert_equal 23 "$foreground_status" 'The launcher did not propagate the foreground application status.'
 [ -f "$marker" ] || fail 'The foreground application command was not invoked.'
 
-printf '%s\n' 'All isolated macOS/Linux startup gates passed.'
+printf '%s\n' 'All 13 isolated macOS/Linux startup gates passed.'
 gate_succeeded=1

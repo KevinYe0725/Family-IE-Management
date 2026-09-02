@@ -13,6 +13,8 @@ ff_backup_lock_directory=
 ff_backup_lock_owner_file=
 ff_backup_lock_token=
 ff_backup_lock_owned=0
+ff_latest_migration_version=
+ff_migration_state=
 
 ff_step() {
     printf '%s\n' "[family-finance] $*"
@@ -246,12 +248,33 @@ ff_resolve_h2_jar() {
         ff_fail 'The resolved project runtime h2-2.3.232.jar does not exist. The database was left unchanged.'
 }
 
+ff_find_latest_migration_version() {
+    ff_migration_directory=$1/src/main/resources/db/migration
+    ff_latest_migration_version=0
+    ff_migration_count=0
+    for ff_migration_file in "$ff_migration_directory"/V*.sql; do
+        [ -f "$ff_migration_file" ] || continue
+        ff_migration_name=${ff_migration_file##*/}
+        ff_migration_version=${ff_migration_name#V}
+        ff_migration_version=${ff_migration_version%%__*}
+        case "$ff_migration_version" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        ff_migration_count=$((ff_migration_count + 1))
+        if [ "$ff_migration_version" -gt "$ff_latest_migration_version" ]; then
+            ff_latest_migration_version=$ff_migration_version
+        fi
+    done
+    [ "$ff_migration_count" -gt 0 ] && [ "$ff_latest_migration_version" -gt 0 ] ||
+        ff_fail "Could not derive the latest numeric Flyway migration from $ff_migration_directory."
+}
+
 ff_inspect_flyway_history() {
     ff_database_base=$1
     ff_inspection_output=$2
     ff_status_lines=$3
     ff_jdbc_url=jdbc:h2:file:$ff_database_base\;IFEXISTS=TRUE\;ACCESS_MODE_DATA=r
-    ff_history_sql="select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end as HISTORY_STATUS"
+    ff_history_sql="select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'HISTORY_PRESENT' else 'NO_HISTORY' end as HISTORY_STATUS"
     "$ff_java_command" -cp "$ff_h2_jar" org.h2.tools.Shell \
         -url "$ff_jdbc_url" -user sa -password '' -sql "$ff_history_sql" \
         >"$ff_inspection_output" 2>&1 ||
@@ -261,13 +284,37 @@ ff_inspect_flyway_history() {
         sub(/\r$/, "")
         sub(/^[[:space:]]*/, "")
         sub(/[[:space:]]*$/, "")
-        if ($0 == "FLYWAY_HISTORY_PRESENT" || $0 == "FLYWAY_HISTORY_ABSENT") print
+        if ($0 == "HISTORY_PRESENT" || $0 == "NO_HISTORY") print
     }' "$ff_inspection_output" >"$ff_status_lines" ||
         ff_fail 'Could not parse the Flyway-history inspection result.'
     ff_status_count=$(awk 'NF { count++ } END { print count+0 }' "$ff_status_lines")
     [ "$ff_status_count" -eq 1 ] ||
         ff_fail 'H2 inspection did not return exactly one unambiguous Flyway-history status.'
-    ff_flyway_status=$(sed -n '1p' "$ff_status_lines")
+    ff_history_presence=$(sed -n '1p' "$ff_status_lines")
+    if [ "$ff_history_presence" = NO_HISTORY ]; then
+        ff_migration_state=NO_HISTORY
+        return 0
+    fi
+    [ "$ff_history_presence" = HISTORY_PRESENT ] ||
+        ff_fail 'Flyway-history inspection returned an unsupported presence status.'
+
+    ff_state_sql="select case when exists (select 1 from \"flyway_schema_history\" where \"success\" = false) then 'FAILED' when exists (select 1 from \"flyway_schema_history\" where \"version\" is not null and not regexp_like(\"version\", '^[0-9]+$')) then 'AMBIGUOUS' when not exists (select 1 from \"flyway_schema_history\" where \"success\" = true and \"version\" is not null and regexp_like(\"version\", '^[0-9]+$')) then 'AMBIGUOUS' when exists (select 1 from \"flyway_schema_history\" where \"success\" = true and \"version\" is not null group by \"version\" having count(*) > 1) then 'AMBIGUOUS' when (select max(cast(\"version\" as bigint)) from \"flyway_schema_history\" where \"success\" = true and \"version\" is not null) > $ff_latest_migration_version then 'FUTURE' when (select max(cast(\"version\" as bigint)) from \"flyway_schema_history\" where \"success\" = true and \"version\" is not null) = $ff_latest_migration_version then 'CURRENT' when (select max(cast(\"version\" as bigint)) from \"flyway_schema_history\" where \"success\" = true and \"version\" is not null) < $ff_latest_migration_version then 'BEHIND_CURRENT' else 'AMBIGUOUS' end as MIGRATION_STATE"
+    "$ff_java_command" -cp "$ff_h2_jar" org.h2.tools.Shell \
+        -url "$ff_jdbc_url" -user sa -password '' -sql "$ff_state_sql" \
+        >"$ff_inspection_output" 2>&1 ||
+        ff_fail 'Could not inspect the exact Flyway migration state. The database was left unchanged.'
+    awk '{
+        sub(/\r$/, "")
+        sub(/^[[:space:]]*/, "")
+        sub(/[[:space:]]*$/, "")
+        if ($0 == "BEHIND_CURRENT" || $0 == "CURRENT" || $0 == "FAILED" ||
+            $0 == "FUTURE" || $0 == "AMBIGUOUS") print
+    }' "$ff_inspection_output" >"$ff_status_lines" ||
+        ff_fail 'Could not parse the exact Flyway migration state.'
+    ff_status_count=$(awk 'NF { count++ } END { print count+0 }' "$ff_status_lines")
+    [ "$ff_status_count" -eq 1 ] ||
+        ff_fail 'H2 inspection did not return exactly one unambiguous Flyway migration state.'
+    ff_migration_state=$(sed -n '1p' "$ff_status_lines")
 }
 
 ff_discard_empty_partial_for_migrated_database() {
@@ -365,6 +412,7 @@ ff_prepare_local_database() {
         return 0
     fi
 
+    ff_find_latest_migration_version "$ff_project_root"
     ff_prepare_backup_root "$ff_backup_root"
     ff_acquire_backup_lock "$ff_backup_root"
     trap ff_cleanup_startup_resources 0
@@ -391,18 +439,40 @@ ff_prepare_local_database() {
         ff_fail 'Read-only Flyway-history inspection changed the primary database; startup was refused.'
     fi
 
-    if [ "$ff_flyway_status" = FLYWAY_HISTORY_PRESENT ]; then
-        ff_discard_empty_partial_for_migrated_database
-        ff_release_backup_lock
-        if [ "$ff_backup_root_created" -eq 1 ]; then
-            rmdir "$ff_backup_root" 2>/dev/null || true
-        fi
-        ff_step 'Existing database already has Flyway history; no migration backup is required.'
-        return 0
-    fi
-    [ "$ff_flyway_status" = FLYWAY_HISTORY_ABSENT ] ||
-        ff_fail 'Flyway-history inspection returned an unsupported status.'
-
-    ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
-    ff_release_backup_lock
+    case "$ff_migration_state" in
+        CURRENT)
+            ff_discard_empty_partial_for_migrated_database
+            ff_release_backup_lock
+            if [ "$ff_backup_root_created" -eq 1 ]; then
+                rmdir "$ff_backup_root" 2>/dev/null || true
+            fi
+            ff_step "Existing database is current at repository migration V$ff_latest_migration_version; no migration backup is required."
+            ;;
+        NO_HISTORY)
+            ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+            ff_release_backup_lock
+            ff_step "Existing database has no Flyway history; backup completed before migration to V$ff_latest_migration_version."
+            ;;
+        BEHIND_CURRENT)
+            ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+            ff_release_backup_lock
+            ff_step "Existing database is behind repository migration V$ff_latest_migration_version; backup completed before migration."
+            ;;
+        FAILED)
+            ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+            ff_release_backup_lock
+            ff_fail 'Flyway history contains a failed migration. Startup was refused: repair the invalid data, then run Flyway repair, review the verified state backup, and retry.'
+            ;;
+        FUTURE)
+            ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+            ff_release_backup_lock
+            ff_fail "The database contains a migration newer than repository V$ff_latest_migration_version. Startup was refused; use matching application code."
+            ;;
+        AMBIGUOUS)
+            ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+            ff_release_backup_lock
+            ff_fail 'Flyway history is ambiguous. Startup was refused; inspect the verified state backup and repair history manually.'
+            ;;
+        *) ff_fail 'Flyway migration-state inspection returned an unsupported status.' ;;
+    esac
 }

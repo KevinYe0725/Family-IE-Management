@@ -63,34 +63,58 @@ class WindowsStartupGateIsolationTest {
         List<String> gateLines = executableLines(Path.of("scripts", "windows-startup-gates.ps1"));
 
         List<String> representativeAbsentOutput = List.of(
-                "CASE WHEN EXISTS (...) THEN 'FLYWAY_HISTORY_PRESENT' ELSE 'FLYWAY_HISTORY_ABSENT' END",
-                "FLYWAY_HISTORY_ABSENT",
+                "CASE WHEN EXISTS (...) THEN 'HISTORY_PRESENT' ELSE 'NO_HISTORY' END",
+                "NO_HISTORY",
                 "(1 row, 3 ms)");
-        Set<String> allowed = Set.of("FLYWAY_HISTORY_PRESENT", "FLYWAY_HISTORY_ABSENT");
+        Set<String> allowed = Set.of("HISTORY_PRESENT", "NO_HISTORY");
         assertThat(representativeAbsentOutput.stream()
                         .map(String::trim)
                         .filter(allowed::contains))
-                .containsExactly("FLYWAY_HISTORY_ABSENT");
+                .containsExactly("NO_HISTORY");
 
         assertThat(parserLines).contains(
+                "function ConvertFrom-FlywayHistoryPresenceShellOutput {",
+                "Where-Object { $_ -ceq 'NO_HISTORY' -or $_ -ceq 'HISTORY_PRESENT' })",
+                "function ConvertFrom-FlywayMigrationStateShellOutput {",
+                "$AllowedStates = @('NO_HISTORY', 'BEHIND_CURRENT', 'CURRENT', 'FAILED')",
                 "$StatusLines = @($Output |",
-                "$_ -ceq 'FLYWAY_HISTORY_PRESENT' -or",
-                "$_ -ceq 'FLYWAY_HISTORY_ABSENT'",
                 "if ($StatusLines.Count -ne 1) {",
-                "return ($StatusLines[0] -ceq 'FLYWAY_HISTORY_PRESENT')");
+                "return [string]$StatusLines[0]");
         assertThat(parserLines.stream()
-                        .filter(line -> line.contains("-match") && line.contains("FLYWAY_HISTORY_")))
+                        .filter(line -> line.contains("-match") && line.contains("CURRENT")))
                 .isEmpty();
         assertThat(startupLines).contains(
                 ". (Join-Path $PSScriptRoot 'startup-output-parsing.ps1')",
-                "$Sql = \"select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end as HISTORY_STATUS\"",
-                "$HasHistory = ConvertFrom-FlywayHistoryShellOutput -Output @($Output)",
-                "return $HasHistory");
+                "function Get-LatestMigrationVersion {",
+                "function Get-FlywayMigrationState([string]$DatabaseBasePath, [long]$LatestMigrationVersion) {",
+                "$MigrationState = Get-FlywayMigrationState $DatabaseBasePath $LatestMigrationVersion");
         assertThat(gateLines).contains(
                 ". (Join-Path $Scenario 'scripts\\startup-output-parsing.ps1')",
-                "$Parsed = ConvertFrom-FlywayHistoryShellOutput -Output $RepresentativeAbsentOutput",
-                "Assert-True (-not $Parsed) 'The H2 Shell header produced a false Flyway-history positive.'",
-                "Assert-Equal 4 $RejectedInvalidOutputs 'The Flyway-history parser accepted a zero, duplicate, multiple, or ambiguous status.'");
+                "$Presence = ConvertFrom-FlywayHistoryPresenceShellOutput -Output $RepresentativeAbsentOutput",
+                "$State = ConvertFrom-FlywayMigrationStateShellOutput -Output @(",
+                "Assert-Equal 5 $RejectedInvalidOutputs 'The migration-state parser accepted a zero, duplicate, multiple, future, or ambiguous state.'");
+    }
+
+    @Test
+    void productionPreflightDerivesLatestMigrationAndClassifiesExactHistoryState() throws Exception {
+        String parser = Files.readString(Path.of("scripts", "startup-output-parsing.ps1"));
+        String startup = Files.readString(Path.of("scripts", "start-local.ps1"));
+
+        assertThat(parser).contains(
+                "function ConvertFrom-FlywayMigrationStateShellOutput",
+                "'NO_HISTORY'",
+                "'BEHIND_CURRENT'",
+                "'CURRENT'",
+                "'FAILED'");
+        assertThat(startup).contains(
+                "function Get-LatestMigrationVersion",
+                "function Get-FlywayMigrationState",
+                "V*.sql",
+                "behind repository migration V",
+                "repair the invalid data, then run Flyway repair",
+                "current at repository migration V");
+        assertThat(startup).doesNotContain("function Test-FlywayHistoryPresent");
+        assertThat(startup).doesNotContain("flyway:repair", ".repair()");
     }
 
     @Test
@@ -101,7 +125,7 @@ class WindowsStartupGateIsolationTest {
                 .toList();
 
         assertThat(backupCalls).isNotEmpty().allMatch(line -> line.matches(
-                "^\\$[A-Za-z][A-Za-z0-9]* = @\\(Get-(Completed|Partial)Backups \\$BackupRoot\\)$"));
+                "^\\$[A-Za-z][A-Za-z0-9]* = @\\(Get-(Completed|Partial)Backups \\$[A-Za-z][A-Za-z0-9]*Root\\)$"));
     }
 
     @Test

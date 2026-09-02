@@ -234,29 +234,35 @@ function Test-FlywayHistoryOutputParser {
     $Scenario = New-Scenario 'flyway-parser-regression'
     . (Join-Path $Scenario 'scripts\startup-output-parsing.ps1')
     $RepresentativeAbsentOutput = @(
-        "CASE WHEN EXISTS (...) THEN 'FLYWAY_HISTORY_PRESENT' ELSE 'FLYWAY_HISTORY_ABSENT' END",
-        'FLYWAY_HISTORY_ABSENT',
+        "CASE WHEN EXISTS (...) THEN 'HISTORY_PRESENT' ELSE 'NO_HISTORY' END",
+        'NO_HISTORY',
         '(1 row, 3 ms)'
     )
-    $Parsed = ConvertFrom-FlywayHistoryShellOutput -Output $RepresentativeAbsentOutput
-    Assert-True (-not $Parsed) 'The H2 Shell header produced a false Flyway-history positive.'
+    $Presence = ConvertFrom-FlywayHistoryPresenceShellOutput -Output $RepresentativeAbsentOutput
+    Assert-Equal 'NO_HISTORY' $Presence 'The H2 Shell header produced a false Flyway-history positive.'
+    $State = ConvertFrom-FlywayMigrationStateShellOutput -Output @(
+        "CASE ... THEN 'CURRENT' ...",
+        'BEHIND_CURRENT',
+        '(1 row, 2 ms)')
+    Assert-Equal 'BEHIND_CURRENT' $State 'The exact migration-state parser returned the wrong state.'
 
     $InvalidOutputs = @(
         [pscustomobject]@{ Lines = @() },
-        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT', 'FLYWAY_HISTORY_PRESENT') },
-        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT', 'FLYWAY_HISTORY_ABSENT') },
-        [pscustomobject]@{ Lines = @('FLYWAY_HISTORY_PRESENT FLYWAY_HISTORY_ABSENT') }
+        [pscustomobject]@{ Lines = @('CURRENT', 'CURRENT') },
+        [pscustomobject]@{ Lines = @('CURRENT', 'FAILED') },
+        [pscustomobject]@{ Lines = @('FUTURE') },
+        [pscustomobject]@{ Lines = @('AMBIGUOUS') }
     )
     $RejectedInvalidOutputs = 0
     foreach ($InvalidOutput in $InvalidOutputs) {
         try {
-            ConvertFrom-FlywayHistoryShellOutput -Output @($InvalidOutput.Lines) | Out-Null
+            ConvertFrom-FlywayMigrationStateShellOutput -Output @($InvalidOutput.Lines) | Out-Null
         }
         catch {
             $RejectedInvalidOutputs++
         }
     }
-    Assert-Equal 4 $RejectedInvalidOutputs 'The Flyway-history parser accepted a zero, duplicate, multiple, or ambiguous status.'
+    Assert-Equal 5 $RejectedInvalidOutputs 'The migration-state parser accepted a zero, duplicate, multiple, future, or ambiguous state.'
 }
 
 function Test-StartupSha256Helper {
@@ -310,6 +316,16 @@ function New-StageOneFixture([string]$ScenarioRoot) {
     $Primary = "$DatabaseBase.mv.db"
     Assert-True (Test-Path -LiteralPath $Primary -PathType Leaf) 'The Stage 1 fixture did not create its MVStore primary.'
     return $Primary
+}
+
+function Invoke-MigrationFixture([string]$ScenarioRoot, [string]$Action) {
+    $DatabaseBase = Join-Path $ScenarioRoot 'data\family-finance'
+    Assert-UnderSessionRoot $DatabaseBase
+    & java -cp $script:FixtureClasspath com.familyfinance.migration.MigrationStateFixtureCli `
+        $DatabaseBase $Action
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not prepare migration state '$Action' in $ScenarioRoot."
+    }
 }
 
 function Get-DatabaseHashes([string]$DataDirectory) {
@@ -469,7 +485,7 @@ function Test-BackupRestartCollisionAndRestore {
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True ((Get-ProcessLog $Restart) -match 'already has Flyway history; no migration backup is required') 'Already-migrated restart did not take the explicit backup-skip branch.'
+    Assert-True ((Get-ProcessLog $Restart) -match 'is current at repository migration V7; no migration backup is required') 'Current V7 restart did not take the explicit backup-skip branch.'
     $CompletedAfterRestart = @(Get-CompletedBackups $BackupRoot)
     $PartialsAfterRestart = @(Get-PartialBackups $BackupRoot)
     Assert-Equal $CompletedCount $CompletedAfterRestart.Count 'Already-migrated restart created another legacy backup.'
@@ -538,6 +554,67 @@ function Test-InterruptedCompanionCopy {
     Assert-NoScenarioProcesses $Scenario
 }
 
+function Test-ExactMigrationStatesAndRecovery {
+    $PendingScenario = New-Scenario 'v6-pending-migration'
+    New-StageOneFixture $PendingScenario | Out-Null
+    Invoke-MigrationFixture $PendingScenario 'migrate-to-6'
+    $PendingBackupRoot = Join-Path $PendingScenario 'data-backups'
+    $PendingPort = Get-FreePort
+    $Pending = Start-Launcher $PendingScenario $PendingPort 'v6-pending'
+    try {
+        Wait-ForReady $PendingPort $Pending 180
+    }
+    finally {
+        Stop-ProcessTree $Pending
+    }
+    Assert-True ((Get-ProcessLog $Pending) -match 'behind repository migration V7') 'V6 pending migration was not reported explicitly.'
+    $PendingBackups = @(Get-CompletedBackups $PendingBackupRoot)
+    Assert-Equal 1 $PendingBackups.Count 'V6 pending migration did not receive exactly one verified backup.'
+    Invoke-MigrationFixture $PendingScenario 'assert-version-7'
+
+    $RestartPort = Get-FreePort
+    $Restart = Start-Launcher $PendingScenario $RestartPort 'v7-current'
+    try {
+        Wait-ForReady $RestartPort $Restart 180
+    }
+    finally {
+        Stop-ProcessTree $Restart
+    }
+    Assert-True ((Get-ProcessLog $Restart) -match 'is current at repository migration V7; no migration backup is required') 'Current V7 was not reported explicitly.'
+    $CurrentBackups = @(Get-CompletedBackups $PendingBackupRoot)
+    Assert-Equal 1 $CurrentBackups.Count 'Current V7 created an unnecessary backup.'
+
+    $FailedScenario = New-Scenario 'failed-v7-recovery'
+    New-StageOneFixture $FailedScenario | Out-Null
+    Invoke-MigrationFixture $FailedScenario 'migrate-to-6'
+    Invoke-MigrationFixture $FailedScenario 'fail-v7-budget'
+    $FailedBackupRoot = Join-Path $FailedScenario 'data-backups'
+    $FailedPort = Get-FreePort
+    $Failed = Start-Launcher $FailedScenario $FailedPort 'failed-v7'
+    Wait-ForExit $Failed 180 'Failed V7 refusal'
+    Assert-True ($Failed.ExitCode -ne 0) 'Launcher accepted a failed V7 history row.'
+    Assert-True ((Get-ProcessLog $Failed) -match 'repair the invalid data, then run Flyway repair') 'Failed V7 refusal omitted remediation.'
+    $FailedBackups = @(Get-CompletedBackups $FailedBackupRoot)
+    Assert-Equal 1 $FailedBackups.Count 'Failed V7 did not receive exactly one verified state backup.'
+
+    Invoke-MigrationFixture $FailedScenario 'repair-v7-budget'
+    $RecoveryPort = Get-FreePort
+    $Recovery = Start-Launcher $FailedScenario $RecoveryPort 'repaired-v7'
+    try {
+        Wait-ForReady $RecoveryPort $Recovery 180
+    }
+    finally {
+        Stop-ProcessTree $Recovery
+    }
+    Invoke-MigrationFixture $FailedScenario 'assert-version-7'
+    $RecoveredBackups = @(Get-CompletedBackups $FailedBackupRoot)
+    Assert-Equal 2 $RecoveredBackups.Count 'Repaired V6 state did not receive a fresh verified retry backup.'
+    $RecoveredPartials = @(Get-PartialBackups $FailedBackupRoot)
+    Assert-Equal 0 $RecoveredPartials.Count 'Repaired V7 retry left partial backup evidence.'
+    Assert-NoScenarioProcesses $PendingScenario
+    Assert-NoScenarioProcesses $FailedScenario
+}
+
 $Succeeded = $false
 try {
     New-Item -ItemType Directory -Path $SessionRoot | Out-Null
@@ -567,17 +644,19 @@ try {
     Test-FlywayHistoryOutputParser
     Write-Host 'Hash regression: startup SHA-256 is independent of module autoload.'
     Test-StartupSha256Helper
-    Write-Host 'Gate 0/6: Exited-process logs use immutable launch metadata.'
+    Write-Host 'Gate 0/7: Exited-process logs use immutable launch metadata.'
     Test-ExitedProcessLogRetrieval
-    Write-Host 'Gate 1/6: Smoke leaves absent production paths absent.'
+    Write-Host 'Gate 1/7: Smoke leaves absent production paths absent.'
     Test-AbsentProductionPathsSmoke
-    Write-Host 'Gate 2/6: Smoke preserves sentinels and honors a custom port.'
+    Write-Host 'Gate 2/7: Smoke preserves sentinels and honors a custom port.'
     Test-SentinelProductionPathsAndCustomPortSmoke
-    Write-Host 'Gate 3/6: An unrelated listener is rejected.'
+    Write-Host 'Gate 3/7: An unrelated listener is rejected.'
     Test-UnrelatedPortRejection
-    Write-Host 'Gate 4/6: Legacy backup, collision, restart, restore, login, and ledger checks.'
+    Write-Host 'Gate 4/7: Legacy backup, collision, restart, restore, login, and ledger checks.'
     Test-BackupRestartCollisionAndRestore
-    Write-Host 'Gate 5/6: A locked companion retains only a partial backup and prevents startup.'
+    Write-Host 'Gate 5/7: Exact V6, V7, failed V7, and repaired V7 states are handled safely.'
+    Test-ExactMigrationStatesAndRecovery
+    Write-Host 'Gate 6/7: A locked companion retains only a partial backup and prevents startup.'
     Test-InterruptedCompanionCopy
 
     $Succeeded = $true

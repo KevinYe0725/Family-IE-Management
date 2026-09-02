@@ -1,6 +1,7 @@
 -- Fail closed with named, searchable guard constraints before installing the
 -- stronger relationships. Existing V6 databases can contain these invalid
 -- combinations because the original Stage 1 foreign keys were ID-only.
+drop table if exists v7_transaction_member_guard;
 create table v7_transaction_member_guard (
     violation_count bigint not null,
     constraint ck_v7_transaction_member_household_guard check (violation_count = 0)
@@ -14,6 +15,7 @@ left join family_members member_row
 where member_row.id is null;
 drop table v7_transaction_member_guard;
 
+drop table if exists v7_transaction_category_guard;
 create table v7_transaction_category_guard (
     violation_count bigint not null,
     constraint ck_v7_transaction_category_kind_guard check (violation_count = 0)
@@ -28,6 +30,7 @@ left join categories category_row
 where category_row.id is null;
 drop table v7_transaction_category_guard;
 
+drop table if exists v7_budget_category_guard;
 create table v7_budget_category_guard (
     violation_count bigint not null,
     constraint ck_v7_budget_category_kind_guard check (violation_count = 0)

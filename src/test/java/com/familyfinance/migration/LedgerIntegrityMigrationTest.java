@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import java.util.function.Consumer;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -63,8 +65,7 @@ class LedgerIntegrityMigrationTest {
         MigrationResult versionSix = MigrationTestSupport.migrateExistingDatabaseTo(database, "6");
         versionSix.executeUpdate("update financial_transactions set member_id=2 where id=1");
 
-        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(database))
-                .hasStackTraceContaining("CK_V7_TRANSACTION_MEMBER_HOUSEHOLD_GUARD");
+        assertMigrationFailsWithGuard(database, "CK_V7_TRANSACTION_MEMBER_HOUSEHOLD_GUARD");
     }
 
     @Test
@@ -78,14 +79,12 @@ class LedgerIntegrityMigrationTest {
         long outsiderCategory = crossHouseholdV6.queryLong("select id from categories where household_id=2");
         crossHouseholdV6.executeUpdate(
                 "update financial_transactions set category_id=" + outsiderCategory + " where id=1");
-        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(crossHousehold))
-                .hasStackTraceContaining("CK_V7_TRANSACTION_CATEGORY_KIND_GUARD");
+        assertMigrationFailsWithGuard(crossHousehold, "CK_V7_TRANSACTION_CATEGORY_KIND_GUARD");
 
         Path wrongKind = StageOneDatabaseFixture.create(tempDir.resolve("corrupt-category-kind"));
         MigrationResult wrongKindV6 = MigrationTestSupport.migrateExistingDatabaseTo(wrongKind, "6");
         wrongKindV6.executeUpdate("update financial_transactions set kind='INCOME' where id=1");
-        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(wrongKind))
-                .hasStackTraceContaining("CK_V7_TRANSACTION_CATEGORY_KIND_GUARD");
+        assertMigrationFailsWithGuard(wrongKind, "CK_V7_TRANSACTION_CATEGORY_KIND_GUARD");
     }
 
     @Test
@@ -101,8 +100,7 @@ class LedgerIntegrityMigrationTest {
                 + "(household_id,period_month,scope_type,category_id,amount_cents,version,active) "
                 + "values (1,'2026-11','CATEGORY'," + incomeCategory + ",10000,1,true)");
 
-        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(database))
-                .hasStackTraceContaining("CK_V7_BUDGET_CATEGORY_KIND_GUARD");
+        assertMigrationFailsWithGuard(database, "CK_V7_BUDGET_CATEGORY_KIND_GUARD");
     }
 
     @Test
@@ -121,8 +119,82 @@ class LedgerIntegrityMigrationTest {
                 "select id from budgets where household_id=1 and period_month='2026-12'");
         versionSix.executeUpdate(revisionInsert(budgetId, incomeCategory));
 
-        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(database))
-                .hasStackTraceContaining("CK_V7_BUDGET_CATEGORY_KIND_GUARD");
+        assertMigrationFailsWithGuard(database, "CK_V7_BUDGET_CATEGORY_KIND_GUARD");
+    }
+
+    @Test
+    void everyFailedV7GuardCanBeDataFixedFlywayRepairedAndRetried() {
+        assertGuardCanBeRepaired(
+                "restart-member",
+                "V7_TRANSACTION_MEMBER_GUARD",
+                v6 -> v6.executeUpdate("update financial_transactions set member_id=2 where id=1"),
+                v6 -> v6.executeUpdate("update financial_transactions set member_id=1 where id=1"),
+                "CK_V7_TRANSACTION_MEMBER_HOUSEHOLD_GUARD");
+        assertGuardCanBeRepaired(
+                "restart-category",
+                "V7_TRANSACTION_CATEGORY_GUARD",
+                v6 -> v6.executeUpdate("update financial_transactions set kind='INCOME' where id=1"),
+                v6 -> v6.executeUpdate("update financial_transactions set kind='EXPENSE' where id=1"),
+                "CK_V7_TRANSACTION_CATEGORY_KIND_GUARD");
+        assertGuardCanBeRepaired(
+                "restart-budget",
+                "V7_BUDGET_CATEGORY_GUARD",
+                v6 -> {
+                    v6.executeUpdate("insert into categories "
+                            + "(household_id,kind,name,color,is_default,created_at,parent_id) values "
+                            + "(1,'INCOME','重试错误预算','#778899',false,current_timestamp,null)");
+                    long incomeCategory = v6.queryLong(
+                            "select id from categories where household_id=1 and kind='INCOME'");
+                    v6.executeUpdate("insert into budgets "
+                            + "(household_id,period_month,scope_type,category_id,amount_cents,version,active) "
+                            + "values (1,'2027-01','CATEGORY'," + incomeCategory + ",10000,1,true)");
+                },
+                v6 -> v6.executeUpdate("delete from budgets where period_month='2027-01'"),
+                "CK_V7_BUDGET_CATEGORY_KIND_GUARD");
+    }
+
+    private void assertGuardCanBeRepaired(
+            String databaseName,
+            String guardTable,
+            Consumer<MigrationResult> corrupt,
+            Consumer<MigrationResult> repairData,
+            String guardConstraint) {
+        Path database = StageOneDatabaseFixture.createWithSecondHousehold(tempDir.resolve(databaseName));
+        MigrationResult versionSix = MigrationTestSupport.migrateExistingDatabaseTo(database, "6");
+        corrupt.accept(versionSix);
+
+        assertMigrationFailsWithGuard(database, guardConstraint);
+        assertThat(versionSix.queryLong("select count(*) from \"flyway_schema_history\" "
+                + "where \"version\"='7' and \"success\"=false")).isEqualTo(1);
+        assertThat(versionSix.queryLong("select count(*) from information_schema.tables "
+                + "where table_schema='PUBLIC' and table_name='" + guardTable + "'")).isEqualTo(1);
+
+        repairData.accept(versionSix);
+        Flyway.configure()
+                .dataSource(versionSix.databaseUrl(), "sa", "")
+                .locations("classpath:db/migration")
+                .baselineOnMigrate(true)
+                .baselineVersion("1")
+                .load()
+                .repair();
+
+        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
+        assertThat(migrated.version()).isEqualTo("7");
+        assertThat(migrated.queryLong("select count(*) from information_schema.tables "
+                + "where table_schema='PUBLIC' and table_name like 'V7_%_GUARD'")).isZero();
+    }
+
+    private static void assertMigrationFailsWithGuard(Path database, String guardConstraint) {
+        ch.qos.logback.classic.Logger flywayLogger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger("org.flywaydb.core.internal.command.DbMigrate");
+        ch.qos.logback.classic.Level previousLevel = flywayLogger.getLevel();
+        try {
+            flywayLogger.setLevel(ch.qos.logback.classic.Level.OFF);
+            assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(database))
+                    .hasStackTraceContaining(guardConstraint);
+        } finally {
+            flywayLogger.setLevel(previousLevel);
+        }
     }
 
     private static String revisionInsert(long budgetId, long oldCategoryId) {

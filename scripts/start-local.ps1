@@ -91,18 +91,52 @@ function Get-ProjectH2Jar {
     return $H2Jars[0]
 }
 
-function Test-FlywayHistoryPresent([string]$DatabaseBasePath) {
-    $H2Jar = Get-ProjectH2Jar
-    $JdbcPath = $DatabaseBasePath.Replace('\', '/')
-    $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
-    $Sql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'FLYWAY_HISTORY_PRESENT' else 'FLYWAY_HISTORY_ABSENT' end as HISTORY_STATUS"
+function Get-LatestMigrationVersion {
+    $MigrationDirectory = Join-Path $ProjectRoot 'src\main\resources\db\migration'
+    $Versions = @(Get-ChildItem -LiteralPath $MigrationDirectory -File -Filter 'V*.sql' |
+            ForEach-Object {
+                if ($_.Name -cmatch '^V(?<version>[0-9]+)__.+\.sql$') {
+                    [long]$Matches.version
+                }
+            })
+    if ($Versions.Count -eq 0) {
+        throw "Could not derive the latest numeric Flyway migration from $MigrationDirectory."
+    }
+    return [long](($Versions | Measure-Object -Maximum).Maximum)
+}
+
+function Invoke-H2Inspection([string]$H2Jar, [string]$JdbcUrl, [string]$Sql) {
     $Command = "`"java`" -cp `"$H2Jar`" org.h2.tools.Shell -url `"$JdbcUrl`" -user sa -password `"`" -sql `"$Sql`" 2>&1"
     $Output = & $env:ComSpec /d /s /c $Command
     if ($LASTEXITCODE -ne 0) {
-        throw 'Could not inspect the existing H2 database for Flyway history. The application was not started and the database was left unchanged.'
+        throw 'Could not inspect the existing H2 database migration state. The application was not started and the database was left unchanged.'
     }
-    $HasHistory = ConvertFrom-FlywayHistoryShellOutput -Output @($Output)
-    return $HasHistory
+    return @($Output)
+}
+
+function Get-FlywayMigrationState([string]$DatabaseBasePath, [long]$LatestMigrationVersion) {
+    $H2Jar = Get-ProjectH2Jar
+    $JdbcPath = $DatabaseBasePath.Replace('\', '/')
+    $JdbcUrl = "jdbc:h2:file:$JdbcPath;IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
+    $PresenceSql = "select case when exists (select 1 from information_schema.tables where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history') then 'HISTORY_PRESENT' else 'NO_HISTORY' end as HISTORY_STATUS"
+    $Presence = ConvertFrom-FlywayHistoryPresenceShellOutput -Output @(
+        Invoke-H2Inspection $H2Jar $JdbcUrl $PresenceSql)
+    if ($Presence -ceq 'NO_HISTORY') {
+        return (ConvertFrom-FlywayMigrationStateShellOutput -Output @('NO_HISTORY'))
+    }
+
+    $StateSql = "select case when exists (select 1 from `"flyway_schema_history`" where `"success`" = false) then 'FAILED' when exists (select 1 from `"flyway_schema_history`" where `"version`" is not null and not regexp_like(`"version`", '^[0-9]+$')) then 'AMBIGUOUS' when not exists (select 1 from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null and regexp_like(`"version`", '^[0-9]+$')) then 'AMBIGUOUS' when exists (select 1 from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null group by `"version`" having count(*) > 1) then 'AMBIGUOUS' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) > $LatestMigrationVersion then 'FUTURE' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) = $LatestMigrationVersion then 'CURRENT' when (select max(cast(`"version`" as bigint)) from `"flyway_schema_history`" where `"success`" = true and `"version`" is not null) < $LatestMigrationVersion then 'BEHIND_CURRENT' else 'AMBIGUOUS' end as MIGRATION_STATE"
+    $StateOutput = @(Invoke-H2Inspection $H2Jar $JdbcUrl $StateSql)
+    $UnsupportedStates = @($StateOutput |
+            ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { $_ -ceq 'FUTURE' -or $_ -ceq 'AMBIGUOUS' })
+    if ($UnsupportedStates.Count -eq 1 -and $UnsupportedStates[0] -ceq 'FUTURE') {
+        throw "The database contains a migration newer than repository V$LatestMigrationVersion. Startup was refused; use matching application code."
+    }
+    if ($UnsupportedStates.Count -eq 1 -and $UnsupportedStates[0] -ceq 'AMBIGUOUS') {
+        throw 'Flyway history is ambiguous. Startup was refused; inspect and repair history manually.'
+    }
+    return (ConvertFrom-FlywayMigrationStateShellOutput -Output $StateOutput)
 }
 
 function New-LegacyDatabaseBackup([System.IO.FileInfo[]]$DatabaseFiles, [string]$BackupRoot) {
@@ -233,12 +267,23 @@ $PrimaryDatabase = @($DatabaseFiles | Where-Object {
     } | Select-Object -First 1)
 if ($PrimaryDatabase.Count -eq 1) {
     $DatabaseBasePath = Join-Path $DataDirectory 'family-finance'
-    if (-not (Test-FlywayHistoryPresent $DatabaseBasePath)) {
-        $BackupPath = New-LegacyDatabaseBackup $DatabaseFiles (Join-Path $ProjectRoot 'data-backups')
-        Write-Step "Created a verified pre-migration backup at $BackupPath"
+    $LatestMigrationVersion = Get-LatestMigrationVersion
+    $MigrationState = Get-FlywayMigrationState $DatabaseBasePath $LatestMigrationVersion
+    if ($MigrationState -ceq 'CURRENT') {
+        Write-Step "Existing database is current at repository migration V$LatestMigrationVersion; no migration backup is required."
     }
     else {
-        Write-Step 'Existing database already has Flyway history; no migration backup is required.'
+        $BackupPath = New-LegacyDatabaseBackup $DatabaseFiles (Join-Path $ProjectRoot 'data-backups')
+        Write-Step "Created a verified pre-migration backup at $BackupPath"
+        if ($MigrationState -ceq 'FAILED') {
+            throw 'Flyway history contains a failed migration. Startup was refused: repair the invalid data, then run Flyway repair, review the verified state backup, and retry.'
+        }
+        if ($MigrationState -ceq 'BEHIND_CURRENT') {
+            Write-Step "Existing database is behind repository migration V$LatestMigrationVersion; backup completed before migration."
+        }
+        elseif ($MigrationState -ceq 'NO_HISTORY') {
+            Write-Step "Existing database has no Flyway history; backup completed before migration to V$LatestMigrationVersion."
+        }
     }
 }
 
