@@ -86,14 +86,17 @@ class FamilyManagementService {
     @Transactional
     void archive(Authentication authentication, MembershipController.ArchiveRequest request) {
         MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
-        Household household = locks.lockHousehold(context.householdId());
-        if (request == null || !household.getName().equals(request.confirmName())) validation("confirmName", "家庭名称确认不匹配");
+        Household lockedHousehold = locks.lockHousehold(context.householdId());
+        long householdId = lockedHousehold.getId();
+        String householdName = lockedHousehold.getName();
+        List<HouseholdMembership> householdMemberships = reloadLockedMemberships(householdId);
+        requireCurrentOwner(context, householdMemberships);
+        if (request == null || !householdName.equals(request.confirmName())) validation("confirmName", "家庭名称确认不匹配");
         Instant now = clock.instant();
-        List<HouseholdMembership> householdMemberships = memberships.findByHouseholdId(household.getId());
-        long owners = householdMemberships.stream().filter(m -> m.getStatus() == MembershipStatus.ACTIVE && m.getRole() == HouseholdRole.OWNER).count();
-        if (owners != 1) throw new IllegalStateException("家庭必须恰有一名所有者");
         householdMemberships.forEach(HouseholdMembership::suspend);
-        invites.findByHouseholdId(household.getId()).forEach(invite -> invite.revoke(now));
+        invites.findByHouseholdId(householdId).forEach(invite -> invite.revoke(now));
+        Household household = households.findById(householdId)
+                .orElseThrow(() -> new ResourceNotFoundException("家庭不存在"));
         household.archive(now);
     }
 
@@ -131,8 +134,12 @@ class FamilyManagementService {
 
     private List<HouseholdMembership> lockFreshMemberships(MembershipContext context) {
         locks.lockActiveHousehold(context.householdId());
+        return reloadLockedMemberships(context.householdId());
+    }
+
+    private List<HouseholdMembership> reloadLockedMemberships(long householdId) {
         entityManager.clear();
-        return memberships.findByHouseholdId(context.householdId());
+        return memberships.findByHouseholdId(householdId);
     }
 
     private HouseholdMembership requireCurrentOwner(
