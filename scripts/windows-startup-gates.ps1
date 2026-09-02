@@ -306,17 +306,17 @@ function Test-WindowsPowerShell51FlywayInspector {
         return $DatabaseBase
     }
     $NoHistory = & $PrepareDatabase 'no-history' @()
-    $Normal = & $PrepareDatabase 'normal' @('migrate-to-6')
+    $Normal = & $PrepareDatabase 'normal' @('migrate-to-7')
     $Failed = & $PrepareDatabase 'failed' @('migrate-to-6', 'fail-v7-budget')
-    $Future = & $PrepareDatabase 'future' @('migrate-to-6', 'make-future-history')
-    $Ambiguous = & $PrepareDatabase 'ambiguous' @('migrate-to-6', 'make-ambiguous-history')
+    $Future = & $PrepareDatabase 'future' @('migrate-to-7', 'make-future-history')
+    $Ambiguous = & $PrepareDatabase 'ambiguous' @('migrate-to-7', 'make-ambiguous-history')
     $Cases = @(
-        "NO_HISTORY|7|jdbc:h2:file:$($NoHistory.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
-        "BEHIND_CURRENT|7|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
-        "CURRENT|6|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
-        "FAILED|7|jdbc:h2:file:$($Failed.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
-        "FUTURE|7|jdbc:h2:file:$($Future.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
-        "AMBIGUOUS|7|jdbc:h2:file:$($Ambiguous.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
+        "NO_HISTORY|8|jdbc:h2:file:$($NoHistory.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "BEHIND_CURRENT|8|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "CURRENT|7|jdbc:h2:file:$($Normal.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "FAILED|8|jdbc:h2:file:$($Failed.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "FUTURE|8|jdbc:h2:file:$($Future.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r",
+        "AMBIGUOUS|8|jdbc:h2:file:$($Ambiguous.Replace('\', '/'));IFEXISTS=TRUE;ACCESS_MODE_DATA=r"
     )
     Set-Content -LiteralPath (Join-Path $Scenario 'inspector-cases.txt') -Value $Cases -Encoding UTF8
     $Probe = Join-Path $Scenario 'powershell51-inspector-probe.ps1'
@@ -582,7 +582,7 @@ function Test-BackupRestartCollisionAndRestore {
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V7; no migration backup is required') 'Current V7 restart did not take the explicit backup-skip branch.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V8; no migration backup is required') 'Current V8 restart did not take the explicit backup-skip branch.'
     $CompletedAfterRestart = @(Get-CompletedBackups $BackupRoot)
     $PartialsAfterRestart = @(Get-PartialBackups $BackupRoot)
     Assert-Equal $CompletedCount $CompletedAfterRestart.Count 'Already-migrated restart created another legacy backup.'
@@ -652,34 +652,34 @@ function Test-InterruptedCompanionCopy {
 }
 
 function Test-ExactMigrationStatesAndRecovery {
-    $PendingScenario = New-Scenario 'v6-pending-migration'
+    $PendingScenario = New-Scenario 'v7-pending-migration'
     New-StageOneFixture $PendingScenario | Out-Null
-    Invoke-MigrationFixture $PendingScenario 'migrate-to-6'
+    Invoke-MigrationFixture $PendingScenario 'migrate-to-7'
     $PendingBackupRoot = Join-Path $PendingScenario 'data-backups'
     $PendingPort = Get-FreePort
-    $Pending = Start-Launcher $PendingScenario $PendingPort 'v6-pending'
+    $Pending = Start-Launcher $PendingScenario $PendingPort 'v7-pending'
     try {
         Wait-ForReady $PendingPort $Pending 180
     }
     finally {
         Stop-ProcessTree $Pending
     }
-    Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V7') 'V6 pending migration was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V8') 'V7 pending migration was not reported explicitly.'
     $PendingBackups = @(Get-CompletedBackups $PendingBackupRoot)
-    Assert-Equal 1 $PendingBackups.Count 'V6 pending migration did not receive exactly one verified backup.'
-    Invoke-MigrationFixture $PendingScenario 'assert-version-7'
+    Assert-Equal 1 $PendingBackups.Count 'V7 pending migration did not receive exactly one verified backup.'
+    Invoke-MigrationFixture $PendingScenario 'assert-version-8'
 
     $RestartPort = Get-FreePort
-    $Restart = Start-Launcher $PendingScenario $RestartPort 'v7-current'
+    $Restart = Start-Launcher $PendingScenario $RestartPort 'v8-current'
     try {
         Wait-ForReady $RestartPort $Restart 180
     }
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V7; no migration backup is required') 'Current V7 was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V8; no migration backup is required') 'Current V8 was not reported explicitly.'
     $CurrentBackups = @(Get-CompletedBackups $PendingBackupRoot)
-    Assert-Equal 1 $CurrentBackups.Count 'Current V7 created an unnecessary backup.'
+    Assert-Equal 1 $CurrentBackups.Count 'Current V8 created an unnecessary backup.'
 
     $FailedScenario = New-Scenario 'failed-v7-recovery'
     New-StageOneFixture $FailedScenario | Out-Null
@@ -703,7 +703,7 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Recovery
     }
-    Invoke-MigrationFixture $FailedScenario 'assert-version-7'
+    Invoke-MigrationFixture $FailedScenario 'assert-version-8'
     $RecoveredBackups = @(Get-CompletedBackups $FailedBackupRoot)
     Assert-Equal 2 $RecoveredBackups.Count 'Repaired V6 state did not receive a fresh verified retry backup.'
     $RecoveredPartials = @(Get-PartialBackups $FailedBackupRoot)
@@ -714,7 +714,7 @@ function Test-ExactMigrationStatesAndRecovery {
                 Name = 'future'
                 Make = 'make-future-history'
                 Assert = 'assert-future-history'
-                Message = 'migration newer than repository V7'
+                Message = 'migration newer than repository V8'
             },
             [pscustomobject]@{
                 Name = 'ambiguous'
@@ -724,7 +724,7 @@ function Test-ExactMigrationStatesAndRecovery {
             })) {
         $RefusedScenario = New-Scenario ("history-" + $Case.Name)
         New-StageOneFixture $RefusedScenario | Out-Null
-        Invoke-MigrationFixture $RefusedScenario 'migrate-to-6'
+        Invoke-MigrationFixture $RefusedScenario 'migrate-to-7'
         Invoke-MigrationFixture $RefusedScenario $Case.Make
         $RefusedBackupRoot = Join-Path $RefusedScenario 'data-backups'
         $RefusedData = Join-Path $RefusedScenario 'data'
@@ -791,7 +791,7 @@ try {
     Test-UnrelatedPortRejection
     Write-Host 'Gate 4/7: Legacy backup, collision, restart, restore, login, and ledger checks.'
     Test-BackupRestartCollisionAndRestore
-    Write-Host 'Gate 5/7: Exact V6, V7, failed, repaired, future, and ambiguous states are handled safely.'
+    Write-Host 'Gate 5/7: Exact V7, V8, failed, repaired, future, and ambiguous states are handled safely.'
     Test-ExactMigrationStatesAndRecovery
     Write-Host 'Gate 6/7: A locked companion retains only a partial backup and prevents startup.'
     Test-InterruptedCompanionCopy

@@ -19,11 +19,12 @@ public final class MigrationStateFixtureCli {
         String url = MigrationTestSupport.h2Url(Path.of(args[0]));
         switch (args[1]) {
             case "migrate-to-6" -> flyway(url, "6").migrate();
+            case "migrate-to-7" -> flyway(url, "7").migrate();
             case "fail-v7-budget" -> createExpectedFailedV7(url);
             case "repair-v7-budget" -> repairExpectedFailedV7(url);
-            case "assert-version-7" -> assertVersionSeven(url);
-            case "make-future-history" -> updateHistoryVersion(url, "6", "99");
-            case "make-ambiguous-history" -> updateHistoryVersion(url, "6", "not-numeric");
+            case "assert-version-8" -> assertVersionEight(url);
+            case "make-future-history" -> updateHistoryVersion(url, "7", "99");
+            case "make-ambiguous-history" -> updateHistoryVersion(url, "7", "not-numeric");
             case "assert-future-history" -> assertHistoryVersion(url, "99");
             case "assert-ambiguous-history" -> assertHistoryVersion(url, "not-numeric");
             case "print-history-snapshot" -> printHistorySnapshot(url);
@@ -60,13 +61,13 @@ public final class MigrationStateFixtureCli {
         flyway(url, null).repair();
     }
 
-    private static void assertVersionSeven(String url) throws Exception {
+    private static void assertVersionEight(String url) throws Exception {
         try (var connection = DriverManager.getConnection(url, "sa", "");
                 var rows = connection.createStatement().executeQuery(
                         "select count(*) from \"flyway_schema_history\" "
-                                + "where \"version\"='7' and \"success\"=true")) {
+                                + "where \"version\"='8' and \"success\"=true")) {
             rows.next();
-            if (rows.getLong(1) != 1) throw new AssertionError("Expected one successful V7 row");
+            if (rows.getLong(1) != 1) throw new AssertionError("Expected one successful V8 row");
         }
     }
 

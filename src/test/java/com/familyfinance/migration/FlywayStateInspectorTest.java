@@ -19,28 +19,28 @@ class FlywayStateInspectorTest {
     @Test
     void sourceInspectorClassifiesEveryRealH2HistoryStateWithOneOutputLine() throws Exception {
         Path noHistory = StageOneDatabaseFixture.create(tempDir.resolve("no-history"));
-        assertState(noHistory, 7, "NO_HISTORY");
+        assertState(noHistory, 8, "NO_HISTORY");
 
         Path normal = StageOneDatabaseFixture.create(tempDir.resolve("normal"));
-        MigrationStateFixtureCli.main(new String[] {normal.toString(), "migrate-to-6"});
-        assertState(normal, 7, "BEHIND_CURRENT");
-        assertState(normal, 6, "CURRENT");
+        MigrationStateFixtureCli.main(new String[] {normal.toString(), "migrate-to-7"});
+        assertState(normal, 8, "BEHIND_CURRENT");
+        assertState(normal, 7, "CURRENT");
 
         Path failed = StageOneDatabaseFixture.create(tempDir.resolve("failed"));
         MigrationStateFixtureCli.main(new String[] {failed.toString(), "migrate-to-6"});
         withExpectedFlywayErrorSuppressed(() ->
                 MigrationStateFixtureCli.main(new String[] {failed.toString(), "fail-v7-budget"}));
-        assertState(failed, 7, "FAILED");
+        assertState(failed, 8, "FAILED");
 
         Path future = StageOneDatabaseFixture.create(tempDir.resolve("future"));
-        MigrationStateFixtureCli.main(new String[] {future.toString(), "migrate-to-6"});
+        MigrationStateFixtureCli.main(new String[] {future.toString(), "migrate-to-7"});
         MigrationStateFixtureCli.main(new String[] {future.toString(), "make-future-history"});
-        assertState(future, 7, "FUTURE");
+        assertState(future, 8, "FUTURE");
 
         Path ambiguous = StageOneDatabaseFixture.create(tempDir.resolve("ambiguous"));
-        MigrationStateFixtureCli.main(new String[] {ambiguous.toString(), "migrate-to-6"});
+        MigrationStateFixtureCli.main(new String[] {ambiguous.toString(), "migrate-to-7"});
         MigrationStateFixtureCli.main(new String[] {ambiguous.toString(), "make-ambiguous-history"});
-        assertState(ambiguous, 7, "AMBIGUOUS");
+        assertState(ambiguous, 8, "AMBIGUOUS");
 
         assertThat(Files.exists(Path.of("scripts", "FlywayStateInspector.class"))).isFalse();
     }
