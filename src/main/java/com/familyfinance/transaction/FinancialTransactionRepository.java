@@ -15,14 +15,14 @@ public interface FinancialTransactionRepository
 
     boolean existsByHouseholdIdAndCategoryId(Long householdId, Long categoryId);
 
-    @EntityGraph(attributePaths = {"member", "category"})
+    @EntityGraph(attributePaths = {"member", "category", "category.parent"})
     List<FinancialTransaction> findByHouseholdIdAndOccurredOnBetween(
             Long householdId,
             LocalDate from,
             LocalDate to,
             Sort sort);
 
-    @EntityGraph(attributePaths = {"member", "category"})
+    @EntityGraph(attributePaths = {"member", "category", "category.parent"})
     List<FinancialTransaction> findByHouseholdIdAndKindAndOccurredOnBefore(
             Long householdId,
             TransactionKind kind,

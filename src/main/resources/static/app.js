@@ -8,6 +8,7 @@ import {
   readTransactionPage,
   transactionPayload
 } from './transaction-ui.js';
+import { availableCategoryParents, categoryPayload } from './category-ui.js';
 
 (function () {
   const app = document.getElementById('app');
@@ -93,7 +94,7 @@ import {
     };
     return refreshGate.run(
       () => Promise.all([
-        api('/api/members'), api('/api/categories'), api('/api/accounts?page=0&size=50'),
+        api('/api/members'), api('/api/categories?projection=flat&page=0&size=50'), api('/api/accounts?page=0&size=50'),
         apiWithMetadata(`/api/transactions?${query(filter)}`),
         api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
       ]),
@@ -208,7 +209,7 @@ import {
   function renderAnalysis() { const analysis = state.data.analysis || {}; renderShell(`<section class="panel"><div class="panel-head"><div><h2>规则分析</h2><p>${esc(analysis.historyStatus || '正在核对历史账目')}</p></div><span class="label">账期 ${esc(state.month)}</span></div>${insightCards(analysis.insights || [])}</section><section class="panel"><h2>用数据说话</h2><p>分析使用本月支出与此前三个有数据账期的平均值比较；当历史不足时，只展示可以确认的结论。</p></section>`); }
 
   function renderSettings() {
-    renderShell(`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>家庭成员</h2><button class="button small" id="new-member">新增成员</button></div><div class="list-editor">${state.data.members.map(member => `<div class="editor-row"><div><strong>${esc(member.name)}</strong><br><span>${esc(member.roleLabel || '家庭成员')}</span></div><div><button class="button secondary small" data-member-edit="${member.id}">编辑</button><button class="button danger small" data-member-delete="${member.id}">删除</button></div></div>`).join('')}</div></section><section class="panel"><div class="panel-head"><h2>收支分类</h2><button class="button small" id="new-category">新增分类</button></div><div class="list-editor">${state.data.categories.map(category => `<div class="editor-row"><div><strong><i style="display:inline-block;width:10px;height:10px;background:${esc(category.color)};margin-right:6px"></i>${esc(category.name)}</strong><br><span>${category.kind === 'income' ? '收入' : '支出'}${category.defaultCategory ? ' · 默认分类' : ''}</span></div><div><button class="button secondary small" data-category-edit="${category.id}">编辑</button><button class="button danger small" data-category-delete="${category.id}">删除</button></div></div>`).join('')}</div></section></div>`);
+    renderShell(`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>家庭成员</h2><button class="button small" id="new-member">新增成员</button></div><div class="list-editor">${state.data.members.map(member => `<div class="editor-row"><div><strong>${esc(member.name)}</strong><br><span>${esc(member.roleLabel || '家庭成员')}</span></div><div><button class="button secondary small" data-member-edit="${member.id}">编辑</button><button class="button danger small" data-member-delete="${member.id}">删除</button></div></div>`).join('')}</div></section><section class="panel"><div class="panel-head"><h2>收支分类</h2><button class="button small" id="new-category">新增分类</button></div><div class="list-editor">${state.data.categories.map(category => `<div class="editor-row"><div><strong><i style="display:inline-block;width:10px;height:10px;background:${esc(category.color)};margin-right:6px"></i>${category.level === 2 ? '↳ ' : ''}${esc(category.name)}</strong><br><span>${category.kind === 'income' ? '收入' : '支出'} · ${category.level === 2 ? '二级分类' : '一级分类'}${category.defaultCategory ? ' · 默认分类' : ''}</span></div><div><button class="button secondary small" data-category-edit="${category.id}">编辑</button><button class="button danger small" data-category-delete="${category.id}">删除</button></div></div>`).join('')}</div></section></div>`);
     document.getElementById('new-member').onclick = () => memberDialog(); document.getElementById('new-category').onclick = () => categoryDialog();
     app.querySelectorAll('[data-member-edit]').forEach(button => button.onclick = () => memberDialog(state.data.members.find(m => m.id === Number(button.dataset.memberEdit)))); app.querySelectorAll('[data-member-delete]').forEach(button => button.onclick = () => removeResource('/api/members', button.dataset.memberDelete, '成员'));
     app.querySelectorAll('[data-category-edit]').forEach(button => button.onclick = () => categoryDialog(state.data.categories.find(c => c.id === Number(button.dataset.categoryEdit)))); app.querySelectorAll('[data-category-delete]').forEach(button => button.onclick = () => removeResource('/api/categories', button.dataset.categoryDelete, '分类'));
@@ -252,7 +253,31 @@ import {
     matchCategories();
   }
   function memberDialog(member) { const value = member || { name: '', roleLabel: '' }; appendDialog(member ? '编辑成员' : '新增成员', `<div class="form-grid"><div class="field"><label for="member-name">姓名</label><input id="member-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="member-role">身份说明</label><input id="member-role" name="roleLabel" value="${esc(value.roleLabel)}" placeholder="例如 爸爸"></div></div>`, member ? '保存修改' : '新增成员', form => write(member ? `/api/members/${member.id}` : '/api/members', member ? 'PATCH' : 'POST', Object.fromEntries(form), '成员已保存'), member ? `[data-member-edit="${member.id}"]` : '#new-member'); }
-  function categoryDialog(category) { const value = category || { kind: 'expense', name: '', color: '#3B7A72' }; appendDialog(category ? '编辑分类' : '新增分类', `<div class="form-grid"><div class="field"><label for="category-kind">类型</label><select id="category-kind" name="kind"><option value="expense"${selected(value.kind,'expense')}>支出</option><option value="income"${selected(value.kind,'income')}>收入</option></select></div><div class="field"><label for="category-name">名称</label><input id="category-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="category-color">标记颜色</label><input id="category-color" name="color" required value="${esc(value.color)}" pattern="^#[0-9A-Fa-f]{6}$"></div></div>`, category ? '保存修改' : '新增分类', form => write(category ? `/api/categories/${category.id}` : '/api/categories', category ? 'PATCH' : 'POST', Object.fromEntries(form), '分类已保存'), category ? `[data-category-edit="${category.id}"]` : '#new-category'); }
+  function categoryDialog(category) {
+    const value = category || { kind: 'expense', name: '', color: '#3B7A72', parentId: null };
+    const dialog = appendDialog(
+      category ? '编辑分类' : '新增分类',
+      `<div class="form-grid"><div class="field"><label for="category-kind">类型</label><select id="category-kind" name="kind"><option value="expense"${selected(value.kind,'expense')}>支出</option><option value="income"${selected(value.kind,'income')}>收入</option></select></div><div class="field"><label for="category-parent">上级分类</label><select id="category-parent" name="parentId"></select></div><div class="field"><label for="category-name">名称</label><input id="category-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="category-color">标记颜色</label><input id="category-color" name="color" required value="${esc(value.color)}" pattern="^#[0-9A-Fa-f]{6}$"></div></div>`,
+      category ? '保存修改' : '新增分类',
+      form => write(
+        category ? `/api/categories/${category.id}` : '/api/categories',
+        category ? 'PATCH' : 'POST',
+        categoryPayload(form),
+        '分类已保存'
+      ),
+      category ? `[data-category-edit="${category.id}"]` : '#new-category'
+    );
+    const kind = dialog.querySelector('#category-kind');
+    const parent = dialog.querySelector('#category-parent');
+    const renderParents = () => {
+      const choices = availableCategoryParents(state.data.categories, kind.value, category?.id);
+      parent.innerHTML = `<option value="">一级分类（无上级）</option>${choices.map(candidate =>
+        `<option value="${candidate.id}"${selected(value.parentId,candidate.id)}>${esc(candidate.name)}</option>`
+      ).join('')}`;
+    };
+    kind.onchange = renderParents;
+    renderParents();
+  }
   async function removeResource(base, id, label) { if (!window.confirm(`删除这位${label}？被账目使用时系统会说明原因。`)) return; try { await write(`${base}/${id}`, 'DELETE', undefined, `${label}已删除`); notice(`${label}已删除`); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }
   async function removeTransaction(id) { if (!window.confirm('删除这笔收支？此操作不能撤销。')) return; try { await write(`/api/transactions/${id}`, 'DELETE', undefined, '收支已删除'); notice('收支已删除'); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }
   async function downloadCsv() { try { const blob = await api(`/api/export.csv?${query({ month: state.month, ...state.filters })}`, {}, 'blob'); const url = URL.createObjectURL(blob); const link = Object.assign(document.createElement('a'), { href: url, download: 'family-finance.csv' }); link.click(); URL.revokeObjectURL(url); notice('CSV 已开始下载'); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }

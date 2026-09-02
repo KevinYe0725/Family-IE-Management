@@ -16,6 +16,8 @@ public record TransactionResponse(
         String memberName,
         Long categoryId,
         String categoryName,
+        Long categoryParentId,
+        int categoryLevel,
         String merchant,
         String location,
         String note,
@@ -34,6 +36,10 @@ public record TransactionResponse(
                 transaction.getMember().getName(),
                 transaction.getCategory().getId(),
                 transaction.getCategory().getName(),
+                transaction.getCategory().getParent() == null
+                        ? null
+                        : transaction.getCategory().getParent().getId(),
+                transaction.getCategory().getParent() == null ? 1 : 2,
                 transaction.getMerchant(),
                 transaction.getLocation(),
                 transaction.getNote(),

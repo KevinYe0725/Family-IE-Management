@@ -34,6 +34,10 @@ public class AnalysisService {
     }
 
     public AnalysisResponse analysis(long householdId, YearMonth month) {
+        return analysis(householdId, month, false);
+    }
+
+    public AnalysisResponse analysis(long householdId, YearMonth month, boolean rollupCategories) {
         List<FinancialTransaction> currentTransactions = transactionRepository.findByHouseholdIdAndOccurredOnBetween(
                 householdId,
                 month.atDay(1),
@@ -58,7 +62,7 @@ public class AnalysisService {
         if (historySufficient) {
             insights.add(monthlyComparison(currentExpenseCents, historyByMonth));
         }
-        topCategory(currentTransactions, currentExpenseCents).ifPresent(insights::add);
+        topCategory(currentTransactions, currentExpenseCents, rollupCategories).ifPresent(insights::add);
         largestExpense(currentTransactions).ifPresent(insights::add);
 
         return new AnalysisResponse(historyStatus, insights.stream().limit(3).toList());
@@ -132,15 +136,19 @@ public class AnalysisService {
 
     private static java.util.Optional<InsightResponse> topCategory(
             List<FinancialTransaction> transactions,
-            long currentExpenseCents) {
+            long currentExpenseCents,
+            boolean rollupCategories) {
         Map<Long, CategoryTotal> totals = new LinkedHashMap<>();
         for (FinancialTransaction transaction : transactions) {
             if (transaction.getKind() == TransactionKind.EXPENSE) {
+                var reportingCategory = rollupCategories && transaction.getCategory().getParent() != null
+                        ? transaction.getCategory().getParent()
+                        : transaction.getCategory();
                 totals.computeIfAbsent(
-                                transaction.getCategory().getId(),
+                                reportingCategory.getId(),
                                 ignored -> new CategoryTotal(
-                                        transaction.getCategory().getId(),
-                                        transaction.getCategory().getName()))
+                                        reportingCategory.getId(),
+                                        reportingCategory.getName()))
                         .amountCents += transaction.getAmountCents();
             }
         }

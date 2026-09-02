@@ -13,5 +13,6 @@ public record CategoryRequest(
         String name,
         @NotBlank(message = "分类颜色不能为空")
         @Pattern(regexp = "^#[0-9A-Fa-f]{6}$", message = "分类颜色必须是 #RRGGBB 格式")
-        String color) {
+        String color,
+        Long parentId) {
 }

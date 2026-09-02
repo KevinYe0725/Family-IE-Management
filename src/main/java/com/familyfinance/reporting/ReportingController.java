@@ -30,15 +30,19 @@ public class ReportingController {
     @GetMapping("/api/dashboard")
     ApiEnvelope<DashboardResponse> dashboard(
             Authentication authentication,
-            @RequestParam(required = false) String month) {
-        return ApiEnvelope.data(dashboardService.dashboard(currentHousehold.id(authentication), parseMonth(month)));
+            @RequestParam(required = false) String month,
+            @RequestParam(defaultValue = "false") boolean rollupCategories) {
+        return ApiEnvelope.data(dashboardService.dashboard(
+                currentHousehold.id(authentication), parseMonth(month), rollupCategories));
     }
 
     @GetMapping("/api/analysis")
     ApiEnvelope<AnalysisResponse> analysis(
             Authentication authentication,
-            @RequestParam(required = false) String month) {
-        return ApiEnvelope.data(analysisService.analysis(currentHousehold.id(authentication), parseMonth(month)));
+            @RequestParam(required = false) String month,
+            @RequestParam(defaultValue = "false") boolean rollupCategories) {
+        return ApiEnvelope.data(analysisService.analysis(
+                currentHousehold.id(authentication), parseMonth(month), rollupCategories));
     }
 
     private static YearMonth parseMonth(String rawMonth) {

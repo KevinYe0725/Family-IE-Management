@@ -1,6 +1,7 @@
 package com.familyfinance.shared;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.familyfinance.category.CategoryHierarchyException;
 import com.familyfinance.identity.PasswordChangeException;
 import com.familyfinance.identity.RegistrationRequestBodyTooLargeException;
 import com.familyfinance.identity.RegistrationRateLimitedException;
@@ -41,6 +42,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleRequestValidation(RequestValidationException exception) {
         return ResponseEntity.badRequest()
                 .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查输入内容", exception.fields())));
+    }
+
+    @ExceptionHandler(CategoryHierarchyException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleCategoryHierarchy(CategoryHierarchyException exception) {
+        return ResponseEntity.unprocessableEntity()
+                .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查分类层级", exception.fields())));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

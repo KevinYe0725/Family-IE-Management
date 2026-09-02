@@ -31,6 +31,10 @@ public class DashboardService {
     }
 
     public DashboardResponse dashboard(long householdId, YearMonth month) {
+        return dashboard(householdId, month, false);
+    }
+
+    public DashboardResponse dashboard(long householdId, YearMonth month, boolean rollupCategories) {
         List<FinancialTransaction> transactions = transactionRepository.findByHouseholdIdAndOccurredOnBetween(
                 householdId,
                 month.atDay(1),
@@ -52,11 +56,14 @@ public class DashboardService {
             } else {
                 expenseCents += amountCents;
                 daily.expenseCents += amountCents;
+                var reportingCategory = rollupCategories && transaction.getCategory().getParent() != null
+                        ? transaction.getCategory().getParent()
+                        : transaction.getCategory();
                 categoryTotals.computeIfAbsent(
-                                transaction.getCategory().getId(),
+                                reportingCategory.getId(),
                                 ignored -> new NamedTotal(
-                                        transaction.getCategory().getId(),
-                                        transaction.getCategory().getName()))
+                                        reportingCategory.getId(),
+                                        reportingCategory.getName()))
                         .amountCents += amountCents;
                 memberTotals.computeIfAbsent(
                                 transaction.getMember().getId(),

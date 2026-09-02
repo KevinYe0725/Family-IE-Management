@@ -14,7 +14,6 @@ import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
 import com.familyfinance.transaction.TransactionTestFixtures;
 import com.familyfinance.ledger.FinancialAccountRepository;
-import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -69,37 +68,22 @@ class CategoryConflictTranslationApiTest {
     @MockitoSpyBean
     FinancialTransactionRepository transactionRepository;
 
-    @Autowired
-    EntityManager entityManager;
-
     @Test
     void concurrentDuplicateCreateReturnsConflictInsteadOfGenericFailure() throws Exception {
         String uniqueName = "并发冲突" + System.nanoTime();
-        CountDownLatch bothInsideSave = new CountDownLatch(2);
-
-        Mockito.doAnswer(invocation -> {
-                    Category category = invocation.getArgument(0);
-                    if (uniqueName.equals(category.getName())) {
-                        bothInsideSave.countDown();
-                        assertThat(bothInsideSave.await(5, TimeUnit.SECONDS)).isTrue();
-                    }
-                    try {
-                        entityManager.persist(category);
-                        entityManager.flush();
-                        return category;
-                    } catch (RuntimeException exception) {
-                        throw new DataIntegrityViolationException(
-                                "concurrent category persistence conflict",
-                                exception);
-                    }
-                })
-                .when(categoryRepository)
-                .saveAndFlush(Mockito.any(Category.class));
+        MockHttpSession firstSession = login();
+        MockHttpSession secondSession = login();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<ResponseSnapshot> first = executor.submit(() -> createCategory(uniqueName));
-            Future<ResponseSnapshot> second = executor.submit(() -> createCategory(uniqueName));
+            Future<ResponseSnapshot> first = executor.submit(
+                    () -> createCategoryAtBarrier(ready, start, firstSession, "  " + uniqueName + "  "));
+            Future<ResponseSnapshot> second = executor.submit(
+                    () -> createCategoryAtBarrier(ready, start, secondSession, uniqueName));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
 
             ResponseSnapshot firstResponse = first.get(10, TimeUnit.SECONDS);
             ResponseSnapshot secondResponse = second.get(10, TimeUnit.SECONDS);
@@ -115,6 +99,7 @@ class CategoryConflictTranslationApiTest {
             assertThat(conflict.body()).contains("\"code\":\"RESOURCE_CONFLICT\"");
             assertThat(conflict.body()).contains("同一收支类型下的分类名称不能重复");
         } finally {
+            start.countDown();
             executor.shutdownNow();
         }
     }
@@ -195,8 +180,44 @@ class CategoryConflictTranslationApiTest {
         assertThat(result.getResponse().getContentAsString()).contains("\"code\":\"RESOURCE_IN_USE\"");
     }
 
-    private ResponseSnapshot createCategory(String name) throws Exception {
+    @Test
+    void parentConstraintViolationTranslatesToHierarchyValidationInsteadOfDuplicateName() throws Exception {
         MockHttpSession session = login();
+        String parentName = "约束父类" + System.nanoTime();
+        MvcResult parentResult = mvc.perform(post("/api/categories")
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content("""
+                                {"kind":"expense","name":"%s","color":"#224466","parentId":null}
+                                """.formatted(parentName)))
+                .andReturn();
+        long parentId = Long.parseLong(parentResult.getResponse().getContentAsString()
+                .replaceFirst(".*\"id\":(\\d+).*", "$1"));
+        String childName = "约束孩子" + System.nanoTime();
+        Mockito.doThrow(new DataIntegrityViolationException(
+                        "Referential integrity constraint violation FK_CATEGORIES_PARENT_HOUSEHOLD_KIND"))
+                .when(categoryRepository)
+                .saveAndFlush(Mockito.argThat(category -> childName.equals(category.getName())));
+
+        MvcResult result = mvc.perform(post("/api/categories")
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content("""
+                                {"kind":"expense","name":"%s","color":"#224466","parentId":%d}
+                                """.formatted(childName, parentId)))
+                .andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(422);
+        assertThat(result.getResponse().getContentAsString()).contains("\"code\":\"VALIDATION_ERROR\"");
+        assertThat(result.getResponse().getContentAsString()).contains("\"parentId\"");
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("名称不能重复");
+    }
+
+    private ResponseSnapshot createCategoryAtBarrier(
+            CountDownLatch ready,
+            CountDownLatch start,
+            MockHttpSession session,
+            String name) throws Exception {
+        ready.countDown();
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         MvcResult result = mvc.perform(post("/api/categories")
                         .session(session)
                         .with(csrf())
