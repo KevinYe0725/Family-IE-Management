@@ -56,6 +56,33 @@ class WindowsStartupGateIsolationTest {
     }
 
     @Test
+    void processLogMessageMatchingNormalizesWindowsPowerShellWrappedWhitespace() throws Exception {
+        Path gatePath = Path.of("scripts", "windows-startup-gates.ps1");
+        String gate = Files.readString(gatePath);
+        List<String> executableLines = executableLines(gatePath);
+        String wrappedSample = "repair the invalid data, then run Flyway \r\nrepair";
+
+        assertThat(wrappedSample.replaceAll("\\s+", " "))
+                .contains("repair the invalid data, then run Flyway repair");
+        assertThat(executableLines).contains(
+                "function Test-ProcessLogContains([object]$Process, [string]$RequiredText) {",
+                "$NormalizedLog = ((Get-ProcessLog $Process) -replace '\\s+', ' ').Trim()",
+                "$NormalizedRequiredText = (($RequiredText -replace '\\s+', ' ').Trim())",
+                "return $NormalizedLog.Contains($NormalizedRequiredText)",
+                "function Test-WrappedProcessLogMessageMatching {",
+                "$WrappedRemediation = \"repair the invalid data, then run Flyway `r`nrepair\"",
+                "Assert-True (Test-ProcessLogContains $LogReference 'repair the invalid data, then run Flyway repair') 'Wrapped remediation text was not matched.'",
+                "Test-WrappedProcessLogMessageMatching");
+        assertThat(gate)
+                .contains("Test-ProcessLogContains $Failed 'repair the invalid data, then run Flyway repair'")
+                .doesNotContain(
+                        "((Get-ProcessLog $Failed) -match 'repair the invalid data, then run Flyway repair')");
+        assertThat(executableLines.stream()
+                        .filter(line -> line.contains("Get-ProcessLog") && line.contains("-match")))
+                .isEmpty();
+    }
+
+    @Test
     void flywayHistoryParserIgnoresShellHeadersAndRequiresOneExactStatus() throws Exception {
         Path parserPath = Path.of("scripts", "startup-output-parsing.ps1");
         List<String> parserLines = Files.exists(parserPath) ? executableLines(parserPath) : List.of();

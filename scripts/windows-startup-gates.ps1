@@ -84,6 +84,12 @@ function Get-ProcessLog([object]$Process) {
     return [string]::Join("`n", $Logs)
 }
 
+function Test-ProcessLogContains([object]$Process, [string]$RequiredText) {
+    $NormalizedLog = ((Get-ProcessLog $Process) -replace '\s+', ' ').Trim()
+    $NormalizedRequiredText = (($RequiredText -replace '\s+', ' ').Trim())
+    return $NormalizedLog.Contains($NormalizedRequiredText)
+}
+
 function Start-Launcher(
     [string]$ScenarioRoot,
     [int]$Port,
@@ -226,8 +232,21 @@ function Test-ExitedProcessLogRetrieval {
     }
     Assert-True $DetachedMutationRejected 'The detached log directory metadata remained writable.'
     Assert-Equal $LogDirectory ([string]$DetachedLogReference.GateLogDirectory) 'The detached log directory metadata changed.'
-    Assert-True ((Get-ProcessLog $DetachedLogReference) -match 'PROCESS_LOG_METADATA_OK') 'Could not retrieve logs after the child exited without StartInfo metadata.'
+    Assert-True (Test-ProcessLogContains $DetachedLogReference 'PROCESS_LOG_METADATA_OK') 'Could not retrieve logs after the child exited without StartInfo metadata.'
     Assert-NoScenarioProcesses $Scenario
+}
+
+function Test-WrappedProcessLogMessageMatching {
+    $Scenario = New-Scenario 'wrapped-process-log-regression'
+    $LogDirectory = Join-Path $Scenario 'windows-gate-logs'
+    New-Item -ItemType Directory -Path $LogDirectory | Out-Null
+    $WrappedRemediation = "repair the invalid data, then run Flyway `r`nrepair"
+    Set-Content -LiteralPath (Join-Path $LogDirectory 'wrapped.stderr.log') `
+        -Value $WrappedRemediation -Encoding UTF8
+    $LogReference = Add-ImmutableGateLogDirectory ([pscustomobject]@{}) $LogDirectory
+
+    Assert-True (Test-ProcessLogContains $LogReference 'repair the invalid data, then run Flyway repair') 'Wrapped remediation text was not matched.'
+    Assert-True (-not (Test-ProcessLogContains $LogReference 'run Flyway migrate')) 'Log matching accepted absent remediation text.'
 }
 
 function Test-FlywayHistoryOutputParser {
@@ -492,7 +511,7 @@ function Test-UnrelatedPortRejection {
         $Process = Start-Launcher $Scenario $Port 'unrelated-port' -Smoke
         Wait-ForExit $Process 60 'Unrelated-port rejection'
         Assert-True ($Process.ExitCode -ne 0) 'The launcher accepted a port owned by an unrelated listener.'
-        Assert-True ((Get-ProcessLog $Process) -match "Port $Port is already in use by another program") 'The occupied-port run failed outside the intended rejection branch.'
+        Assert-True (Test-ProcessLogContains $Process "Port $Port is already in use by another program") 'The occupied-port run failed outside the intended rejection branch.'
     }
     finally {
         $Listener.Stop()
@@ -563,7 +582,7 @@ function Test-BackupRestartCollisionAndRestore {
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True ((Get-ProcessLog $Restart) -match 'is current at repository migration V7; no migration backup is required') 'Current V7 restart did not take the explicit backup-skip branch.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V7; no migration backup is required') 'Current V7 restart did not take the explicit backup-skip branch.'
     $CompletedAfterRestart = @(Get-CompletedBackups $BackupRoot)
     $PartialsAfterRestart = @(Get-PartialBackups $BackupRoot)
     Assert-Equal $CompletedCount $CompletedAfterRestart.Count 'Already-migrated restart created another legacy backup.'
@@ -615,7 +634,7 @@ function Test-InterruptedCompanionCopy {
         $Process = Start-Launcher $Scenario $Port 'locked-companion'
         Wait-ForExit $Process 180 'Locked-companion startup'
         Assert-True ($Process.ExitCode -ne 0) 'Launcher started despite an interrupted companion backup.'
-        Assert-True ((Get-ProcessLog $Process) -match 'The migration backup did not finish') 'Locked-companion run failed outside the intended backup interruption branch.'
+        Assert-True (Test-ProcessLogContains $Process 'The migration backup did not finish') 'Locked-companion run failed outside the intended backup interruption branch.'
     }
     finally {
         $Lock.Dispose()
@@ -645,7 +664,7 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Pending
     }
-    Assert-True ((Get-ProcessLog $Pending) -match 'behind repository migration V7') 'V6 pending migration was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V7') 'V6 pending migration was not reported explicitly.'
     $PendingBackups = @(Get-CompletedBackups $PendingBackupRoot)
     Assert-Equal 1 $PendingBackups.Count 'V6 pending migration did not receive exactly one verified backup.'
     Invoke-MigrationFixture $PendingScenario 'assert-version-7'
@@ -658,7 +677,7 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True ((Get-ProcessLog $Restart) -match 'is current at repository migration V7; no migration backup is required') 'Current V7 was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V7; no migration backup is required') 'Current V7 was not reported explicitly.'
     $CurrentBackups = @(Get-CompletedBackups $PendingBackupRoot)
     Assert-Equal 1 $CurrentBackups.Count 'Current V7 created an unnecessary backup.'
 
@@ -671,7 +690,7 @@ function Test-ExactMigrationStatesAndRecovery {
     $Failed = Start-Launcher $FailedScenario $FailedPort 'failed-v7'
     Wait-ForExit $Failed 180 'Failed V7 refusal'
     Assert-True ($Failed.ExitCode -ne 0) 'Launcher accepted a failed V7 history row.'
-    Assert-True ((Get-ProcessLog $Failed) -match 'repair the invalid data, then run Flyway repair') 'Failed V7 refusal omitted remediation.'
+    Assert-True (Test-ProcessLogContains $Failed 'repair the invalid data, then run Flyway repair') 'Failed V7 refusal omitted remediation.'
     $FailedBackups = @(Get-CompletedBackups $FailedBackupRoot)
     Assert-Equal 1 $FailedBackups.Count 'Failed V7 did not receive exactly one verified state backup.'
 
@@ -715,7 +734,7 @@ function Test-ExactMigrationStatesAndRecovery {
         $Refused = Start-Launcher $RefusedScenario $RefusedPort ("history-" + $Case.Name)
         Wait-ForExit $Refused 180 ("Refused " + $Case.Name + " history")
         Assert-True ($Refused.ExitCode -ne 0) ("Launcher accepted " + $Case.Name + " history.")
-        Assert-True ((Get-ProcessLog $Refused) -match $Case.Message) ("Refusal omitted the " + $Case.Name + " diagnostic.")
+        Assert-True (Test-ProcessLogContains $Refused $Case.Message) ("Refusal omitted the " + $Case.Name + " diagnostic.")
         $RefusedBackups = @(Get-CompletedBackups $RefusedBackupRoot)
         Assert-Equal 1 $RefusedBackups.Count ($Case.Name + ' history did not receive the documented verified state backup.')
         $RefusedPartials = @(Get-PartialBackups $RefusedBackupRoot)
@@ -762,6 +781,8 @@ try {
     Test-StartupSha256Helper
     Write-Host 'Gate 0/7: Exited-process logs use immutable launch metadata.'
     Test-ExitedProcessLogRetrieval
+    Write-Host 'Log wrapping regression: message assertions ignore PowerShell line wrapping.'
+    Test-WrappedProcessLogMessageMatching
     Write-Host 'Gate 1/7: Smoke leaves absent production paths absent.'
     Test-AbsentProductionPathsSmoke
     Write-Host 'Gate 2/7: Smoke preserves sentinels and honors a custom port.'
