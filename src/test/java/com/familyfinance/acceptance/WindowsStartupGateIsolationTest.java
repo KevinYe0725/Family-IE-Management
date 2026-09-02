@@ -104,6 +104,32 @@ class WindowsStartupGateIsolationTest {
                 "^\\$[A-Za-z][A-Za-z0-9]* = @\\(Get-(Completed|Partial)Backups \\$BackupRoot\\)$"));
     }
 
+    @Test
+    void productionBackupHashingUsesStreamingDotNetSha256WithoutModuleAutoload() throws Exception {
+        Path hashingPath = Path.of("scripts", "startup-file-hashing.ps1");
+        List<String> hashingLines = Files.exists(hashingPath) ? executableLines(hashingPath) : List.of();
+        List<String> startupLines = executableLines(Path.of("scripts", "start-local.ps1"));
+        List<String> gateLines = executableLines(Path.of("scripts", "windows-startup-gates.ps1"));
+
+        assertThat(startupLines.stream().filter(line -> line.contains("Get-FileHash"))).isEmpty();
+        assertThat(hashingLines).contains(
+                "function Get-Sha256Hex([string]$Path) {",
+                "$Stream = [System.IO.File]::OpenRead($Path)",
+                "$Sha256 = [System.Security.Cryptography.SHA256]::Create()",
+                "$HashBytes = $Sha256.ComputeHash($Stream)",
+                "return [System.BitConverter]::ToString($HashBytes).Replace('-', '')",
+                "$Sha256.Dispose()",
+                "$Stream.Dispose()");
+        assertThat(startupLines).contains(
+                ". (Join-Path $PSScriptRoot 'startup-file-hashing.ps1')",
+                "$SourceHash = Get-Sha256Hex -Path $DatabaseFile.FullName",
+                "$CopyHash = Get-Sha256Hex -Path $Copy");
+        assertThat(gateLines).contains(
+                ". (Join-Path $Scenario 'scripts\\startup-file-hashing.ps1')",
+                "$ActualHash = Get-Sha256Hex -Path $Fixture",
+                "Assert-Equal 'FF5D8507B6A72BEE2DEBCE2C0054798DEACCDC5D8A1B945B6280CE8AA9CBA52E' $ActualHash 'The startup SHA-256 helper returned the wrong digest.'");
+    }
+
     private static List<String> executableLines(Path path) throws Exception {
         return Files.readAllLines(path).stream()
                 .map(String::trim)

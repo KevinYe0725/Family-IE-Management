@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'startup-file-hashing.ps1')
 . (Join-Path $PSScriptRoot 'startup-output-parsing.ps1')
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $MavenWrapper = Join-Path $ProjectRoot 'mvnw.cmd'
@@ -135,8 +136,8 @@ function New-LegacyDatabaseBackup([System.IO.FileInfo[]]$DatabaseFiles, [string]
         foreach ($DatabaseFile in $DatabaseFiles) {
             $Copy = Join-Path $PartialDestination $DatabaseFile.Name
             Copy-Item -LiteralPath $DatabaseFile.FullName -Destination $Copy -ErrorAction Stop
-            $SourceHash = (Get-FileHash -LiteralPath $DatabaseFile.FullName -Algorithm SHA256).Hash
-            $CopyHash = (Get-FileHash -LiteralPath $Copy -Algorithm SHA256).Hash
+            $SourceHash = Get-Sha256Hex -Path $DatabaseFile.FullName
+            $CopyHash = Get-Sha256Hex -Path $Copy
             if ($SourceHash -ne $CopyHash) {
                 throw "Verification failed for $($DatabaseFile.Name)."
             }

@@ -259,6 +259,15 @@ function Test-FlywayHistoryOutputParser {
     Assert-Equal 4 $RejectedInvalidOutputs 'The Flyway-history parser accepted a zero, duplicate, multiple, or ambiguous status.'
 }
 
+function Test-StartupSha256Helper {
+    $Scenario = New-Scenario 'sha256-regression'
+    . (Join-Path $Scenario 'scripts\startup-file-hashing.ps1')
+    $Fixture = Join-Path $Scenario 'known-bytes.bin'
+    [System.IO.File]::WriteAllBytes($Fixture, [byte[]](0, 1, 2, 3, 255))
+    $ActualHash = Get-Sha256Hex -Path $Fixture
+    Assert-Equal 'FF5D8507B6A72BEE2DEBCE2C0054798DEACCDC5D8A1B945B6280CE8AA9CBA52E' $ActualHash 'The startup SHA-256 helper returned the wrong digest.'
+}
+
 function Get-DirectorySnapshot([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         return 'ABSENT'
@@ -556,6 +565,8 @@ try {
 
     Write-Host 'Parser regression: H2 Shell output requires one exact status line.'
     Test-FlywayHistoryOutputParser
+    Write-Host 'Hash regression: startup SHA-256 is independent of module autoload.'
+    Test-StartupSha256Helper
     Write-Host 'Gate 0/6: Exited-process logs use immutable launch metadata.'
     Test-ExitedProcessLogRetrieval
     Write-Host 'Gate 1/6: Smoke leaves absent production paths absent.'
