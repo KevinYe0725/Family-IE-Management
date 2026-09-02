@@ -36,8 +36,10 @@ start-local.cmd -Port 8090
 ### macOS / Linux
 
 ```bash
-./mvnw spring-boot:run
+./start-local.sh
 ```
+
+该入口会检查 Java 17、项目 Maven Wrapper 和现有数据库状态。若检测到尚未经过 Flyway 管理的第一阶段主库，它会先完成只读检查与 SHA-256 验证备份，再以前台进程启动应用；在终端按 `Ctrl+C` 即可停止。不要绕过这一入口直接启动 Spring Boot，否则会跳过迁移前备份检查。
 
 打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)，使用本地演示账户登录：
 
@@ -51,6 +53,7 @@ start-local.cmd -Port 8090
 - `POST /api/auth/register` 支持 `CREATE` 创建新家庭及其 `OWNER`，或携带邀请 Token 以 `JOIN` 加入已有家庭。
 - 所有者或管理员可创建 `MEMBER` 邀请；只有所有者可以调整家庭成员角色。邀请 Token 仅在创建响应中显示一次，请通过受信任方式转交。
 - 第一阶段的 `demo` 数据升级后会对应 `demo@local.family` 和 `OWNER` 角色；旧用户名仅保留为登录兼容别名。
+- 当前随应用提供的原生 HTML/JavaScript 界面仍是第一阶段界面，尚未显示注册、邀请、家庭资料、成员角色和所有权转让入口；这些能力目前通过下方 API 提供，计划在后续 React 前端阶段接入。
 
 ## 测试
 
@@ -68,7 +71,9 @@ start-local.cmd -Port 8090
 
 ## 第一阶段数据升级备份与恢复
 
-首次使用 Windows `start-local.cmd` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先以只读方式检查版本，再在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件复制后都会校验 SHA-256；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
+首次使用 Windows `start-local.cmd` 或 macOS/Linux `./start-local.sh` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先使用项目固定的 H2 2.3.232 运行时以只读方式检查版本，并确认检查没有改变主库哈希，再在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
+
+备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查；已有 Flyway 历史的数据库会跳过这次兼容备份。没有现有主库时不会创建备份。
 
 如迁移失败或要回退，先停止应用，将当前 `data/` 目录保留到另一个安全位置，再把某个已验证备份目录中的全部数据库文件复制回 `data/`。不要复制 `.partial` 目录；它表示备份未完整完成。恢复后再启动应用并验证可登录和账目数据。
 
@@ -77,6 +82,8 @@ start-local.cmd -Port 8090
 ## 结构
 
 - `src/main/java/com/familyfinance/auth`：登录、会话与当前用户。
+- `src/main/java/com/familyfinance/identity`：注册与密码修改。
+- `src/main/java/com/familyfinance/family`：家庭 Membership、邀请、角色与权限。
 - `src/main/java/com/familyfinance/household`：家庭与成员。
 - `src/main/java/com/familyfinance/category`：收入和支出分类。
 - `src/main/java/com/familyfinance/transaction`：收支记录与筛选。
@@ -86,6 +93,11 @@ start-local.cmd -Port 8090
 ## API 概览
 
 - `GET /api/csrf`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/session`
+- `POST /api/auth/register`、`POST /api/auth/change-password`
+- `GET|PATCH|DELETE /api/family`
+- `GET|POST /api/family/invites`、`DELETE /api/family/invites/{id}`
+- `GET /api/family/memberships?page={page}&size={size}`、`PATCH /api/family/memberships/{id}`
+- `POST /api/family/transfer-ownership`
 - `GET|POST /api/members`、`PATCH|DELETE /api/members/{id}`
 - `GET|POST /api/categories`、`PATCH|DELETE /api/categories/{id}`
 - `GET|POST /api/transactions`、`GET|PATCH|DELETE /api/transactions/{id}`
@@ -96,6 +108,6 @@ start-local.cmd -Port 8090
 
 API 响应通过 `X-Request-ID` 返回请求关联 ID；未预期的服务器异常只向客户端返回通用 500 内容，并在服务端以该 ID 记录堆栈，便于排查而不记录请求体、密码或 CSRF 令牌。
 
-## Sprint 1 不包含
+## 当前静态界面不包含
 
-公开注册、密码找回、复杂家庭角色、预算、周期账单、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话均不在本 Sprint 范围内。
+当前第一阶段静态界面尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、预算、周期账单、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
