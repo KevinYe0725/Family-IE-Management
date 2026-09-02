@@ -1,5 +1,6 @@
 package com.familyfinance.transaction;
 
+import java.math.BigDecimal;
 import com.familyfinance.shared.ApiEnvelope;
 import com.familyfinance.shared.CurrentHousehold;
 import jakarta.validation.Valid;
@@ -38,8 +39,10 @@ public class TransactionController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) String q) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q);
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount) {
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q, minAmount, maxAmount);
         return ApiEnvelope.data(transactionService.list(currentHousehold.id(authentication), filter));
     }
 

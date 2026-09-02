@@ -2,6 +2,7 @@ package com.familyfinance.transaction;
 
 import com.familyfinance.category.TransactionKind;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 
 record TransactionCriteria(
         long householdId,
@@ -10,5 +11,7 @@ record TransactionCriteria(
         TransactionKind kind,
         Long memberId,
         Long categoryId,
-        String keyword) {
+        String keyword,
+        BigDecimal minAmount, // 👈 2. 添加这两个参数
+        BigDecimal maxAmount) {
 }
