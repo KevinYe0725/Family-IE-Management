@@ -94,4 +94,21 @@ public class FinancialAccount {
     public Instant getArchivedAt() {
         return archivedAt;
     }
+
+    public boolean isArchived() {
+        return archivedAt != null;
+    }
+
+    void update(String name, AccountType type, String currency, Long openingBalanceCents) {
+        this.name = Objects.requireNonNull(name, "name must not be null");
+        this.type = Objects.requireNonNull(type, "type must not be null");
+        this.currency = Objects.requireNonNull(currency, "currency must not be null");
+        this.openingBalanceCents = Objects.requireNonNull(openingBalanceCents, "opening balance must not be null");
+    }
+
+    void archive(Instant archivedAt) {
+        if (this.archivedAt == null) {
+            this.archivedAt = Objects.requireNonNull(archivedAt, "archivedAt must not be null");
+        }
+    }
 }

@@ -31,10 +31,11 @@ public class ExportController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
+            @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String q) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q);
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q);
         byte[] body = csvExportService.export(currentHousehold.id(authentication), filter);
         return ResponseEntity.ok()
                 .contentType(CSV_UTF8)

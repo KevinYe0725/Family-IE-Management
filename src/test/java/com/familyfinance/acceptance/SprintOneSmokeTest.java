@@ -63,8 +63,10 @@ class SprintOneSmokeTest {
 
         JsonNode members = json(get("/api/members")).path("data");
         JsonNode categories = json(get("/api/categories")).path("data");
+        JsonNode accounts = json(get("/api/accounts")).at("/data/items");
         long memberId = members.get(0).path("id").asLong();
         long foodCategoryId = firstExpenseCategory(categories).path("id").asLong();
+        long accountId = accounts.get(0).path("id").asLong();
         BigDecimal expenseBefore = amountAt(json(get("/api/dashboard?month=2026-09")), "/data/summary/expense");
         String marker = "smoke-http-" + UUID.randomUUID();
 
@@ -73,13 +75,14 @@ class SprintOneSmokeTest {
                   "kind": "expense",
                   "amount": "88.60",
                   "occurredOn": "2026-09-10",
+                  "accountId": %d,
                   "memberId": %d,
                   "categoryId": %d,
                   "merchant": "验收超市",
                   "location": "杭州",
                   "note": "%s"
                 }
-                """.formatted(memberId, foodCategoryId, marker));
+                """.formatted(accountId, memberId, foodCategoryId, marker));
         assertThat(created.statusCode()).isEqualTo(201);
         long createdId = json(created).at("/data/id").asLong();
 

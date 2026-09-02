@@ -71,7 +71,11 @@ class TransactionConflictTranslationApiTest {
                         .session(session)
                         .with(csrf())
                         .contentType("application/json")
-                        .content(request(member.getId(), category.getId())))
+                        .content(request(
+                                accountRepository.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(household.getId())
+                                        .orElseThrow().getId(),
+                                member.getId(),
+                                category.getId())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"))
                 .andExpect(jsonPath("$.error.message").value("收支记录关联的数据已变化，请刷新后重试"));
@@ -130,16 +134,17 @@ class TransactionConflictTranslationApiTest {
                 .orElseThrow();
     }
 
-    private static String request(Long memberId, Long categoryId) {
+    private static String request(Long accountId, Long memberId, Long categoryId) {
         return """
                 {
                   "kind": "expense",
                   "amount": "12.30",
                   "occurredOn": "2026-09-18",
+                  "accountId": %d,
                   "memberId": %d,
                   "categoryId": %d,
                   "note": "冲突翻译"
                 }
-                """.formatted(memberId, categoryId);
+                """.formatted(accountId, memberId, categoryId);
     }
 }

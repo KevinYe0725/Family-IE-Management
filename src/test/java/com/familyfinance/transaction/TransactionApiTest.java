@@ -79,13 +79,14 @@ class TransactionApiTest {
                                   "kind": "expense",
                                   "amount": "12.30",
                                   "occurredOn": "2026-09-18",
+                                  "accountId": %d,
                                   "memberId": %d,
                                   "categoryId": %d,
                                   "merchant": "  便利店  ",
                                   "location": "杭州",
                                   "note": "早餐"
                                 }
-                                """.formatted(member.getId(), category.getId())))
+                                """.formatted(defaultAccountId(household), member.getId(), category.getId())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.kind").value("expense"))
                 .andExpect(jsonPath("$.data.amount").value("12.30"))
@@ -200,7 +201,7 @@ class TransactionApiTest {
                         .session(session)
                         .with(csrf())
                         .contentType("application/json")
-                        .content(transactionRequest(member.getId(), category.getId(), note)))
+                        .content(transactionRequest(household, member.getId(), category.getId(), note)))
                 .andExpect(status().isCreated())
                 .andReturn();
 
@@ -221,7 +222,7 @@ class TransactionApiTest {
                         .session(session)
                         .with(csrf())
                         .contentType("application/json")
-                        .content(transactionRequest(member.getId(), category.getId(), "备".repeat(501))))
+                        .content(transactionRequest(household, member.getId(), category.getId(), "备".repeat(501))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.fields.note").value("备注长度不能超过 500 个字符"));
@@ -398,17 +399,24 @@ class TransactionApiTest {
                 TEST_TIME));
     }
 
-    private static String transactionRequest(Long memberId, Long categoryId, String note) {
+    private String transactionRequest(Household household, Long memberId, Long categoryId, String note) {
         return """
                 {
                   "kind": "expense",
                   "amount": "12.30",
                   "occurredOn": "2026-09-18",
+                  "accountId": %d,
                   "memberId": %d,
                   "categoryId": %d,
                   "note": "%s"
                 }
-                """.formatted(memberId, categoryId, note);
+                """.formatted(defaultAccountId(household), memberId, categoryId, note);
+    }
+
+    private Long defaultAccountId(Household household) {
+        return accountRepository.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(household.getId())
+                .orElseThrow()
+                .getId();
     }
 
     private static Long readId(MvcResult result) throws Exception {

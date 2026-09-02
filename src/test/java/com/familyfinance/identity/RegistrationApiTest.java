@@ -17,6 +17,8 @@ import com.familyfinance.family.MembershipStatus;
 import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.FinancialAccountRepository;
+import com.familyfinance.ledger.DefaultFinancialAccountFactory;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,6 +68,9 @@ class RegistrationApiTest {
     CategoryRepository categories;
 
     @Autowired
+    FinancialAccountRepository accounts;
+
+    @Autowired
     MutableClock clock;
 
     @Autowired
@@ -76,6 +81,9 @@ class RegistrationApiTest {
 
     @MockitoSpyBean
     RegistrationDefaults defaults;
+
+    @MockitoSpyBean
+    DefaultFinancialAccountFactory defaultAccounts;
 
     @Test
     void createModeBuildsUserHouseholdOwnerLinkedMemberAndDefaultCategories() throws Exception {
@@ -95,6 +103,13 @@ class RegistrationApiTest {
                     assertThat(member.getLinkedUser().getId()).isEqualTo(user.getId());
                 });
         assertThat(categories.findByHouseholdIdOrderById(membership.getHousehold().getId())).isNotEmpty();
+        assertThat(accounts.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(membership.getHousehold().getId()))
+                .hasValueSatisfying(account -> {
+                    assertThat(account.getName()).isEqualTo("默认账户");
+                    assertThat(account.getType()).isEqualTo(com.familyfinance.ledger.AccountType.CASH);
+                    assertThat(account.getCurrency()).isEqualTo("CNY");
+                    assertThat(account.getOpeningBalanceCents()).isZero();
+                });
     }
 
     @Test
@@ -104,6 +119,7 @@ class RegistrationApiTest {
         long membershipCount = memberships.count();
         long memberCount = members.count();
         long categoryCount = categories.count();
+        long accountCount = accounts.count();
         org.mockito.Mockito.doAnswer(invocation -> {
             categories.saveAndFlush(new Category(
                     invocation.getArgument(0),
@@ -124,6 +140,32 @@ class RegistrationApiTest {
         assertThat(memberships.count()).isEqualTo(membershipCount);
         assertThat(members.count()).isEqualTo(memberCount);
         assertThat(categories.count()).isEqualTo(categoryCount);
+        assertThat(accounts.count()).isEqualTo(accountCount);
+    }
+
+    @Test
+    void defaultAccountFailureRollsBackTheEntireCreateRegistration() {
+        long userCount = users.count();
+        long householdCount = households.count();
+        long membershipCount = memberships.count();
+        long memberCount = members.count();
+        long categoryCount = categories.count();
+        long accountCount = accounts.count();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("default account failure");
+        }).when(defaultAccounts).createFor(org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> registrationService.register(new RegistrationService.CreateRegistration(
+                "account-rollback@example.com", "账户回滚", "family-pass-2026", "账户回滚家庭")))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(users.count()).isEqualTo(userCount);
+        assertThat(households.count()).isEqualTo(householdCount);
+        assertThat(memberships.count()).isEqualTo(membershipCount);
+        assertThat(members.count()).isEqualTo(memberCount);
+        assertThat(categories.count()).isEqualTo(categoryCount);
+        assertThat(accounts.count()).isEqualTo(accountCount);
     }
 
     @Test

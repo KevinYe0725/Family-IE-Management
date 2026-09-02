@@ -36,10 +36,11 @@ public class TransactionController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
+            @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String q) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q);
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q);
         return ApiEnvelope.data(transactionService.list(currentHousehold.id(authentication), filter));
     }
 
@@ -53,7 +54,7 @@ public class TransactionController {
     ApiEnvelope<TransactionResponse> create(
             Authentication authentication,
             @Valid @RequestBody TransactionRequest request) {
-        return ApiEnvelope.data(transactionService.create(currentHousehold.id(authentication), request));
+        return ApiEnvelope.data(transactionService.create(authentication, request));
     }
 
     @PatchMapping("/{id}")
@@ -61,12 +62,12 @@ public class TransactionController {
             Authentication authentication,
             @PathVariable long id,
             @Valid @RequestBody TransactionPatchRequest request) {
-        return ApiEnvelope.data(transactionService.update(currentHousehold.id(authentication), id, request));
+        return ApiEnvelope.data(transactionService.update(authentication, id, request));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void delete(Authentication authentication, @PathVariable long id) {
-        transactionService.delete(currentHousehold.id(authentication), id);
+        transactionService.delete(authentication, id);
     }
 }

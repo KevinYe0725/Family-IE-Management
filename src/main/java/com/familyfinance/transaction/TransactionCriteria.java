@@ -8,6 +8,7 @@ record TransactionCriteria(
         LocalDate from,
         LocalDate to,
         TransactionKind kind,
+        Long accountId,
         Long memberId,
         Long categoryId,
         String keyword) {

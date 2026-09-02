@@ -179,6 +179,7 @@ public class FinancialTransaction {
     }
 
     void updateDetails(
+            FinancialAccount account,
             FamilyMember member,
             Category category,
             TransactionKind kind,
@@ -189,6 +190,7 @@ public class FinancialTransaction {
             String note,
             Instant updatedAt) {
         requireValidTransactionScope(household, account, createdByUser, member, category, kind);
+        this.account = account;
         this.member = member;
         this.category = category;
         this.kind = kind;

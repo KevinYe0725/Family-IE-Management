@@ -7,6 +7,7 @@ public record TransactionPatchRequest(
         TransactionKind kind,
         String amount,
         String occurredOn,
+        Long accountId,
         Long memberId,
         Long categoryId,
         @Size(max = 100, message = "商家长度不能超过 100 个字符")

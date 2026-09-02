@@ -18,10 +18,14 @@ final class TransactionSpecifications {
         return (root, query, builder) -> {
             root.fetch("member", JoinType.LEFT);
             root.fetch("category", JoinType.LEFT);
+            root.fetch("account", JoinType.LEFT);
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.equal(root.get("household").get("id"), criteria.householdId()));
             if (criteria.kind() != null) {
                 predicates.add(builder.equal(root.get("kind"), criteria.kind()));
+            }
+            if (criteria.accountId() != null) {
+                predicates.add(builder.equal(root.get("account").get("id"), criteria.accountId()));
             }
             if (criteria.memberId() != null) {
                 predicates.add(builder.equal(root.get("member").get("id"), criteria.memberId()));

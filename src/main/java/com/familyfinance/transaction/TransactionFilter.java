@@ -5,6 +5,7 @@ public record TransactionFilter(
         String from,
         String to,
         String kind,
+        Long accountId,
         Long memberId,
         Long categoryId,
         String q) {

@@ -3,6 +3,7 @@ package com.familyfinance.transaction;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMemberRepository;
+import com.familyfinance.ledger.FinancialAccountRepository;
 import com.familyfinance.shared.RequestValidationException;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -16,10 +17,15 @@ class TransactionFilterParser {
 
     private final FamilyMemberRepository memberRepository;
     private final CategoryRepository categoryRepository;
+    private final FinancialAccountRepository accountRepository;
 
-    TransactionFilterParser(FamilyMemberRepository memberRepository, CategoryRepository categoryRepository) {
+    TransactionFilterParser(
+            FamilyMemberRepository memberRepository,
+            CategoryRepository categoryRepository,
+            FinancialAccountRepository accountRepository) {
         this.memberRepository = memberRepository;
         this.categoryRepository = categoryRepository;
+        this.accountRepository = accountRepository;
     }
 
     TransactionCriteria parse(long householdId, TransactionFilter filter) {
@@ -40,6 +46,9 @@ class TransactionFilterParser {
         }
 
         TransactionKind kind = parseKind(filter.kind(), fields);
+        if (filter.accountId() != null) {
+            requireAccountExists(householdId, filter.accountId(), fields);
+        }
         if (filter.memberId() != null) {
             requireMemberExists(householdId, filter.memberId(), fields);
         }
@@ -51,7 +60,21 @@ class TransactionFilterParser {
             fields.put("q", "关键字长度不能超过 100 个字符");
         }
         throwIfInvalid(fields);
-        return new TransactionCriteria(householdId, from, to, kind, filter.memberId(), filter.categoryId(), keyword);
+        return new TransactionCriteria(
+                householdId,
+                from,
+                to,
+                kind,
+                filter.accountId(),
+                filter.memberId(),
+                filter.categoryId(),
+                keyword);
+    }
+
+    private void requireAccountExists(long householdId, long accountId, Map<String, String> fields) {
+        if (accountRepository.findByIdAndHouseholdId(accountId, householdId).isEmpty()) {
+            fields.put("accountId", "账户不存在");
+        }
     }
 
     private void requireMemberExists(long householdId, long memberId, Map<String, String> fields) {

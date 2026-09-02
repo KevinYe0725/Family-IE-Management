@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 
 /** Serializes family mutations, then derives authorization from the locked current database state. */
 @Service
-class FamilyMutationAuthorization {
+public class FamilyMutationAuthorization {
 
     private final CurrentMembership currentMembership;
     private final FamilyLockService locks;
@@ -34,13 +34,17 @@ class FamilyMutationAuthorization {
         this.households = households;
     }
 
-    LockedFamilyAccess requireAdmin(Authentication authentication) {
+    public LockedFamilyAccess requireCurrent(Authentication authentication) {
+        return lockFresh(authentication);
+    }
+
+    public LockedFamilyAccess requireAdmin(Authentication authentication) {
         LockedFamilyAccess access = lockFresh(authentication);
         permissions.requireAdmin(access.context());
         return access;
     }
 
-    LockedFamilyAccess requireOwner(Authentication authentication) {
+    public LockedFamilyAccess requireOwner(Authentication authentication) {
         LockedFamilyAccess access = lockFresh(authentication);
         permissions.requireOwner(access.context());
         return access;
@@ -61,7 +65,7 @@ class FamilyMutationAuthorization {
         return new LockedFamilyAccess(household, membership, fresh);
     }
 
-    record LockedFamilyAccess(
+    public record LockedFamilyAccess(
             Household household,
             HouseholdMembership membership,
             MembershipContext context) {

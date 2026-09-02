@@ -1,5 +1,6 @@
 package com.familyfinance.shared;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +43,6 @@ public final class Money {
     }
 
     public static String formatCents(long cents) {
-        return "%d.%02d".formatted(cents / 100, Math.abs(cents % 100));
+        return BigDecimal.valueOf(cents, 2).toPlainString();
     }
 }

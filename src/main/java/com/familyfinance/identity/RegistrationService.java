@@ -12,6 +12,7 @@ import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
 import com.familyfinance.household.HouseholdRepository;
+import com.familyfinance.ledger.DefaultFinancialAccountFactory;
 import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.shared.ResourceConflictException;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +43,7 @@ public class RegistrationService {
     private final HouseholdMembershipRepository memberships;
     private final FamilyMemberRepository members;
     private final RegistrationDefaults defaults;
+    private final DefaultFinancialAccountFactory defaultAccounts;
     private final InviteService invites;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
@@ -52,6 +54,7 @@ public class RegistrationService {
             HouseholdMembershipRepository memberships,
             FamilyMemberRepository members,
             RegistrationDefaults defaults,
+            DefaultFinancialAccountFactory defaultAccounts,
             InviteService invites,
             PasswordEncoder passwordEncoder,
             Clock clock) {
@@ -60,6 +63,7 @@ public class RegistrationService {
         this.memberships = memberships;
         this.members = members;
         this.defaults = defaults;
+        this.defaultAccounts = defaultAccounts;
         this.invites = invites;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
@@ -87,6 +91,7 @@ public class RegistrationService {
         memberships.save(new HouseholdMembership(household, user, HouseholdRole.OWNER, MembershipStatus.ACTIVE, now));
         members.save(new FamilyMember(household, user, command.displayName(), "所有者", now));
         defaults.createFor(household, now);
+        defaultAccounts.createFor(household);
         return new RegisterResponse(user.getEmail(), user.getDisplayName(), household.getName(), HouseholdRole.OWNER);
     }
 

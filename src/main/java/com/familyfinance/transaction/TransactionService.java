@@ -6,12 +6,9 @@ import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.household.Household;
-import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.household.AppUser;
-import com.familyfinance.household.AppUserStatus;
-import com.familyfinance.family.HouseholdMembershipRepository;
-import com.familyfinance.family.HouseholdRole;
-import com.familyfinance.family.MembershipStatus;
+import com.familyfinance.family.FamilyMutationAuthorization;
+import com.familyfinance.family.FamilyPermissionService;
 import com.familyfinance.ledger.FinancialAccount;
 import com.familyfinance.ledger.FinancialAccountRepository;
 import com.familyfinance.shared.Money;
@@ -26,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,28 +35,28 @@ public class TransactionService {
             Sort.Order.desc("occurredOn"),
             Sort.Order.desc("id"));
 
-    private final HouseholdRepository householdRepository;
     private final FamilyMemberRepository memberRepository;
     private final CategoryRepository categoryRepository;
     private final FinancialTransactionRepository transactionRepository;
     private final FinancialAccountRepository accountRepository;
-    private final HouseholdMembershipRepository membershipRepository;
+    private final FamilyMutationAuthorization mutationAuthorization;
+    private final FamilyPermissionService permissions;
     private final TransactionFilterParser filterParser;
 
     public TransactionService(
-            HouseholdRepository householdRepository,
             FamilyMemberRepository memberRepository,
             CategoryRepository categoryRepository,
             FinancialTransactionRepository transactionRepository,
             FinancialAccountRepository accountRepository,
-            HouseholdMembershipRepository membershipRepository,
+            FamilyMutationAuthorization mutationAuthorization,
+            FamilyPermissionService permissions,
             TransactionFilterParser filterParser) {
-        this.householdRepository = householdRepository;
         this.memberRepository = memberRepository;
         this.categoryRepository = categoryRepository;
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
-        this.membershipRepository = membershipRepository;
+        this.mutationAuthorization = mutationAuthorization;
+        this.permissions = permissions;
         this.filterParser = filterParser;
     }
 
@@ -78,17 +76,18 @@ public class TransactionService {
     }
 
     @Transactional
-    public TransactionResponse create(long householdId, TransactionRequest request) {
+    public TransactionResponse create(Authentication authentication, TransactionRequest request) {
+        FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireCurrent(authentication);
+        long householdId = access.context().householdId();
         Map<String, String> fields = new LinkedHashMap<>();
-        Household household = householdRepository.findById(householdId)
-                .orElseThrow(() -> new ResourceNotFoundException("家庭不存在"));
+        Household household = access.household();
         TransactionKind kind = require(request.kind(), "kind", "收支类型不能为空", fields);
         Long amountCents = parseAmount(require(request.amount(), "amount", "金额不能为空", fields), fields);
         LocalDate occurredOn = parseDate(require(request.occurredOn(), "occurredOn", "日期不能为空", fields), "occurredOn", fields);
+        FinancialAccount account = resolveActiveAccount(householdId, request.accountId(), fields);
         FamilyMember member = resolveMember(householdId, request.memberId(), fields);
         Category category = resolveCategory(householdId, request.categoryId(), kind, fields);
-        FinancialAccount account = defaultAccount(householdId);
-        AppUser creator = legacyCreator(householdId, member);
+        AppUser creator = access.membership().getUser();
         throwIfInvalid(fields);
 
         Instant now = Instant.now();
@@ -114,14 +113,23 @@ public class TransactionService {
     }
 
     @Transactional
-    public TransactionResponse update(long householdId, long transactionId, TransactionPatchRequest request) {
+    public TransactionResponse update(
+            Authentication authentication,
+            long transactionId,
+            TransactionPatchRequest request) {
+        FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireCurrent(authentication);
+        long householdId = access.context().householdId();
         FinancialTransaction transaction = findOne(householdId, transactionId);
+        permissions.requireCanMutateTransaction(access.context(), transaction.getCreatedByUser().getId());
         Map<String, String> fields = new LinkedHashMap<>();
         TransactionKind kind = request.kind() == null ? transaction.getKind() : request.kind();
         Long amountCents = request.amount() == null ? transaction.getAmountCents() : parseAmount(request.amount(), fields);
         LocalDate occurredOn = request.occurredOn() == null
                 ? transaction.getOccurredOn()
                 : parseDate(request.occurredOn(), "occurredOn", fields);
+        FinancialAccount account = request.accountId() == null
+                ? transaction.getAccount()
+                : resolveActiveAccount(householdId, request.accountId(), fields);
         FamilyMember member = request.memberId() == null
                 ? transaction.getMember()
                 : resolveMember(householdId, request.memberId(), fields);
@@ -135,6 +143,7 @@ public class TransactionService {
 
         try {
             transaction.updateDetails(
+                    account,
                     member,
                     category,
                     kind,
@@ -152,8 +161,11 @@ public class TransactionService {
     }
 
     @Transactional
-    public void delete(long householdId, long transactionId) {
+    public void delete(Authentication authentication, long transactionId) {
+        FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireCurrent(authentication);
+        long householdId = access.context().householdId();
         FinancialTransaction transaction = findOne(householdId, transactionId);
+        permissions.requireCanMutateTransaction(access.context(), transaction.getCreatedByUser().getId());
         transactionRepository.delete(transaction);
     }
 
@@ -197,27 +209,19 @@ public class TransactionService {
         return category;
     }
 
-    private FinancialAccount defaultAccount(long householdId) {
-        return accountRepository.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(householdId)
-                .orElseThrow(() -> new ResourceConflictException("ACCOUNT_REQUIRED", "家庭尚未配置可用账户"));
-    }
-
-    private AppUser legacyCreator(long householdId, FamilyMember member) {
-        if (member != null
-                && member.getLinkedUser() != null
-                && member.getLinkedUser().getStatus() == AppUserStatus.ACTIVE
-                && membershipRepository.findByHouseholdIdAndUserIdAndStatus(
-                                householdId, member.getLinkedUser().getId(), MembershipStatus.ACTIVE)
-                        .isPresent()) {
-            return member.getLinkedUser();
+    private FinancialAccount resolveActiveAccount(
+            long householdId,
+            Long accountId,
+            Map<String, String> fields) {
+        if (accountId == null) {
+            fields.put("accountId", "账户不能为空");
+            return null;
         }
-        return membershipRepository.findByHouseholdIdOrderById(householdId).stream()
-                .filter(membership -> membership.getRole() == HouseholdRole.OWNER)
-                .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
-                .map(membership -> membership.getUser())
-                .filter(user -> user.getStatus() == AppUserStatus.ACTIVE)
-                .min(java.util.Comparator.comparing(AppUser::getId))
-                .orElseThrow(() -> new ResourceConflictException("CREATOR_REQUIRED", "家庭尚未配置有效所有者"));
+        return accountRepository.findByIdAndHouseholdIdAndArchivedAtIsNull(accountId, householdId)
+                .orElseGet(() -> {
+                    fields.put("accountId", "账户不存在");
+                    return null;
+                });
     }
 
     private static <T> T require(T value, String field, String message, Map<String, String> fields) {

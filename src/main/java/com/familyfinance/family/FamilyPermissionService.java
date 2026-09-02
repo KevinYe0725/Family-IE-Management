@@ -14,6 +14,9 @@ public class FamilyPermissionService {
     public boolean canMutateTransaction(MembershipContext context, Long createdByUserId) {
         return context.role() != HouseholdRole.MEMBER || context.userId().equals(createdByUserId);
     }
+    public void requireCanMutateTransaction(MembershipContext context, Long createdByUserId) {
+        if (!canMutateTransaction(context, createdByUserId)) forbidden();
+    }
     public boolean canConfirmAssignedOccurrence(MembershipContext context, Long assigneeUserId) {
         return assigneeUserId == null || context.userId().equals(assigneeUserId);
     }
