@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -74,6 +75,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleConflict(ResourceConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiEnvelope.error(ApiError.of(exception.code(), exception.getMessage())));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleAccessDenied(AccessDeniedException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiEnvelope.error(ApiError.of("FORBIDDEN", "没有权限执行此操作")));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

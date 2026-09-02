@@ -2,6 +2,7 @@ package com.familyfinance.auth;
 
 import com.familyfinance.household.AppUser;
 import com.familyfinance.household.AppUserRepository;
+import java.util.Locale;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -19,13 +20,20 @@ public class DatabaseUserDetailsService implements UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username) {
-        AppUser user = users.findByUsername(username)
+    public UserDetails loadUserByUsername(String login) {
+        AppUser user = users.findByEmail(normalizeLogin(login))
                 .orElseThrow(() -> new UsernameNotFoundException("Invalid username or password"));
         return new FamilyUserPrincipal(
                 user.getId(),
-                user.getHousehold().getId(),
-                user.getUsername(),
+                user.getEmail(),
+                user.getDisplayName(),
                 user.getPasswordHash());
+    }
+
+    private static String normalizeLogin(String login) {
+        if ("demo".equals(login)) {
+            return "demo@local.family";
+        }
+        return login.trim().toLowerCase(Locale.ROOT);
     }
 }

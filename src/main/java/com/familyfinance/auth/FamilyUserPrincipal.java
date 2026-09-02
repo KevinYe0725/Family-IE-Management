@@ -8,8 +8,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 public record FamilyUserPrincipal(
         Long userId,
-        Long householdId,
-        String username,
+        String email,
+        String displayName,
         String passwordHash) implements UserDetails {
 
     @Override
@@ -24,6 +24,6 @@ public record FamilyUserPrincipal(
 
     @Override
     public String getUsername() {
-        return username;
+        return email;
     }
 }

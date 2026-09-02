@@ -3,6 +3,10 @@ package com.familyfinance.config;
 import com.familyfinance.category.Category;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
+import com.familyfinance.family.HouseholdMembership;
+import com.familyfinance.family.HouseholdMembershipRepository;
+import com.familyfinance.family.HouseholdRole;
+import com.familyfinance.family.MembershipStatus;
 import com.familyfinance.household.AppUser;
 import com.familyfinance.household.AppUserRepository;
 import com.familyfinance.household.FamilyMember;
@@ -32,6 +36,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final FamilyMemberRepository members;
     private final CategoryRepository categories;
     private final FinancialTransactionRepository transactions;
+    private final HouseholdMembershipRepository memberships;
     private final PasswordEncoder passwordEncoder;
 
     public DemoDataInitializer(
@@ -40,12 +45,14 @@ public class DemoDataInitializer implements ApplicationRunner {
             FamilyMemberRepository members,
             CategoryRepository categories,
             FinancialTransactionRepository transactions,
+            HouseholdMembershipRepository memberships,
             PasswordEncoder passwordEncoder) {
         this.users = users;
         this.households = households;
         this.members = members;
         this.categories = categories;
         this.transactions = transactions;
+        this.memberships = memberships;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -57,11 +64,18 @@ public class DemoDataInitializer implements ApplicationRunner {
         }
 
         Household household = households.save(new Household("演示家庭", SEED_TIME));
-        users.save(new AppUser(
+        AppUser demo = users.save(new AppUser(
                 household,
                 "demo",
                 "demo@local.family",
+                "演示用户",
                 passwordEncoder.encode("demo1234"),
+                SEED_TIME));
+        memberships.save(new HouseholdMembership(
+                household,
+                demo,
+                HouseholdRole.OWNER,
+                MembershipStatus.ACTIVE,
                 SEED_TIME));
 
         List<FamilyMember> seededMembers = members.saveAll(List.of(
