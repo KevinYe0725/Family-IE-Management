@@ -443,15 +443,23 @@ try {
     New-Item -ItemType Directory -Path $SessionRoot | Out-Null
     Write-Host "Synthetic Windows gate root: $SessionRoot"
 
-    $MavenWrapper = Join-Path $SourceRoot 'mvnw.cmd'
-    $TestClasspathFile = Join-Path $SourceRoot 'target\windows-gate-test-classpath.txt'
-    & $MavenWrapper -q test-compile dependency:build-classpath '-Dmdep.includeScope=test' "-Dmdep.outputFile=$TestClasspathFile"
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $TestClasspathFile -PathType Leaf)) {
+    $FixtureBuildRoot = New-Scenario 'fixture-build'
+    $MavenWrapper = Join-Path $FixtureBuildRoot 'mvnw.cmd'
+    $TestClasspathFile = Join-Path $FixtureBuildRoot 'target\windows-gate-test-classpath.txt'
+    Push-Location $FixtureBuildRoot
+    try {
+        & $MavenWrapper -q test-compile dependency:build-classpath '-Dmdep.includeScope=test' "-Dmdep.outputFile=$TestClasspathFile"
+        $MavenExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($MavenExit -ne 0 -or -not (Test-Path -LiteralPath $TestClasspathFile -PathType Leaf)) {
         throw 'Could not compile the test-only Stage 1 fixture generator.'
     }
     $script:FixtureClasspath = [string]::Join([System.IO.Path]::PathSeparator, @(
-            (Join-Path $SourceRoot 'target\test-classes'),
-            (Join-Path $SourceRoot 'target\classes'),
+            (Join-Path $FixtureBuildRoot 'target\test-classes'),
+            (Join-Path $FixtureBuildRoot 'target\classes'),
             (Get-Content -LiteralPath $TestClasspathFile -Raw).Trim()
         ))
 
