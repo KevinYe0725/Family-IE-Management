@@ -6,7 +6,7 @@ import { state } from './ui-state.js';
 (function () {
   const app = document.getElementById('app');
   const refreshGate = new RefreshGate();
-  const routeNames = { dashboard: '总览', transactions: '收支明细', analysis: '账目分析', settings: '家庭设置' };
+  const routeNames = { dashboard: '总览', transactions: '收支明细', analysis: '账目分析', 'annual-stats': '年度统计', settings: '家庭设置' };
   const money = value => `¥${Number(value || 0).toFixed(2)}`;
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[c]);
   const selected = (actual, expected) => String(actual) === String(expected) ? ' selected' : '';
@@ -79,10 +79,11 @@ import { state } from './ui-state.js';
     return refreshGate.run(
       () => Promise.all([
         api('/api/members'), api('/api/categories'), api(`/api/transactions?${query(filter)}`),
-        api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
+        api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`),
+        api(`/api/annual-stats?year=${encodeURIComponent(state.month.slice(0, 4))}`)
       ]),
-      ([members, categories, transactions, dashboard, analysis]) => {
-        Object.assign(state.data, { members, categories, transactions, dashboard, analysis });
+      ([members, categories, transactions, dashboard, analysis, annualStats]) => {
+        Object.assign(state.data, { members, categories, transactions, dashboard, analysis, annualStats });
         render();
       }
     );
@@ -134,7 +135,7 @@ import { state } from './ui-state.js';
   function navButton(route, icon) { return `<button type="button" data-route="${route}" aria-current="${state.route === route ? 'page' : 'false'}"><span class="glyph" aria-hidden="true">${icon}</span>${routeNames[route]}</button>`; }
   function renderShell(content) {
     const flash = state.flash ? `<p class="status ${state.flash.type}" role="status">${esc(state.flash.message)}</p>` : '<p class="status" role="status"></p>';
-    app.innerHTML = `<div class="app-layout"><aside class="ledger-nav" aria-label="主导航"><div class="ledger-mark">家<span>账</span></div><nav class="nav-list">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}</nav><div class="nav-foot">${esc(state.data.session.username)} 的家庭账本<br><button type="button" class="button small logout-button" id="logout">退出登录</button></div></aside><section class="workspace"><header class="topbar"><div><div class="eyebrow">2026 家庭账本</div><h1>${routeNames[state.route]}</h1></div><label class="month-control" for="month"><span class="label">账期</span><input id="month" type="month" value="${esc(state.month)}" aria-label="选择账期"></label></header><main id="main" class="content" tabindex="-1">${flash}${content}</main></section><nav class="mobile-tabs" aria-label="移动导航">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}<button type="button" class="mobile-logout" id="mobile-logout">退出</button></nav></div>`;
+    app.innerHTML = `<div class="app-layout"><aside class="ledger-nav" aria-label="主导航"><div class="ledger-mark">家<span>账</span></div><nav class="nav-list">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('annual-stats','▲')}${navButton('settings','◌')}</nav><div class="nav-foot">${esc(state.data.session.username)} 的家庭账本<br><button type="button" class="button small logout-button" id="logout">退出登录</button></div></aside><section class="workspace"><header class="topbar"><div><div class="eyebrow">2026 家庭账本</div><h1>${routeNames[state.route]}</h1></div><label class="month-control" for="month"><span class="label">账期</span><input id="month" type="month" value="${esc(state.month)}" aria-label="选择账期"></label></header><main id="main" class="content" tabindex="-1">${flash}${content}</main></section><nav class="mobile-tabs" aria-label="移动导航">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('annual-stats','▲')}${navButton('settings','◌')}<button type="button" class="mobile-logout" id="mobile-logout">退出</button></nav></div>`;
     app.querySelectorAll('[data-route]').forEach(button => button.onclick = () => go(button.dataset.route));
     document.getElementById('month').onchange = async event => { state.month = event.target.value; state.filters = { kind: '', memberId: '', categoryId: '', q: '' }; await refreshSafely('账期已切换'); };
     document.getElementById('logout').onclick = logout;
@@ -147,6 +148,7 @@ import { state } from './ui-state.js';
     if (state.route === 'dashboard') return renderDashboard();
     if (state.route === 'transactions') return renderTransactions();
     if (state.route === 'analysis') return renderAnalysis();
+    if (state.route === 'annual-stats') return renderAnnualStats();
     return renderSettings();
   }
 
@@ -178,6 +180,13 @@ import { state } from './ui-state.js';
   }
 
   function renderAnalysis() { const analysis = state.data.analysis || {}; renderShell(`<section class="panel"><div class="panel-head"><div><h2>规则分析</h2><p>${esc(analysis.historyStatus || '正在核对历史账目')}</p></div><span class="label">账期 ${esc(state.month)}</span></div>${insightCards(analysis.insights || [])}</section><section class="panel"><h2>用数据说话</h2><p>分析使用本月支出与此前三个有数据账期的平均值比较；当历史不足时，只展示可以确认的结论。</p></section>`); }
+
+  function renderAnnualStats() {
+    const data = state.data.annualStats || {};
+    const summary = data.summary || {};
+    const monthlyCashFlows = data.monthlyCashFlows || [];
+    renderShell(`<section class="summary-grid" aria-label="年度收支摘要"><article class="summary"><span class="label">年度总收入</span><strong>${money(summary.totalIncome)}</strong></article><article class="summary expense"><span class="label">年度总支出</span><strong>${money(summary.totalExpense)}</strong></article><article class="summary balance"><span class="label">年度总结余</span><strong>${money(summary.totalBalance)}</strong></article></section><section class="panel"><div class="panel-head"><div><h2>月平均流水</h2><p>每月平均收入、支出及结余。</p></div><span class="label">年份 ${esc(data.year)}</span></div><div class="summary-grid"><article class="summary"><span class="label">月平均收入</span><strong>${money(summary.monthlyAverageIncome)}</strong></article><article class="summary expense"><span class="label">月平均支出</span><strong>${money(summary.monthlyAverageExpense)}</strong></article><article class="summary balance"><span class="label">月平均结余</span><strong>${money(summary.monthlyAverageBalance)}</strong></article></div></section><section class="panel"><div class="panel-head"><h2>月度收支明细</h2></div>${monthlyCashFlows.length ? `<div class="bar-list">${monthlyCashFlows.map(item => { const max = Math.max(...monthlyCashFlows.map(v => Math.max(Number(v.income), Number(v.expense)))); const incomeWidth = max > 0 ? (Number(item.income) / max * 100) : 0; const expenseWidth = max > 0 ? (Number(item.expense) / max * 100) : 0; return `<div><div class="bar-meta"><span>${item.month}月</span><strong>收入 ${money(item.income)} / 支出 ${money(item.expense)} / 结余 ${money(item.balance)}</strong></div><div class="bar"><b style="width:${Math.max(4, incomeWidth)}%"></b></div><div class="bar persimmon"><b style="width:${Math.max(4, expenseWidth)}%"></b></div></div>`; }).join('')}</div>` : '<p class="empty">暂无月度数据。</p>'}</section>`);
+  }
 
   function renderSettings() {
     renderShell(`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>家庭成员</h2><button class="button small" id="new-member">新增成员</button></div><div class="list-editor">${state.data.members.map(member => `<div class="editor-row"><div><strong>${esc(member.name)}</strong><br><span>${esc(member.roleLabel || '家庭成员')}</span></div><div><button class="button secondary small" data-member-edit="${member.id}">编辑</button><button class="button danger small" data-member-delete="${member.id}">删除</button></div></div>`).join('')}</div></section><section class="panel"><div class="panel-head"><h2>收支分类</h2><button class="button small" id="new-category">新增分类</button></div><div class="list-editor">${state.data.categories.map(category => `<div class="editor-row"><div><strong><i style="display:inline-block;width:10px;height:10px;background:${esc(category.color)};margin-right:6px"></i>${esc(category.name)}</strong><br><span>${category.kind === 'income' ? '收入' : '支出'}${category.defaultCategory ? ' · 默认分类' : ''}</span></div><div><button class="button secondary small" data-category-edit="${category.id}">编辑</button><button class="button danger small" data-category-delete="${category.id}">删除</button></div></div>`).join('')}</div></section></div>`);
