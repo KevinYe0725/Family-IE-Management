@@ -8,6 +8,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,12 +21,12 @@ class LedgerStageTwoMigrationTest {
     @Test
     void stageOneUpgradePreservesLedgerFactsAndBackfillsAccountCreatorAndSource() {
         Path database = StageOneDatabaseFixture.create(tempDir.resolve("stage-one"));
-        LedgerFacts before = ledgerFacts(database);
+        List<LegacyTransactionRow> before = legacyTransactionRows(database);
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
         assertThat(result.version()).isEqualTo("4");
-        assertThat(ledgerFacts(database)).isEqualTo(before);
+        assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions")).isEqualTo(12);
         assertThat(result.queryLong("select count(*) from financial_accounts where household_id=1 "
                 + "and name='默认账户' and type='CASH' and currency='CNY' and opening_balance_cents=0 "
@@ -40,6 +42,81 @@ class LedgerStageTwoMigrationTest {
                 + "where source_type='MANUAL' and source_id is null"))
                 .isEqualTo(12);
         assertThat(result.queryLong("select count(*) from categories where parent_id is not null")).isZero();
+    }
+
+    @Test
+    void archivedV3HouseholdUsesItsInactiveLinkedUserAndPreservesEveryLedgerColumn() {
+        Path database = StageOneDatabaseFixture.create(tempDir.resolve("archived-household"));
+        MigrationResult versionThree = MigrationTestSupport.migrateExistingDatabaseTo(database, "3");
+        List<LegacyTransactionRow> before = legacyTransactionRows(database);
+        versionThree.executeUpdate("update households set status='ARCHIVED',archived_at=current_timestamp where id=1");
+        versionThree.executeUpdate("update app_users set status='SUSPENDED' where id=1");
+        versionThree.executeUpdate("update household_memberships set status='SUSPENDED' where user_id=1");
+
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+
+        assertThat(result.version()).isEqualTo("4");
+        assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
+        assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
+                .isEqualTo(12);
+    }
+
+    @Test
+    void v3HouseholdWithoutActiveOwnerUsesItsSuspendedOwnerAndPreservesEveryLedgerColumn() {
+        Path database = StageOneDatabaseFixture.create(tempDir.resolve("suspended-owner"));
+        MigrationResult versionThree = MigrationTestSupport.migrateExistingDatabaseTo(database, "3");
+        List<LegacyTransactionRow> before = legacyTransactionRows(database);
+        versionThree.executeUpdate("update family_members set linked_user_id=null where household_id=1");
+        versionThree.executeUpdate("update app_users set status='SUSPENDED' where id=1");
+        versionThree.executeUpdate("update household_memberships set status='SUSPENDED' where user_id=1");
+
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+
+        assertThat(result.version()).isEqualTo("4");
+        assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
+        assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
+                .isEqualTo(12);
+    }
+
+    @Test
+    void v3CreatorFallbackPrefersAnyMembershipBeforeTheSmallestHouseholdUser() {
+        Path database = StageOneDatabaseFixture.createWithAdditionalUser(tempDir.resolve("membership-fallback"));
+        MigrationResult versionThree = MigrationTestSupport.migrateExistingDatabaseTo(database, "3");
+        versionThree.executeUpdate("update family_members set linked_user_id=null where household_id=1");
+        versionThree.executeUpdate("delete from household_memberships where household_id=1");
+        versionThree.executeUpdate("insert into household_memberships "
+                + "(household_id,user_id,role,status,joined_at) values "
+                + "(1,2,'MEMBER','SUSPENDED',timestamp with time zone '2026-09-01 00:00:00+00')");
+
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+
+        assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=2"))
+                .isEqualTo(12);
+    }
+
+    @Test
+    void v3CreatorFallbackUsesSmallestHouseholdUserWhenThereAreNoMemberships() {
+        Path database = StageOneDatabaseFixture.createWithAdditionalUser(tempDir.resolve("user-fallback"));
+        MigrationResult versionThree = MigrationTestSupport.migrateExistingDatabaseTo(database, "3");
+        versionThree.executeUpdate("update family_members set linked_user_id=null where household_id=1");
+        versionThree.executeUpdate("delete from household_memberships where household_id=1");
+
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+
+        assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
+                .isEqualTo(12);
+    }
+
+    @Test
+    void v3HouseholdWithTransactionsButNoSameHouseholdUserFailsClosed() {
+        Path database = StageOneDatabaseFixture.create(tempDir.resolve("userless-corrupt-household"));
+        MigrationResult versionThree = MigrationTestSupport.migrateExistingDatabaseTo(database, "3");
+        versionThree.executeUpdate("update family_members set linked_user_id=null where household_id=1");
+        versionThree.executeUpdate("delete from household_memberships where household_id=1");
+        versionThree.executeUpdate("delete from app_users where household_id=1");
+
+        assertThatThrownBy(() -> MigrationTestSupport.migrateExistingDatabase(database))
+                .hasMessageContaining("created_by_user_id");
     }
 
     @Test
@@ -113,6 +190,7 @@ class LedgerStageTwoMigrationTest {
         result.executeUpdate("insert into categories "
                 + "(household_id,kind,name,color,is_default,created_at,parent_id) values "
                 + "(1,'EXPENSE','支出子类','#112233',false,current_timestamp,1)");
+        assertRejected(result, "update categories set parent_id=id where id=1");
         assertRejected(result, "insert into categories "
                 + "(household_id,kind,name,color,is_default,created_at,parent_id) values "
                 + "(1,'INCOME','错误子类','#112233',false,current_timestamp,1)");
@@ -139,11 +217,75 @@ class LedgerStageTwoMigrationTest {
                 + "(1,'INCOME',500,'MONTHLY',1,15,date '2026-09-15'," + accountId
                 + ",1,1,true,1)");
         result.executeUpdate("insert into recurring_occurrences "
-                + "(rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
-                + "(1,date '2026-09-15','PENDING',null,1)");
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1,1,date '2026-09-15','PENDING',null,1)");
         assertRejected(result, "insert into recurring_occurrences "
-                + "(rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
-                + "(1,date '2026-09-15','PENDING',null,1)");
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1,1,date '2026-09-15','PENDING',null,1)");
+    }
+
+    @Test
+    void budgetRevisionsRequireTheSameHouseholdForBudgetAndActor() {
+        Path database = StageOneDatabaseFixture.createWithSecondHousehold(tempDir.resolve("budget-revision-scope"));
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+        result.executeUpdate("insert into budgets "
+                + "(household_id,period_month,scope_type,category_id,member_id,amount_cents,version,active) "
+                + "values (1,'2026-10','TOTAL',null,null,10000,1,true)");
+        long budgetId = result.queryLong("select id from budgets where household_id=1");
+
+        result.executeUpdate("insert into budget_revisions "
+                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
+                + "(1," + budgetId + ",10000,12000,1,current_timestamp)");
+        assertRejected(result, "insert into budget_revisions "
+                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
+                + "(1," + budgetId + ",12000,14000,2,current_timestamp)");
+        assertRejected(result, "insert into budget_revisions "
+                + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at) values "
+                + "(2," + budgetId + ",12000,14000,2,current_timestamp)");
+    }
+
+    @Test
+    void recurringOccurrencesEnforceHouseholdScopeAndAllowUnassignedPendingRows() {
+        Path database = StageOneDatabaseFixture.createWithSecondHousehold(tempDir.resolve("occurrence-scope"));
+        MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
+        result.executeUpdate("insert into categories "
+                + "(household_id,kind,name,color,is_default,created_at,parent_id) values "
+                + "(2,'EXPENSE','外部支出','#112233',false,current_timestamp,null)");
+        long householdOneAccount = result.queryLong("select id from financial_accounts where household_id=1");
+        long householdTwoAccount = result.queryLong("select id from financial_accounts where household_id=2");
+        long householdTwoCategory = result.queryLong("select id from categories where household_id=2");
+        result.executeUpdate("insert into financial_transactions "
+                + "(household_id,account_id,created_by_user_id,member_id,category_id,kind,amount_cents,"
+                + "occurred_on,created_at,updated_at,source_type,source_id) values "
+                + "(2," + householdTwoAccount + ",2,2," + householdTwoCategory
+                + ",'EXPENSE',700,date '2026-09-04',current_timestamp,current_timestamp,'MANUAL',null)");
+        long householdTwoTransaction = result.queryLong(
+                "select id from financial_transactions where household_id=2");
+        result.executeUpdate("insert into recurring_rules "
+                + "(household_id,kind,amount_cents,schedule_type,interval_value,day_of_month,next_due_on,"
+                + "account_id,member_id,category_id,active,created_by) values "
+                + "(1,'EXPENSE',500,'MONTHLY',1,15,date '2026-09-15'," + householdOneAccount
+                + ",1,1,true,1)");
+        long ruleId = result.queryLong("select id from recurring_rules where household_id=1");
+
+        result.executeUpdate("insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1," + ruleId + ",date '2026-10-15','PENDING',null,null)");
+        result.executeUpdate("insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1," + ruleId + ",date '2026-11-15','PENDING',null,1)");
+        result.executeUpdate("insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1," + ruleId + ",date '2026-12-15','CONFIRMED',1,1)");
+        assertRejected(result, "insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1," + ruleId + ",date '2027-01-15','PENDING',null,2)");
+        assertRejected(result, "insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(2," + ruleId + ",date '2027-02-15','PENDING',null,2)");
+        assertRejected(result, "insert into recurring_occurrences "
+                + "(household_id,rule_id,due_on,status,confirmed_transaction_id,assigned_user_id) values "
+                + "(1," + ruleId + ",date '2027-03-15','CONFIRMED'," + householdTwoTransaction + ",1)");
     }
 
     private static void assertRejected(MigrationResult result, String sql) {
@@ -152,55 +294,45 @@ class LedgerStageTwoMigrationTest {
                 .hasMessageContaining("Could not execute migration test statement");
     }
 
-    private static LedgerFacts ledgerFacts(Path database) {
-        String sql = "select count(*),sum(amount_cents),min(amount_cents),max(amount_cents),"
-                + "count(distinct amount_cents),count(distinct household_id),count(distinct member_id),"
-                + "count(distinct category_id),count(distinct kind),count(distinct occurred_on),"
-                + "count(merchant),count(location),count(note),min(created_at),max(created_at),"
-                + "min(updated_at),max(updated_at) from financial_transactions";
+    private static List<LegacyTransactionRow> legacyTransactionRows(Path database) {
+        String sql = "select id,household_id,member_id,category_id,kind,amount_cents,occurred_on,"
+                + "merchant,location,note,created_at,updated_at from financial_transactions order by id";
         try (Connection connection = DriverManager.getConnection(MigrationTestSupport.h2Url(database), "sa", "");
                 ResultSet rows = connection.createStatement().executeQuery(sql)) {
-            rows.next();
-            return new LedgerFacts(
-                    rows.getLong(1),
-                    rows.getLong(2),
-                    rows.getLong(3),
-                    rows.getLong(4),
-                    rows.getLong(5),
-                    rows.getLong(6),
-                    rows.getLong(7),
-                    rows.getLong(8),
-                    rows.getLong(9),
-                    rows.getLong(10),
-                    rows.getLong(11),
-                    rows.getLong(12),
-                    rows.getLong(13),
-                    rows.getObject(14).toString(),
-                    rows.getObject(15).toString(),
-                    rows.getObject(16).toString(),
-                    rows.getObject(17).toString());
+            List<LegacyTransactionRow> snapshot = new ArrayList<>();
+            while (rows.next()) {
+                snapshot.add(new LegacyTransactionRow(
+                        rows.getLong("id"),
+                        rows.getLong("household_id"),
+                        rows.getLong("member_id"),
+                        rows.getLong("category_id"),
+                        rows.getString("kind"),
+                        rows.getLong("amount_cents"),
+                        rows.getString("occurred_on"),
+                        rows.getString("merchant"),
+                        rows.getString("location"),
+                        rows.getString("note"),
+                        rows.getObject("created_at").toString(),
+                        rows.getObject("updated_at").toString()));
+            }
+            return List.copyOf(snapshot);
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not snapshot migration fixture", exception);
         }
     }
 
-    private record LedgerFacts(
-            long count,
-            long amountSum,
-            long minimumAmount,
-            long maximumAmount,
-            long distinctAmounts,
-            long households,
-            long members,
-            long categories,
-            long kinds,
-            long occurredDates,
-            long merchants,
-            long locations,
-            long notes,
-            String minimumCreatedAt,
-            String maximumCreatedAt,
-            String minimumUpdatedAt,
-            String maximumUpdatedAt) {
+    private record LegacyTransactionRow(
+            long id,
+            long householdId,
+            long memberId,
+            long categoryId,
+            String kind,
+            long amountCents,
+            String occurredOn,
+            String merchant,
+            String location,
+            String note,
+            String createdAt,
+            String updatedAt) {
     }
 }

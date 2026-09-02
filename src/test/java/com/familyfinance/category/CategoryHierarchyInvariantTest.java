@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.familyfinance.household.Household;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CategoryHierarchyInvariantTest {
 
@@ -50,6 +51,24 @@ class CategoryHierarchyInvariantTest {
         assertThatThrownBy(() -> child.update(TransactionKind.INCOME, "错误类型", "#445566", parent))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Parent category kind must match child category kind");
+    }
+
+    @Test
+    void rejectsSelfParentByObjectIdentityAndPersistedId() {
+        Household household = new Household("家庭", CREATED_AT);
+        Category category = category(household, TransactionKind.EXPENSE, "购物", null);
+
+        assertThatThrownBy(() -> category.update(TransactionKind.EXPENSE, "购物", "#445566", category))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Category cannot be its own parent");
+
+        Category samePersistedCategory = category(household, TransactionKind.EXPENSE, "购物副本", null);
+        ReflectionTestUtils.setField(category, "id", 42L);
+        ReflectionTestUtils.setField(samePersistedCategory, "id", 42L);
+        assertThatThrownBy(() -> category.update(
+                        TransactionKind.EXPENSE, "购物", "#445566", samePersistedCategory))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Category cannot be its own parent");
     }
 
     private static Category category(

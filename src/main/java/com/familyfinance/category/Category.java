@@ -73,7 +73,7 @@ public class Category {
             boolean defaultCategory,
             Category parent,
             Instant createdAt) {
-        requireValidHierarchy(household, kind, parent);
+        requireValidHierarchy(this, household, kind, parent);
         this.household = household;
         this.kind = kind;
         this.name = name;
@@ -120,18 +120,22 @@ public class Category {
     }
 
     public void update(TransactionKind kind, String name, String color, Category parent) {
-        requireValidHierarchy(household, kind, parent);
+        requireValidHierarchy(this, household, kind, parent);
         this.kind = kind;
         this.name = name;
         this.color = color;
         this.parent = parent;
     }
 
-    private static void requireValidHierarchy(Household household, TransactionKind kind, Category parent) {
+    private static void requireValidHierarchy(
+            Category child, Household household, TransactionKind kind, Category parent) {
         Objects.requireNonNull(household, "household must not be null");
         Objects.requireNonNull(kind, "kind must not be null");
         if (parent == null) {
             return;
+        }
+        if (parent == child || (child.id != null && Objects.equals(child.id, parent.getId()))) {
+            throw new IllegalArgumentException("Category cannot be its own parent");
         }
         if (!sameHousehold(household, parent.household)) {
             throw new IllegalArgumentException("Parent category must belong to the child category household");
