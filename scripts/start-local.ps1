@@ -40,8 +40,13 @@ function Get-JavaMajorVersion {
 
 function Test-AppReady {
     try {
-        $Response = Invoke-WebRequest -UseBasicParsing -Uri "$AppUrl/" -TimeoutSec 2
-        return $Response.StatusCode -eq 200
+        $Response = Invoke-WebRequest -UseBasicParsing -Uri "$AppUrl/api/csrf" -TimeoutSec 2
+        if ($Response.StatusCode -ne 200) {
+            return $false
+        }
+        $Payload = $Response.Content | ConvertFrom-Json
+        return $Payload.data.headerName -eq 'X-XSRF-TOKEN' -and
+            -not [string]::IsNullOrWhiteSpace($Payload.data.token)
     }
     catch {
         return $false
@@ -85,6 +90,9 @@ if ($JavaMajor -lt 17) {
 Write-Step "Java $JavaMajor detected."
 
 if (Test-AppReady) {
+    if ($Smoke) {
+        throw "The Family Finance application is already running at $AppUrl. Smoke mode requires a free port."
+    }
     Write-Step "The application is already running at $AppUrl"
     Open-Application
     exit 0
@@ -109,7 +117,12 @@ if ($Smoke) {
     }
     finally {
         if ($Process -and -not $Process.HasExited) {
-            & taskkill.exe /PID $Process.Id /T /F | Out-Null
+            & $env:ComSpec /d /s /c "taskkill /PID $($Process.Id) /T /F >nul 2>&1"
+            $TaskKillExit = $LASTEXITCODE
+            $Process.Refresh()
+            if ($TaskKillExit -ne 0 -and -not $Process.HasExited) {
+                throw "Could not stop the smoke process tree (PID $($Process.Id))."
+            }
         }
     }
     exit 0

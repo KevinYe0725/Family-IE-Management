@@ -8,10 +8,16 @@
 
 ### Windows 一键启动
 
-在 CMD 或 PowerShell 中进入项目目录，然后运行：
+在 CMD 中进入项目目录，然后运行：
 
 ```bat
 start-local.cmd
+```
+
+在 PowerShell 中需要显式写出当前目录：
+
+```powershell
+.\start-local.cmd
 ```
 
 脚本会检查 Java 版本和 8080 端口，使用项目自带的 Maven Wrapper 启动 Spring Boot，并在服务就绪后自动打开浏览器。停止应用时，在启动终端中按 `Ctrl+C`。
@@ -21,6 +27,11 @@ start-local.cmd
 ```bat
 start-local.cmd -Port 8090
 ```
+
+可选参数：
+
+- `-NoBrowser`：服务启动后不自动打开浏览器。
+- `-Smoke`：启动、等待探活成功后自动停止，主要供 CI 或环境检查使用；要求指定端口上没有已运行实例。
 
 ### macOS / Linux
 
