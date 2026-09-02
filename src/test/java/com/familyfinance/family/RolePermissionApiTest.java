@@ -66,7 +66,7 @@ class RolePermissionApiTest {
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/family/memberships").session(owner))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].role").value("MEMBER"));
+                .andExpect(jsonPath("$.data.items[?(@.email == 'demo@local.family')].role").value("MEMBER"));
         mvc.perform(patch("/api/family/memberships/{id}", memberId).session(owner).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"OWNER\"}"))
                 .andExpect(status().isForbidden());
@@ -99,7 +99,7 @@ class RolePermissionApiTest {
 
         mvc.perform(get("/api/family/memberships").session(owner))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.email == 'demo@local.family')].role").value("OWNER"));
+                .andExpect(jsonPath("$.data.items[?(@.email == 'demo@local.family')].role").value("OWNER"));
     }
 
     @Test
@@ -157,7 +157,7 @@ class RolePermissionApiTest {
 
     private static long membershipIdFor(MvcResult result, String email) throws Exception {
         for (tools.jackson.databind.JsonNode membership : new tools.jackson.databind.ObjectMapper()
-                .readTree(result.getResponse().getContentAsString()).path("data")) {
+                .readTree(result.getResponse().getContentAsString()).path("data").path("items")) {
             if (email.equals(membership.path("email").asText())) return membership.path("id").asLong();
         }
         throw new AssertionError("expected membership was absent");

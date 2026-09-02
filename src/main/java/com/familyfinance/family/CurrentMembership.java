@@ -1,6 +1,7 @@
 package com.familyfinance.family;
 
 import com.familyfinance.auth.FamilyUserPrincipal;
+import com.familyfinance.household.AppUserStatus;
 import java.util.List;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -27,6 +28,9 @@ public class CurrentMembership {
             throw new AccessDeniedException("当前账号没有唯一的有效家庭成员身份");
         }
         HouseholdMembership membership = activeMemberships.get(0);
+        if (membership.getUser().getStatus() != AppUserStatus.ACTIVE) {
+            throw new AccessDeniedException("当前账号已停用");
+        }
         return new MembershipContext(
                 membership.getHousehold().getId(),
                 principal.userId(),

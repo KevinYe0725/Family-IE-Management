@@ -25,6 +25,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 @RestController
 public class MembershipController {
@@ -38,7 +41,13 @@ public class MembershipController {
         family.archive(authentication, request);
         if (servletRequest.getSession(false) != null) servletRequest.getSession(false).invalidate();
     }
-    @GetMapping("/api/family/memberships") ApiEnvelope<List<MembershipView>> memberships(Authentication authentication) { return ApiEnvelope.data(family.list(authentication)); }
+    @GetMapping("/api/family/memberships")
+    ApiEnvelope<MembershipPage> memberships(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiEnvelope.data(family.list(authentication, page, size));
+    }
     @PatchMapping("/api/family/memberships/{id}") ApiEnvelope<MembershipView> updateRole(Authentication authentication, @PathVariable long id, @RequestBody RoleRequest request) { return ApiEnvelope.data(family.updateRole(authentication, id, request)); }
     @PostMapping("/api/family/transfer-ownership") @ResponseStatus(HttpStatus.NO_CONTENT)
     void transfer(Authentication authentication, @RequestBody TransferRequest request) { family.transferOwnership(authentication, request); }
@@ -57,15 +66,15 @@ class FamilyManagementService {
     private final HouseholdMembershipRepository memberships;
     private final FamilyInviteRepository invites;
     private final Clock clock;
-    private final FamilyLockService locks;
+    private final FamilyMutationAuthorization mutationAuthorization;
     private final EntityManager entityManager;
 
     FamilyManagementService(CurrentMembership currentMembership, FamilyPermissionService permissions, HouseholdRepository households,
-            HouseholdMembershipRepository memberships, FamilyInviteRepository invites, Clock clock, FamilyLockService locks,
-            EntityManager entityManager) {
+            HouseholdMembershipRepository memberships, FamilyInviteRepository invites, Clock clock,
+            EntityManager entityManager, FamilyMutationAuthorization mutationAuthorization) {
         this.currentMembership = currentMembership; this.permissions = permissions; this.households = households;
         this.memberships = memberships; this.invites = invites; this.clock = clock;
-        this.locks = locks; this.entityManager = entityManager;
+        this.mutationAuthorization = mutationAuthorization; this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -77,16 +86,16 @@ class FamilyManagementService {
 
     @Transactional
     FamilyView rename(Authentication authentication, MembershipController.RenameRequest request) {
-        MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
+        Household household = mutationAuthorization.requireOwner(authentication).household();
         String name = requireName(request == null ? null : request.name(), "name");
-        Household household = locks.lockActiveHousehold(context.householdId());
         household.rename(name); return FamilyView.from(household);
     }
 
     @Transactional
     void archive(Authentication authentication, MembershipController.ArchiveRequest request) {
-        MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
-        Household lockedHousehold = locks.lockHousehold(context.householdId());
+        FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireOwner(authentication);
+        MembershipContext context = access.context();
+        Household lockedHousehold = access.household();
         long householdId = lockedHousehold.getId();
         String householdName = lockedHousehold.getName();
         List<HouseholdMembership> householdMemberships = reloadLockedMemberships(householdId);
@@ -101,16 +110,27 @@ class FamilyManagementService {
     }
 
     @Transactional(readOnly = true)
-    List<MembershipView> list(Authentication authentication) {
+    MembershipPage list(Authentication authentication, int page, int size) {
         MembershipContext context = currentMembership.require(authentication);
-        return memberships.findByHouseholdIdOrderById(context.householdId()).stream().map(MembershipView::from).toList();
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(50, Math.max(1, size));
+        var result = memberships.findByHouseholdId(
+                context.householdId(),
+                PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id")));
+        return new MembershipPage(
+                result.getContent().stream().map(MembershipView::from).toList(),
+                safePage,
+                safeSize,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext());
     }
 
     @Transactional
     MembershipView updateRole(Authentication authentication, long id, MembershipController.RoleRequest request) {
-        MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
+        MembershipContext context = mutationAuthorization.requireOwner(authentication).context();
         if (request == null || request.role() == null || request.role() == HouseholdRole.OWNER) validation("role", "角色不允许这样调整");
-        List<HouseholdMembership> locked = lockFreshMemberships(context);
+        List<HouseholdMembership> locked = reloadLockedMemberships(context.householdId());
         requireCurrentOwner(context, locked);
         HouseholdMembership target = locked.stream().filter(membership -> membership.getId().equals(id)).findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("成员身份不存在"));
@@ -120,9 +140,9 @@ class FamilyManagementService {
 
     @Transactional
     void transferOwnership(Authentication authentication, MembershipController.TransferRequest request) {
-        MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
+        MembershipContext context = mutationAuthorization.requireOwner(authentication).context();
         if (request == null || request.membershipId() == null) validation("membershipId", "必须选择新所有者");
-        List<HouseholdMembership> locked = lockFreshMemberships(context);
+        List<HouseholdMembership> locked = reloadLockedMemberships(context.householdId());
         HouseholdMembership current = requireCurrentOwner(context, locked);
         HouseholdMembership target = locked.stream().filter(m -> m.getId().equals(request.membershipId())).findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("成员身份不存在"));
@@ -130,11 +150,6 @@ class FamilyManagementService {
         HouseholdRole targetRole = target.getRole(); current.changeRole(targetRole); target.changeRole(HouseholdRole.OWNER);
         long owners = locked.stream().filter(m -> m.getStatus() == MembershipStatus.ACTIVE && m.getRole() == HouseholdRole.OWNER).count();
         if (owners != 1) throw new IllegalStateException("家庭必须恰有一名所有者");
-    }
-
-    private List<HouseholdMembership> lockFreshMemberships(MembershipContext context) {
-        locks.lockActiveHousehold(context.householdId());
-        return reloadLockedMemberships(context.householdId());
     }
 
     private List<HouseholdMembership> reloadLockedMemberships(long householdId) {
@@ -171,4 +186,12 @@ record FamilyView(Long id, String name, String status, Instant archivedAt) {
 }
 record MembershipView(Long id, Long userId, String email, String displayName, HouseholdRole role, MembershipStatus status) {
     static MembershipView from(HouseholdMembership membership) { return new MembershipView(membership.getId(), membership.getUser().getId(), membership.getUser().getEmail(), membership.getUser().getDisplayName(), membership.getRole(), membership.getStatus()); }
+}
+record MembershipPage(
+        List<MembershipView> items,
+        int page,
+        int size,
+        long totalElements,
+        int totalPages,
+        boolean hasNext) {
 }

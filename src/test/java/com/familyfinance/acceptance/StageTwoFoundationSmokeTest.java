@@ -80,7 +80,7 @@ class StageTwoFoundationSmokeTest {
     }
 
     private long membershipIdFor(HttpClient client, String email) throws Exception {
-        for (JsonNode membership : json(get(client, "/api/family/memberships")).path("data")) {
+        for (JsonNode membership : json(get(client, "/api/family/memberships")).path("data").path("items")) {
             if (email.equals(membership.path("email").asString())) {
                 return membership.path("id").asLong();
             }

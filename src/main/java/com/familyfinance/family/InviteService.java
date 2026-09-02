@@ -28,24 +28,28 @@ public class InviteService {
     private final AppUserRepository users;
     private final Clock clock;
     private final FamilyLockService locks;
+    private final FamilyMutationAuthorization mutationAuthorization;
 
     InviteService(CurrentMembership currentMembership, FamilyPermissionService permissions, FamilyInviteRepository invites,
-            AppUserRepository users, Clock clock, FamilyLockService locks) {
+            AppUserRepository users, Clock clock, FamilyLockService locks,
+            FamilyMutationAuthorization mutationAuthorization) {
         this.currentMembership = currentMembership;
         this.permissions = permissions;
         this.invites = invites;
         this.users = users;
         this.clock = clock;
         this.locks = locks;
+        this.mutationAuthorization = mutationAuthorization;
     }
 
     @Transactional
     public CreatedInvite create(Authentication authentication, Integer maxUses, HouseholdRole requestedRole) {
-        MembershipContext context = currentMembership.require(authentication);
-        locks.lockActiveHousehold(context.householdId());
         HouseholdRole role = requestedRole == null ? HouseholdRole.MEMBER : requestedRole;
+        FamilyMutationAuthorization.LockedFamilyAccess access = role == HouseholdRole.ADMIN
+                ? mutationAuthorization.requireOwner(authentication)
+                : mutationAuthorization.requireAdmin(authentication);
+        MembershipContext context = access.context();
         if (role == HouseholdRole.OWNER) validation("role", "邀请不能授予所有者角色");
-        if (role == HouseholdRole.ADMIN) permissions.requireOwner(context); else permissions.requireAdmin(context);
         int uses = maxUses == null ? 5 : maxUses;
         if (uses < 1 || uses > 100) validation("maxUses", "邀请码使用次数必须为 1 到 100");
         AppUser user = users.getReferenceById(context.userId());
@@ -67,8 +71,7 @@ public class InviteService {
 
     @Transactional
     public void revoke(Authentication authentication, long id) {
-        MembershipContext context = currentMembership.require(authentication);
-        locks.lockActiveHousehold(context.householdId());
+        MembershipContext context = mutationAuthorization.requireAdmin(authentication).context();
         FamilyInvite invite = invites.findByIdAndHouseholdId(id, context.householdId())
                 .orElseThrow(() -> new ResourceNotFoundException("邀请不存在"));
         if (invite.getRole() == HouseholdRole.ADMIN) permissions.requireOwner(context); else permissions.requireAdmin(context);

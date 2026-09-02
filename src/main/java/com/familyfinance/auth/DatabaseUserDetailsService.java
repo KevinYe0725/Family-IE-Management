@@ -32,7 +32,8 @@ public class DatabaseUserDetailsService implements UserDetailsService {
                 user.getId(),
                 user.getEmail(),
                 user.getDisplayName(),
-                user.getPasswordHash());
+                user.getPasswordHash(),
+                user.getStatus());
         requireActiveMembership(principal);
         return principal;
     }
@@ -46,10 +47,10 @@ public class DatabaseUserDetailsService implements UserDetailsService {
         }
     }
 
-    private static String normalizeLogin(String login) {
+    static String normalizeLogin(String login) {
         if ("demo".equals(login)) {
             return "demo@local.family";
         }
-        return login.trim().toLowerCase(Locale.ROOT);
+        return login == null ? "" : login.trim().toLowerCase(Locale.ROOT);
     }
 }

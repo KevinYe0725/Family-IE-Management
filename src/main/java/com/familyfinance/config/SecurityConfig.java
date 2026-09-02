@@ -1,6 +1,9 @@
 package com.familyfinance.config;
 
 import com.familyfinance.auth.FamilyUserPrincipal;
+import com.familyfinance.auth.ActiveUserSessionFilter;
+import com.familyfinance.auth.LoginRateLimitFilter;
+import com.familyfinance.auth.LoginRateLimiter;
 import com.familyfinance.family.CurrentMembership;
 import com.familyfinance.family.MembershipContext;
 import com.familyfinance.shared.ApiEnvelope;
@@ -19,6 +22,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import com.familyfinance.household.AppUserRepository;
 
 @Configuration
 public class SecurityConfig {
@@ -27,7 +33,9 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             ObjectMapper objectMapper,
-            CurrentMembership currentMembership) throws Exception {
+            CurrentMembership currentMembership,
+            AppUserRepository users,
+            LoginRateLimiter loginRateLimiter) throws Exception {
         http
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
                 .sessionManagement(session -> session
@@ -41,6 +49,8 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginProcessingUrl("/api/auth/login")
                         .successHandler((request, response, authentication) -> {
+                            loginRateLimiter.reset(
+                                    request.getParameter("username"), request.getRemoteAddr());
                             FamilyUserPrincipal principal = (FamilyUserPrincipal) authentication.getPrincipal();
                             try {
                                 MembershipContext membership = currentMembership.require(authentication);
@@ -77,6 +87,11 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeJson(response, HttpServletResponse.SC_FORBIDDEN, objectMapper,
                                         ApiEnvelope.error(ApiError.of("FORBIDDEN", "没有权限执行此操作")))));
+
+        http.addFilterAfter(new ActiveUserSessionFilter(users, objectMapper), SecurityContextHolderFilter.class);
+        http.addFilterBefore(
+                new LoginRateLimitFilter(loginRateLimiter, objectMapper),
+                UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
