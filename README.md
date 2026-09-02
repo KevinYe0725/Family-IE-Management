@@ -71,9 +71,11 @@ start-local.cmd -Port 8090
 
 ## 第一阶段数据升级备份与恢复
 
-首次使用 Windows `start-local.cmd` 或 macOS/Linux `./start-local.sh` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先使用项目固定的 H2 2.3.232 运行时以只读方式检查版本，并确认检查没有改变主库哈希，再在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
+首次使用 Windows `start-local.cmd` 或 macOS/Linux `./start-local.sh` 升级一个非空的第一阶段主库 `data/family-finance.mv.db`、且尚未记录 Flyway 迁移历史时，启动脚本会先使用项目固定的 H2 2.3.232 运行时以只读方式检查版本；macOS/Linux 启动脚本还会对比检查前后的主库哈希。确认需要兼容升级后，脚本会在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`。自动升级仅支持该项目第一阶段实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
 
 备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查；已有 Flyway 历史的数据库会跳过这次兼容备份。没有现有主库时不会创建备份。
+
+macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串行化备份。若另一个启动仍在执行，或异常终止留下了无法确认归属的锁，脚本会拒绝启动且不会自行删除该锁；请先确认没有启动或迁移进程仍在运行，再人工检查锁目录和 `.partial` 证据。
 
 如迁移失败或要回退，先停止应用，将当前 `data/` 目录保留到另一个安全位置，再把某个已验证备份目录中的全部数据库文件复制回 `data/`。不要复制 `.partial` 目录；它表示备份未完整完成。恢复后再启动应用并验证可登录和账目数据。
 

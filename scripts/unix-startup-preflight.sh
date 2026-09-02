@@ -9,6 +9,10 @@ ff_h2_matches_file=
 ff_inspection_output=
 ff_status_lines=
 ff_hash_output_file=
+ff_backup_lock_directory=
+ff_backup_lock_owner_file=
+ff_backup_lock_token=
+ff_backup_lock_owned=0
 
 ff_step() {
     printf '%s\n' "[family-finance] $*"
@@ -28,6 +32,29 @@ ff_cleanup_temporary_files() {
     ff_cleanup_temporary_file "$ff_inspection_output"
     ff_cleanup_temporary_file "$ff_status_lines"
     ff_cleanup_temporary_file "$ff_hash_output_file"
+}
+
+ff_cleanup_startup_resources() {
+    ff_cleanup_temporary_files
+    ff_cleanup_owned_backup_lock
+}
+
+ff_cleanup_owned_backup_lock() {
+    [ "$ff_backup_lock_owned" -eq 1 ] || return 0
+    if [ ! -f "$ff_backup_lock_owner_file" ]; then
+        printf '%s\n' "[family-finance] Backup lock ownership marker is missing; the unknown lock was left at $ff_backup_lock_directory" >&2
+        return 0
+    fi
+    ff_cleanup_lock_token=$(sed -n '1p' "$ff_backup_lock_owner_file" 2>/dev/null || true)
+    if [ "$ff_cleanup_lock_token" != "$ff_backup_lock_token" ]; then
+        printf '%s\n' "[family-finance] Backup lock ownership changed; the unknown lock was left at $ff_backup_lock_directory" >&2
+        return 0
+    fi
+    if ! rm -f "$ff_backup_lock_owner_file" || ! rmdir "$ff_backup_lock_directory"; then
+        printf '%s\n' "[family-finance] Could not release the owned backup lock at $ff_backup_lock_directory; inspect it before retrying." >&2
+        return 0
+    fi
+    ff_backup_lock_owned=0
 }
 
 ff_cleanup_temporary_file() {
@@ -55,7 +82,7 @@ ff_require_java_17() {
     [ -n "$ff_java_command" ] ||
         ff_fail 'Java was not found. Install a Java 17 or newer JDK, then reopen the terminal.'
 
-    ff_java_version_output=$($ff_java_command -version 2>&1) ||
+    ff_java_version_output=$("$ff_java_command" -version 2>&1) ||
         ff_fail 'Could not run java -version. Install a Java 17 or newer JDK.'
     ff_java_version=$(printf '%s\n' "$ff_java_version_output" |
         sed -n '1{s/.*version "\([^"]*\)".*/\1/p;}')
@@ -123,7 +150,7 @@ ff_sha256_file() {
     printf '%s\n' "$ff_hash"
 }
 
-ff_reserve_partial_backup() {
+ff_prepare_backup_root() {
     ff_backup_root=$1
     ff_backup_root_created=0
     if [ ! -e "$ff_backup_root" ]; then
@@ -133,6 +160,44 @@ ff_reserve_partial_backup() {
     elif [ ! -d "$ff_backup_root" ]; then
         ff_fail "The migration backup root is not a directory: $ff_backup_root"
     fi
+}
+
+ff_acquire_backup_lock() {
+    ff_backup_root=$1
+    ff_backup_lock_directory=$ff_backup_root/.family-finance-backup.lock
+    ff_backup_lock_owner_file=$ff_backup_lock_directory/OWNER.txt
+    ff_backup_lock_token="pid=$$;started=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    if ! mkdir "$ff_backup_lock_directory" 2>/dev/null; then
+        ff_fail "Another backup preflight is active, or an unknown stale lock exists at $ff_backup_lock_directory. Startup was refused; inspect the lock before removing it."
+    fi
+    ff_backup_lock_owned=1
+    if ! printf '%s\n' "$ff_backup_lock_token" >"$ff_backup_lock_owner_file"; then
+        rmdir "$ff_backup_lock_directory" 2>/dev/null || true
+        ff_backup_lock_owned=0
+        ff_fail 'Could not record ownership of the migration backup lock.'
+    fi
+}
+
+ff_release_backup_lock() {
+    [ "$ff_backup_lock_owned" -eq 1 ] || return 0
+    [ -f "$ff_backup_lock_owner_file" ] ||
+        ff_fail "Backup lock ownership marker is missing at $ff_backup_lock_directory. Startup was refused and the unknown lock was preserved."
+    ff_release_lock_token=$(sed -n '1p' "$ff_backup_lock_owner_file") ||
+        ff_fail "Could not read backup lock ownership at $ff_backup_lock_directory. Startup was refused and the lock was preserved."
+    [ "$ff_release_lock_token" = "$ff_backup_lock_token" ] ||
+        ff_fail "Backup lock ownership changed at $ff_backup_lock_directory. Startup was refused and the unknown lock was preserved."
+    rm -f "$ff_backup_lock_owner_file" ||
+        ff_fail "Could not remove the owned backup lock marker at $ff_backup_lock_owner_file. Startup was refused."
+    rmdir "$ff_backup_lock_directory" ||
+        ff_fail "Could not release the owned backup lock at $ff_backup_lock_directory. Startup was refused; inspect it before retrying."
+    ff_backup_lock_owned=0
+    ff_backup_lock_directory=
+    ff_backup_lock_owner_file=
+    ff_backup_lock_token=
+}
+
+ff_reserve_partial_backup() {
+    ff_backup_root=$1
 
     ff_backup_timestamp=$(date '+%Y%m%d-%H%M%S') ||
         ff_fail 'Could not create a timestamp for the migration backup.'
@@ -209,9 +274,6 @@ ff_discard_empty_partial_for_migrated_database() {
     rmdir "$ff_partial_destination" ||
         ff_fail 'Could not remove the empty migration-check reservation for an already-migrated database.'
     ff_partial_destination=
-    if [ "$ff_backup_root_created" -eq 1 ]; then
-        rmdir "$ff_backup_root" 2>/dev/null || true
-    fi
 }
 
 ff_copy_verified_backup() {
@@ -263,8 +325,31 @@ ff_copy_verified_backup() {
     if [ -e "$ff_backup_destination" ] || [ -h "$ff_backup_destination" ]; then
         ff_fail "The completed backup destination appeared during backup: $ff_backup_destination"
     fi
-    mv "$ff_partial_destination" "$ff_backup_destination" ||
+    ff_original_partial_destination=$ff_partial_destination
+    ff_partial_name=${ff_original_partial_destination##*/}
+    mv "$ff_original_partial_destination" "$ff_backup_destination" ||
         ff_fail 'Could not atomically publish the verified migration backup.'
+
+    ff_expected_nested_partial=$ff_backup_destination/$ff_partial_name
+    ff_nested_partial=
+    if [ -d "$ff_expected_nested_partial" ] || [ -h "$ff_expected_nested_partial" ]; then
+        ff_nested_partial=$ff_expected_nested_partial
+        ff_partial_destination=$ff_expected_nested_partial
+    else
+        for ff_nested_candidate in "$ff_backup_destination"/*.partial; do
+            if [ -d "$ff_nested_candidate" ] || [ -h "$ff_nested_candidate" ]; then
+                ff_nested_partial=$ff_nested_candidate
+                break
+            fi
+        done
+    fi
+    if [ -n "$ff_nested_partial" ]; then
+        ff_fail "Atomic backup publication was obstructed by an unexpected destination. The completed destination was not accepted."
+    fi
+    if [ -e "$ff_original_partial_destination" ] || [ -h "$ff_original_partial_destination" ] ||
+        [ ! -d "$ff_backup_destination" ] || [ ! -f "$ff_backup_destination/RESTORE.txt" ]; then
+        ff_fail 'The published backup did not have the required final root shape. Startup was refused.'
+    fi
     ff_partial_destination=
     ff_step "Created a verified pre-migration backup at $ff_backup_destination"
 }
@@ -280,6 +365,11 @@ ff_prepare_local_database() {
         return 0
     fi
 
+    ff_prepare_backup_root "$ff_backup_root"
+    ff_acquire_backup_lock "$ff_backup_root"
+    trap ff_cleanup_startup_resources 0
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     ff_reserve_partial_backup "$ff_backup_root"
     ff_select_hash_program
     ff_new_temporary_file
@@ -292,10 +382,6 @@ ff_prepare_local_database() {
     ff_status_lines=$ff_new_temp_result
     ff_new_temporary_file
     ff_hash_output_file=$ff_new_temp_result
-    trap ff_cleanup_temporary_files 0
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-
     ff_primary_hash_before=$(ff_sha256_file "$ff_primary_database" "$ff_hash_output_file")
     ff_resolve_h2_jar "$ff_wrapper" "$ff_classpath_file" "$ff_h2_matches_file"
     ff_inspect_flyway_history "$ff_project_root/data/family-finance" \
@@ -307,6 +393,10 @@ ff_prepare_local_database() {
 
     if [ "$ff_flyway_status" = FLYWAY_HISTORY_PRESENT ]; then
         ff_discard_empty_partial_for_migrated_database
+        ff_release_backup_lock
+        if [ "$ff_backup_root_created" -eq 1 ]; then
+            rmdir "$ff_backup_root" 2>/dev/null || true
+        fi
         ff_step 'Existing database already has Flyway history; no migration backup is required.'
         return 0
     fi
@@ -314,4 +404,5 @@ ff_prepare_local_database() {
         ff_fail 'Flyway-history inspection returned an unsupported status.'
 
     ff_copy_verified_backup "$ff_data_directory" "$ff_primary_hash_before" "$ff_hash_output_file"
+    ff_release_backup_lock
 }

@@ -218,6 +218,18 @@ stop_process() {
     wait "$process_id" 2>/dev/null || true
 }
 
+wait_for_file() {
+    awaited_file=$1
+    description=$2
+    attempts=0
+    while [ "$attempts" -lt 30 ]; do
+        [ -f "$awaited_file" ] && return 0
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+    fail "$description was not created within 30 seconds."
+}
+
 start_application() {
     scenario=$1
     port=$2
@@ -276,7 +288,7 @@ h2_jar=$(tr ':' '\n' <"$test_classpath_file" | awk '/\/com\/h2database\/h2\/2[.]
 [ -n "$h2_jar" ] || fail 'The pinned H2 2.3.232 jar was not present in the test runtime classpath.'
 assert_equal 1 "$(printf '%s\n' "$h2_jar" | awk 'NF { count++ } END { print count+0 }')" 'The gate resolved more than one pinned H2 jar.'
 
-printf '%s\n' 'Gate 1/7: Java 17 and the project wrapper are mandatory.'
+printf '%s\n' 'Gate 1/9: Java 17 and the project wrapper are mandatory.'
 scenario=$(new_scenario prerequisites)
 marker=$scenario/launched
 fake_bin=$scenario/fake-java
@@ -297,7 +309,25 @@ if (cd "$scenario" && TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKE
 fi
 [ ! -e "$marker" ] || fail 'The application launched without the project wrapper.'
 
-printf '%s\n' 'Gate 2/7: No database launches without creating a backup path.'
+scenario=$(new_scenario 'java executable path')
+spaced_java_bin=$scenario/java-bin
+mkdir "$spaced_java_bin"
+cat >"$spaced_java_bin/java" <<'SPACED_JAVA'
+#!/bin/sh
+printf '%s\n' 'openjdk version "17.0.18"' >&2
+exit 0
+SPACED_JAVA
+chmod +x "$spaced_java_bin/java"
+spaced_java_parent=$scenario/java\ tools
+mkdir "$spaced_java_parent"
+mv "$spaced_java_bin" "$spaced_java_parent/bin"
+marker=$scenario/launched
+if ! (cd "$scenario" && TMPDIR=$scenario/tmp PATH="$spaced_java_parent/bin:$PATH" GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh >java-path.log 2>&1); then
+    fail 'The launcher could not invoke a valid Java 17 executable whose path contains spaces.'
+fi
+[ -f "$marker" ] || fail 'The spaced-path Java 17 scenario did not reach application launch.'
+
+printf '%s\n' 'Gate 2/9: No database launches without creating a backup path.'
 scenario=$(new_scenario no-data)
 marker=$scenario/launched
 (cd "$scenario" && TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh >no-data.log 2>&1)
@@ -314,7 +344,7 @@ fi
 [ -f "$marker" ] || fail 'External-directory invocation did not reach application launch.'
 assert_equal 1 "$(count_completed_backups "$scenario/data-backups")" 'External-directory invocation did not create the required legacy backup.'
 
-printf '%s\n' 'Gate 3/7: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
+printf '%s\n' 'Gate 3/9: Inspection and H2 resolution failures retain partial evidence and prevent launch.'
 scenario=$(new_scenario inspection-failure)
 mkdir "$scenario/data"
 printf '%s\n' 'not an H2 database' >"$scenario/data/family-finance.mv.db"
@@ -336,7 +366,7 @@ fi
 [ ! -e "$marker" ] || fail 'The application launched after H2 resolution failed.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'H2 resolution failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 4/7: Copy and hash failures retain partial data and prevent launch.'
+printf '%s\n' 'Gate 4/9: Copy and hash failures retain partial data and prevent launch.'
 scenario=$(new_scenario copy-failure)
 new_stage_one_fixture "$scenario"
 marker=$scenario/launched
@@ -373,7 +403,150 @@ fi
 assert_equal 0 "$(count_completed_backups "$scenario/data-backups")" 'Hash failure published a completed backup.'
 assert_equal 1 "$(count_partial_backups "$scenario/data-backups")" 'Hash failure did not retain exactly one partial directory.'
 
-printf '%s\n' 'Gate 5/7: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
+printf '%s\n' 'Gate 5/9: A publish-time destination collision preserves nested partial evidence and prevents launch.'
+scenario=$(new_scenario publish-time-collision)
+new_stage_one_fixture "$scenario"
+real_move=$(command -v mv)
+delayed_move_bin=$scenario/delayed-move
+publish_ready=$scenario/publish.ready
+watcher_ready=$scenario/watcher.ready
+destination_file=$scenario/collision-destination.txt
+mkdir "$delayed_move_bin"
+cat >"$delayed_move_bin/mv" <<'DELAYED_MOVE'
+#!/bin/sh
+set -eu
+: >"$GATE_PUBLISH_READY"
+attempts=0
+while [ ! -f "$GATE_WATCHER_READY" ] && [ "$attempts" -lt 30 ]; do
+    attempts=$((attempts + 1))
+    sleep 1
+done
+[ -f "$GATE_WATCHER_READY" ] || exit 45
+exec "$GATE_REAL_MV" "$@"
+DELAYED_MOVE
+chmod +x "$delayed_move_bin/mv"
+(
+    attempts=0
+    while [ ! -f "$publish_ready" ] && [ "$attempts" -lt 30 ]; do
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+    [ -f "$publish_ready" ] || exit 46
+    [ -f "$scenario/data-backups/.family-finance-backup.lock/OWNER.txt" ] || exit 48
+    collision_partial=
+    for candidate in "$scenario/data-backups"/*.partial; do
+        [ -d "$candidate" ] || continue
+        collision_partial=$candidate
+        break
+    done
+    [ -n "$collision_partial" ] || exit 47
+    collision_destination=${collision_partial%.partial}
+    mkdir "$collision_destination"
+    printf '%s\n' 'external collision sentinel' >"$collision_destination/collision-sentinel.txt"
+    printf '%s\n' "$collision_destination" >"$destination_file"
+    : >"$watcher_ready"
+) &
+watcher_pid=$!
+marker=$scenario/launched
+set +e
+(
+    cd "$scenario"
+    PATH=$delayed_move_bin:$PATH GATE_REAL_MV=$real_move \
+        GATE_PUBLISH_READY=$publish_ready GATE_WATCHER_READY=$watcher_ready \
+        TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker \
+        ./start-local.sh
+) >"$scenario/publish-collision.log" 2>&1
+publish_collision_status=$?
+set -e
+wait "$watcher_pid"
+collision_destination=$(sed -n '1p' "$destination_file")
+collision_partial_name=$(basename "$collision_destination").partial
+[ "$publish_collision_status" -ne 0 ] || fail 'The launcher accepted a destination that appeared between precheck and publication.'
+[ ! -e "$marker" ] || fail 'The application launched after a publish-time destination collision.'
+assert_equal 0 "$(count_completed_backups "$scenario/data-backups")" 'A publish-time collision was falsely reported as a completed backup.'
+[ -d "$collision_destination/$collision_partial_name" ] || fail 'The nested partial backup was not retained at its actual post-move location.'
+assert_equal 'external collision sentinel' "$(sed -n '1p' "$collision_destination/collision-sentinel.txt")" 'Publication overwrote the external collision sentinel.'
+grep -F "$collision_destination/$collision_partial_name" "$scenario/publish-collision.log" >/dev/null ||
+    fail 'The publish-time collision did not report the retained nested partial path.'
+
+printf '%s\n' 'Gate 6/9: Active and unknown stale locks fail closed without competing publication.'
+scenario=$(new_scenario concurrent-preflights)
+new_stage_one_fixture "$scenario"
+real_copy=$(command -v cp)
+blocking_copy_bin=$scenario/blocking-copy
+copy_claim=$scenario/copy.claim
+copy_ready=$scenario/copy.ready
+copy_release=$scenario/copy.release
+mkdir "$blocking_copy_bin"
+cat >"$blocking_copy_bin/cp" <<'BLOCKING_COPY'
+#!/bin/sh
+set -eu
+if mkdir "$GATE_COPY_CLAIM" 2>/dev/null; then
+    : >"$GATE_COPY_READY"
+    attempts=0
+    while [ ! -f "$GATE_COPY_RELEASE" ] && [ "$attempts" -lt 30 ]; do
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+    [ -f "$GATE_COPY_RELEASE" ] || exit 44
+fi
+exec "$GATE_REAL_CP" "$@"
+BLOCKING_COPY
+chmod +x "$blocking_copy_bin/cp"
+first_marker=$scenario/first-launched
+second_marker=$scenario/second-launched
+(
+    cd "$scenario"
+    PATH=$blocking_copy_bin:$PATH GATE_REAL_CP=$real_copy GATE_COPY_CLAIM=$copy_claim \
+        GATE_COPY_READY=$copy_ready GATE_COPY_RELEASE=$copy_release \
+        TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$first_marker \
+        ./start-local.sh
+) >"$scenario/first-preflight.log" 2>&1 &
+first_preflight_pid=$!
+wait_for_file "$copy_ready" 'The first preflight copy-ready marker'
+active_lock=$scenario/data-backups/.family-finance-backup.lock
+[ -f "$active_lock/OWNER.txt" ] || fail 'The first preflight did not hold an owned backup lock while copying.'
+active_lock_owner=$(sed -n '1p' "$active_lock/OWNER.txt")
+set +e
+(
+    cd "$scenario"
+    PATH=$blocking_copy_bin:$PATH GATE_REAL_CP=$real_copy GATE_COPY_CLAIM=$copy_claim \
+        GATE_COPY_READY=$copy_ready GATE_COPY_RELEASE=$copy_release \
+        TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$second_marker \
+        ./start-local.sh
+) >"$scenario/second-preflight.log" 2>&1
+second_preflight_status=$?
+set -e
+[ -f "$active_lock/OWNER.txt" ] || fail 'The concurrent preflight removed the active owner lock.'
+assert_equal "$active_lock_owner" "$(sed -n '1p' "$active_lock/OWNER.txt")" 'The concurrent preflight changed active lock ownership.'
+: >"$copy_release"
+wait "$first_preflight_pid"
+[ "$second_preflight_status" -ne 0 ] || fail 'A second preflight ran concurrently instead of failing closed on the active backup lock.'
+[ -f "$first_marker" ] || fail 'The lock-owning preflight did not reach application launch.'
+[ ! -e "$second_marker" ] || fail 'The concurrent preflight reached application launch.'
+assert_equal 1 "$(count_completed_backups "$scenario/data-backups")" 'Concurrent preflights published more than one completed backup.'
+assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'Concurrent preflights left a partial backup after the owner completed.'
+[ ! -e "$active_lock" ] || fail 'The lock-owning preflight did not release its lock after publication.'
+
+scenario=$(new_scenario unknown-stale-lock)
+new_stage_one_fixture "$scenario"
+unknown_lock=$scenario/data-backups/.family-finance-backup.lock
+mkdir -p "$unknown_lock"
+printf '%s\n' 'unknown-owner-must-remain' >"$unknown_lock/OWNER.txt"
+marker=$scenario/launched
+set +e
+(
+    cd "$scenario"
+    TMPDIR=$scenario/tmp GATE_H2_JAR=$h2_jar GATE_LAUNCH_MARKER=$marker ./start-local.sh
+) >"$scenario/unknown-stale-lock.log" 2>&1
+unknown_lock_status=$?
+set -e
+[ "$unknown_lock_status" -ne 0 ] || fail 'The launcher accepted an unknown stale backup lock.'
+[ ! -e "$marker" ] || fail 'The application launched while an unknown backup lock existed.'
+assert_equal 'unknown-owner-must-remain' "$(sed -n '1p' "$unknown_lock/OWNER.txt")" 'The launcher deleted or changed an unknown backup lock.'
+assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'The stale-lock refusal created a partial backup.'
+
+printf '%s\n' 'Gate 7/9: Legacy backup covers pristine primary, companions, manifest, and collision handling.'
 scenario=$(new_scenario 'backup restore')
 new_stage_one_fixture "$scenario"
 printf '%s\n' 'synthetic companion' >"$scenario/data/family-finance.trace.db"
@@ -417,7 +590,7 @@ for collision in "$scenario/data-backups"/*; do
 done
 stop_process "$first_process_id"
 
-printf '%s\n' 'Gate 6/7: A migrated database skips backup, and restore preserves login plus 12 rows.'
+printf '%s\n' 'Gate 8/9: A migrated database skips backup, and restore preserves login plus 12 rows.'
 completed_before_restart=$(count_completed_backups "$scenario/data-backups")
 restart_port=$(get_free_port)
 restart_log=$scenario/restart.log
@@ -449,7 +622,7 @@ wait_for_ready "$restore_port" "$restore_process_id" "$restore_log"
 verify_demo_login_and_ledger "$scenario" "$restore_port"
 stop_process "$restore_process_id"
 
-printf '%s\n' 'Gate 7/7: Successful launch replaces the shell process and propagates application status.'
+printf '%s\n' 'Gate 9/9: Successful launch replaces the shell process and propagates application status.'
 scenario=$(new_scenario foreground-exec)
 marker=$scenario/launched
 set +e

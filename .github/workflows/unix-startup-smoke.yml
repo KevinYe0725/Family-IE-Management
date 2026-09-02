@@ -57,3 +57,14 @@ jobs:
 
       - name: Run isolated Unix startup certification
         run: ./scripts/unix-startup-gates.sh
+
+      - name: Preserve synthetic failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-startup-synthetic-failure
+          path: |
+            ${{ runner.temp }}/family-finance-unix-gates.*/**/*.log
+            ${{ runner.temp }}/family-finance-unix-gates.*/**/data-backups/**
+          if-no-files-found: ignore
+          retention-days: 3
