@@ -1,12 +1,18 @@
-alter table app_users add column email varchar(254) default 'demo@local.family';
+alter table app_users add column email varchar(254);
 alter table app_users add column display_name varchar(40);
 alter table app_users add column status varchar(16) default 'ACTIVE' not null;
 alter table households add column status varchar(16) default 'ACTIVE' not null;
 alter table households add column archived_at timestamp with time zone;
 
 update app_users
-set email = 'demo@local.family', display_name = '演示用户'
-where username = 'demo';
+set email = case
+        when username = 'demo' then 'demo@local.family'
+        else concat('legacy-', id, '@local.family')
+    end,
+    display_name = case
+        when username = 'demo' then '演示用户'
+        else substring(username, 1, 40)
+    end;
 
 alter table app_users alter column email set not null;
 create unique index uk_app_users_email on app_users(email);

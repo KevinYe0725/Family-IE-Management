@@ -57,7 +57,12 @@ public class DemoDataInitializer implements ApplicationRunner {
         }
 
         Household household = households.save(new Household("演示家庭", SEED_TIME));
-        users.save(new AppUser(household, "demo", passwordEncoder.encode("demo1234"), SEED_TIME));
+        users.save(new AppUser(
+                household,
+                "demo",
+                "demo@local.family",
+                passwordEncoder.encode("demo1234"),
+                SEED_TIME));
 
         List<FamilyMember> seededMembers = members.saveAll(List.of(
                 new FamilyMember(household, "Kevin", "爸爸", SEED_TIME),

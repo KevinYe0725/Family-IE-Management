@@ -40,6 +40,7 @@ class DemoDataInitializerTest {
         assertThat(categories.count()).isGreaterThanOrEqualTo(8);
         assertThat(transactions.count()).isGreaterThanOrEqualTo(12);
         AppUser demo = users.findByUsername("demo").orElseThrow();
+        assertThat(demo.getEmail()).isEqualTo("demo@local.family");
         assertThat(demo.getPasswordHash()).startsWith("$2");
         assertThat(demo.getPasswordHash()).doesNotContain("demo1234");
     }
