@@ -45,6 +45,7 @@ jobs:
               throw 'The startup script incorrectly accepted an unrelated HTTP 200 service.'
             }
             Write-Host 'Unrelated port owner was rejected as expected.'
+            $global:LASTEXITCODE = 0
           }
           finally {
             Stop-Process -Id $fake.Id -Force -ErrorAction SilentlyContinue
