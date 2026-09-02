@@ -18,10 +18,12 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.annotation.DirtiesContext;
 
 @ActiveProfiles("test")
 @SpringBootTest(properties = "app.seed.enabled=true")
 @AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class InviteApiTest {
 
     @Autowired
@@ -74,6 +76,62 @@ class InviteApiTest {
     }
 
     @Test
+    void ownerAdminAndMemberInvitePermissionsFollowTheCompleteMatrix() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        MvcResult adminInvite = createInvite(owner, "{\"role\":\"ADMIN\"}");
+        registerJoin("invite-admin@example.com", token(adminInvite)).andExpect(status().isCreated());
+        MockHttpSession admin = login("invite-admin@example.com", "family-pass-2026");
+
+        MvcResult memberInvite = createInvite(admin, "{\"role\":\"MEMBER\"}");
+        long memberInviteId = inviteId(memberInvite);
+        mvc.perform(delete("/api/family/invites/{id}", memberInviteId).session(admin).with(csrf()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(post("/api/family/invites").session(admin).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.error.message").value("没有权限执行此操作"));
+        mvc.perform(delete("/api/family/invites/{id}", inviteId(adminInvite)).session(admin).with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(delete("/api/family/invites/{id}", inviteId(adminInvite)).session(owner).with(csrf()))
+                .andExpect(status().isNoContent());
+
+        MvcResult joinInvite = createInvite(owner, "{\"role\":\"MEMBER\"}");
+        registerJoin("invite-member@example.com", token(joinInvite)).andExpect(status().isCreated());
+        MockHttpSession member = login("invite-member@example.com", "family-pass-2026");
+        mvc.perform(post("/api/family/invites").session(member).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(delete("/api/family/invites/{id}", inviteId(joinInvite)).session(member).with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void crossHouseholdInviteRevocationLooksExactlyLikeAnUnknownInvite() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        registerCreate("other-owner@example.com", "另一个家庭").andExpect(status().isCreated());
+        MockHttpSession otherOwner = login("other-owner@example.com", "family-pass-2026");
+        long foreignInviteId = inviteId(createInvite(otherOwner, "{}"));
+
+        String foreignBody = mvc.perform(delete("/api/family/invites/{id}", foreignInviteId)
+                        .session(owner).with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+                .andReturn().getResponse().getContentAsString();
+        String unknownBody = mvc.perform(delete("/api/family/invites/{id}", Long.MAX_VALUE)
+                        .session(owner).with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+                .andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(foreignBody).isEqualTo(unknownBody)
+                .doesNotContain("other-owner@example.com").doesNotContain("另一个家庭");
+    }
+
+    @Test
     void invalidAndExpiredTokensUseStructuredInviteErrors() throws Exception {
         registerJoin("invalid@example.com", "not-a-real-token").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("INVITE_INVALID"));
@@ -95,11 +153,14 @@ class InviteApiTest {
     }
 
     private String createInvite(MockHttpSession session) throws Exception {
-        MvcResult result = mvc.perform(post("/api/family/invites").session(session).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+        return token(createInvite(session, "{}"));
+    }
+
+    private MvcResult createInvite(MockHttpSession session, String body) throws Exception {
+        return mvc.perform(post("/api/family/invites").session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andReturn();
-        return token(result);
     }
 
     private long inviteId(MockHttpSession session) throws Exception {
@@ -116,6 +177,13 @@ class InviteApiTest {
                         """.formatted(email, token)));
     }
 
+    private org.springframework.test.web.servlet.ResultActions registerCreate(String email, String householdName) throws Exception {
+        return mvc.perform(post("/api/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"email":"%s","displayName":"其他所有者","password":"family-pass-2026","mode":"CREATE","householdName":"%s"}
+                        """.formatted(email, householdName)));
+    }
+
     private MockHttpSession login(String email, String password) throws Exception {
         MvcResult result = mvc.perform(post("/api/auth/login").with(csrf()).param("username", email).param("password", password))
                 .andExpect(status().isOk()).andReturn();
@@ -125,6 +193,11 @@ class InviteApiTest {
     private static String token(MvcResult result) throws Exception {
         return new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString())
                 .path("data").path("token").asText();
+    }
+
+    private static long inviteId(MvcResult result) throws Exception {
+        return new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString())
+                .path("data").path("id").asLong();
     }
 
 }

@@ -7,6 +7,7 @@ import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.shared.ResourceNotFoundException;
 import com.familyfinance.shared.ResourceConflictException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -57,12 +58,14 @@ class FamilyManagementService {
     private final FamilyInviteRepository invites;
     private final Clock clock;
     private final FamilyLockService locks;
+    private final EntityManager entityManager;
 
     FamilyManagementService(CurrentMembership currentMembership, FamilyPermissionService permissions, HouseholdRepository households,
-            HouseholdMembershipRepository memberships, FamilyInviteRepository invites, Clock clock, FamilyLockService locks) {
+            HouseholdMembershipRepository memberships, FamilyInviteRepository invites, Clock clock, FamilyLockService locks,
+            EntityManager entityManager) {
         this.currentMembership = currentMembership; this.permissions = permissions; this.households = households;
         this.memberships = memberships; this.invites = invites; this.clock = clock;
-        this.locks = locks;
+        this.locks = locks; this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -104,7 +107,9 @@ class FamilyManagementService {
     MembershipView updateRole(Authentication authentication, long id, MembershipController.RoleRequest request) {
         MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
         if (request == null || request.role() == null || request.role() == HouseholdRole.OWNER) validation("role", "角色不允许这样调整");
-        HouseholdMembership target = memberships.findByIdAndHouseholdId(id, context.householdId())
+        List<HouseholdMembership> locked = lockFreshMemberships(context);
+        requireCurrentOwner(context, locked);
+        HouseholdMembership target = locked.stream().filter(membership -> membership.getId().equals(id)).findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("成员身份不存在"));
         if (target.getStatus() != MembershipStatus.ACTIVE || target.getRole() == HouseholdRole.OWNER) validation("role", "不能调整所有者或停用成员");
         target.changeRole(request.role()); return MembershipView.from(target);
@@ -114,16 +119,36 @@ class FamilyManagementService {
     void transferOwnership(Authentication authentication, MembershipController.TransferRequest request) {
         MembershipContext context = currentMembership.require(authentication); permissions.requireOwner(context);
         if (request == null || request.membershipId() == null) validation("membershipId", "必须选择新所有者");
-        List<HouseholdMembership> locked = memberships.findByHouseholdId(context.householdId());
-        List<HouseholdMembership> currentOwners = locked.stream().filter(m -> m.getUser().getId().equals(context.userId()) && m.getRole() == HouseholdRole.OWNER && m.getStatus() == MembershipStatus.ACTIVE).toList();
-        if (currentOwners.size() != 1) throw new ResourceConflictException("OWNER_INVARIANT", "家庭所有者状态无效");
-        HouseholdMembership current = currentOwners.get(0);
+        List<HouseholdMembership> locked = lockFreshMemberships(context);
+        HouseholdMembership current = requireCurrentOwner(context, locked);
         HouseholdMembership target = locked.stream().filter(m -> m.getId().equals(request.membershipId())).findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("成员身份不存在"));
         if (target.getId().equals(current.getId()) || target.getStatus() != MembershipStatus.ACTIVE) validation("membershipId", "新所有者必须是另一名有效成员");
         HouseholdRole targetRole = target.getRole(); current.changeRole(targetRole); target.changeRole(HouseholdRole.OWNER);
         long owners = locked.stream().filter(m -> m.getStatus() == MembershipStatus.ACTIVE && m.getRole() == HouseholdRole.OWNER).count();
         if (owners != 1) throw new IllegalStateException("家庭必须恰有一名所有者");
+    }
+
+    private List<HouseholdMembership> lockFreshMemberships(MembershipContext context) {
+        locks.lockActiveHousehold(context.householdId());
+        entityManager.clear();
+        return memberships.findByHouseholdId(context.householdId());
+    }
+
+    private HouseholdMembership requireCurrentOwner(
+            MembershipContext context, List<HouseholdMembership> lockedMemberships) {
+        List<HouseholdMembership> activeOwners = lockedMemberships.stream()
+                .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
+                .filter(membership -> membership.getRole() == HouseholdRole.OWNER)
+                .toList();
+        if (activeOwners.size() != 1) {
+            throw new ResourceConflictException("OWNER_INVARIANT", "家庭所有者状态无效");
+        }
+        HouseholdMembership owner = activeOwners.get(0);
+        if (!owner.getUser().getId().equals(context.userId())) {
+            permissions.requireOwner(new MembershipContext(context.householdId(), context.userId(), HouseholdRole.MEMBER));
+        }
+        return owner;
     }
 
     private static String requireName(String value, String field) {
