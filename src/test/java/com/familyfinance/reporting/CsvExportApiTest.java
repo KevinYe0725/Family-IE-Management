@@ -3,8 +3,10 @@ package com.familyfinance.reporting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.familyfinance.category.Category;
@@ -19,6 +21,8 @@ import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
 import com.familyfinance.transaction.TransactionTestFixtures;
 import com.familyfinance.ledger.FinancialAccountRepository;
+import com.familyfinance.ledger.AccountType;
+import com.familyfinance.ledger.FinancialAccount;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -175,6 +179,75 @@ class CsvExportApiTest {
                         .value("VALIDATION_ERROR"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.error.fields.categoryId")
                         .value("参数必须是数字"));
+    }
+
+    @Test
+    void archivedAccountFilterWorksAndCsvExportsEveryMatchBeyondUiPageBounds() throws Exception {
+        MockHttpSession session = login();
+        Household household = householdRepository.findAll().get(0);
+        FamilyMember member = memberRepository.findByHouseholdOrderById(household).get(0);
+        Category food = categoryRepository.findByHouseholdOrderById(household).stream()
+                .filter(saved -> saved.getKind() == TransactionKind.EXPENSE)
+                .findFirst()
+                .orElseThrow();
+        var creator = appUserRepository.findByEmail("demo@local.family").orElseThrow();
+        FinancialAccount archivedAccount = accountRepository.save(new FinancialAccount(
+                household, "CSV 历史账户", AccountType.BANK, "CNY", 0L));
+        FinancialAccount otherAccount = accountRepository.save(new FinancialAccount(
+                household, "CSV 其他账户", AccountType.WALLET, "CNY", 0L));
+        String marker = "csv-account-complete";
+        for (int index = 0; index < 55; index++) {
+            transactionRepository.save(new FinancialTransaction(
+                    household,
+                    archivedAccount,
+                    creator,
+                    member,
+                    food,
+                    TransactionKind.EXPENSE,
+                    100L + index,
+                    LocalDate.of(2026, 9, 1).plusDays(index % 20),
+                    null,
+                    null,
+                    marker + "-" + index,
+                    TEST_TIME,
+                    TEST_TIME));
+        }
+        transactionRepository.save(new FinancialTransaction(
+                household,
+                otherAccount,
+                creator,
+                member,
+                food,
+                TransactionKind.EXPENSE,
+                999L,
+                LocalDate.of(2026, 9, 20),
+                null,
+                null,
+                marker + "-other-account",
+                TEST_TIME,
+                TEST_TIME));
+        transactionRepository.flush();
+
+        mvc.perform(delete("/api/accounts/{id}", archivedAccount.getId()).session(session).with(csrf()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/transactions").session(session)
+                        .param("accountId", archivedAccount.getId().toString())
+                        .param("q", marker)
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Total-Elements", "55"))
+                .andExpect(jsonPath("$.data.length()").value(50));
+
+        MvcResult result = mvc.perform(get("/api/export.csv").session(session)
+                        .param("accountId", archivedAccount.getId().toString())
+                        .param("q", marker))
+                .andExpect(status().isOk())
+                .andReturn();
+        byte[] bytes = result.getResponse().getContentAsByteArray();
+        String csv = new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
+        assertThat(csv.lines().filter(line -> line.contains(marker + "-")).count()).isEqualTo(55);
+        assertThat(csv).doesNotContain(marker + "-other-account");
     }
 
     private MockHttpSession login() throws Exception {

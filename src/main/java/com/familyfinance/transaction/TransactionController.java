@@ -4,6 +4,7 @@ import com.familyfinance.shared.ApiEnvelope;
 import com.familyfinance.shared.CurrentHousehold;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,7 +31,7 @@ public class TransactionController {
     }
 
     @GetMapping
-    ApiEnvelope<List<TransactionResponse>> list(
+    ResponseEntity<ApiEnvelope<List<TransactionResponse>>> list(
             Authentication authentication,
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String from,
@@ -39,9 +40,18 @@ public class TransactionController {
             @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) String q) {
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q);
-        return ApiEnvelope.data(transactionService.list(currentHousehold.id(authentication), filter));
+        TransactionPage result = transactionService.list(currentHousehold.id(authentication), filter, page, size);
+        return ResponseEntity.ok()
+                .header("X-Page", Integer.toString(result.page()))
+                .header("X-Page-Size", Integer.toString(result.size()))
+                .header("X-Total-Elements", Long.toString(result.totalElements()))
+                .header("X-Total-Pages", Integer.toString(result.totalPages()))
+                .header("X-Has-Next", Boolean.toString(result.hasNext()))
+                .body(ApiEnvelope.data(result.items()));
     }
 
     @GetMapping("/{id}")

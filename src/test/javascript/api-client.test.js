@@ -73,3 +73,21 @@ test('concurrent 401 responses render the expired login state only once', async 
   assert.equal(harness.state.data.session, null);
   assert.equal(harness.storage.getItem('family-ledger-authenticated'), null);
 });
+
+test('metadata request exposes response headers without changing envelope data', async () => {
+  const headers = { get: name => name === 'X-Page' ? '3' : null };
+  const client = createApiClient({
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers,
+      async json() { return { data: [{ id: 42 }] }; }
+    }),
+    onUnauthorized: () => false
+  });
+
+  const result = await client.requestWithMetadata('/api/transactions?page=3');
+
+  assert.deepEqual(result.data, [{ id: 42 }]);
+  assert.equal(result.headers.get('X-Page'), '3');
+});

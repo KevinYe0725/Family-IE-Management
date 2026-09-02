@@ -2,6 +2,12 @@ import { RefreshGate } from './refresh-gate.js';
 import { expireSessionOnUnauthorized } from './session-expiry.js';
 import { createApiClient } from './api-client.js';
 import { state } from './ui-state.js';
+import {
+  configureAccountSelect,
+  normalizeActiveAccounts,
+  readTransactionPage,
+  transactionPayload
+} from './transaction-ui.js';
 
 (function () {
   const app = document.getElementById('app');
@@ -34,6 +40,10 @@ import { state } from './ui-state.js';
 
   async function api(path, options = {}, responseType = 'json', requestOptions = {}) {
     return apiClient.request(path, options, responseType, requestOptions);
+  }
+
+  async function apiWithMetadata(path, options = {}, responseType = 'json', requestOptions = {}) {
+    return apiClient.requestWithMetadata(path, options, responseType, requestOptions);
   }
 
   async function csrfHeaders() {
@@ -75,14 +85,23 @@ import { state } from './ui-state.js';
   }
 
   async function refresh() {
-    const filter = { month: state.month, ...state.filters };
+    const filter = {
+      month: state.month,
+      ...state.filters,
+      page: state.transactionPage.page,
+      size: state.transactionPage.size
+    };
     return refreshGate.run(
       () => Promise.all([
-        api('/api/members'), api('/api/categories'), api(`/api/transactions?${query(filter)}`),
+        api('/api/members'), api('/api/categories'), api('/api/accounts?page=0&size=50'),
+        apiWithMetadata(`/api/transactions?${query(filter)}`),
         api(`/api/dashboard?month=${encodeURIComponent(state.month)}`), api(`/api/analysis?month=${encodeURIComponent(state.month)}`)
       ]),
-      ([members, categories, transactions, dashboard, analysis]) => {
-        Object.assign(state.data, { members, categories, transactions, dashboard, analysis });
+      ([members, categories, accountPage, transactionResult, dashboard, analysis]) => {
+        const accounts = normalizeActiveAccounts(accountPage);
+        const transactions = transactionResult.data;
+        Object.assign(state.data, { members, categories, accounts, transactions, dashboard, analysis });
+        state.transactionPage = readTransactionPage(transactionResult.headers);
         render();
       }
     );
@@ -136,7 +155,12 @@ import { state } from './ui-state.js';
     const flash = state.flash ? `<p class="status ${state.flash.type}" role="status">${esc(state.flash.message)}</p>` : '<p class="status" role="status"></p>';
     app.innerHTML = `<div class="app-layout"><aside class="ledger-nav" aria-label="主导航"><div class="ledger-mark">家<span>账</span></div><nav class="nav-list">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}</nav><div class="nav-foot">${esc(state.data.session.username)} 的家庭账本<br><button type="button" class="button small logout-button" id="logout">退出登录</button></div></aside><section class="workspace"><header class="topbar"><div><div class="eyebrow">2026 家庭账本</div><h1>${routeNames[state.route]}</h1></div><label class="month-control" for="month"><span class="label">账期</span><input id="month" type="month" value="${esc(state.month)}" aria-label="选择账期"></label></header><main id="main" class="content" tabindex="-1">${flash}${content}</main></section><nav class="mobile-tabs" aria-label="移动导航">${navButton('dashboard','◇')}${navButton('transactions','▤')}${navButton('analysis','↗')}${navButton('settings','◌')}<button type="button" class="mobile-logout" id="mobile-logout">退出</button></nav></div>`;
     app.querySelectorAll('[data-route]').forEach(button => button.onclick = () => go(button.dataset.route));
-    document.getElementById('month').onchange = async event => { state.month = event.target.value; state.filters = { kind: '', memberId: '', categoryId: '', q: '' }; await refreshSafely('账期已切换'); };
+    document.getElementById('month').onchange = async event => {
+      state.month = event.target.value;
+      state.filters = { kind: '', accountId: '', memberId: '', categoryId: '', q: '' };
+      state.transactionPage.page = 0;
+      await refreshSafely('账期已切换');
+    };
     document.getElementById('logout').onclick = logout;
     document.getElementById('mobile-logout').onclick = logout;
     restoreRequestedFocus();
@@ -169,11 +193,15 @@ import { state } from './ui-state.js';
 
   function renderTransactions() {
     const filters = state.filters; const transactions = state.data.transactions || [];
-    renderShell(`<section class="panel"><div class="panel-head"><div><h2>本月流水</h2><p>筛选结果来自家庭账本的真实记录。</p></div><button class="button" id="new-transaction">记一笔收支</button></div><form class="filters" id="filters"><div class="field"><label for="filter-kind">类型</label><select id="filter-kind" name="kind"><option value="">全部</option><option value="income"${selected(filters.kind,'income')}>收入</option><option value="expense"${selected(filters.kind,'expense')}>支出</option></select></div><div class="field"><label for="filter-member">成员</label><select id="filter-member" name="memberId"><option value="">全部成员</option>${state.data.members.map(m => `<option value="${m.id}"${selected(filters.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="filter-category">分类</label><select id="filter-category" name="categoryId"><option value="">全部分类</option>${state.data.categories.map(c => `<option value="${c.id}"${selected(filters.categoryId,c.id)}>${esc(c.name)}</option>`).join('')}</select></div><div class="field"><label for="filter-q">关键词</label><input id="filter-q" name="q" value="${esc(filters.q)}" placeholder="商家、地点或备注"></div><button class="button secondary" type="submit">应用筛选</button></form><div class="table-wrap"><table class="ledger-table"><thead><tr><th>日期</th><th>收支</th><th>项目</th><th>成员</th><th>金额</th><th><span class="visually-hidden">操作</span></th></tr></thead><tbody>${transactions.length ? transactions.map(row => `<tr><td>${esc(row.occurredOn)}</td><td class="kind-${row.kind}">${row.kind === 'income' ? '收入' : '支出'}</td><td><strong>${esc(row.categoryName)}</strong><br><span>${esc(row.merchant || row.note || '未填写说明')}</span></td><td>${esc(row.memberName)}</td><td class="amount ${row.kind === 'expense' ? 'kind-expense' : 'kind-income'}">${row.kind === 'expense' ? '−' : '+'}${money(row.amount)}</td><td class="row-actions"><button class="button secondary small" data-edit="${row.id}" data-focus-key="transaction-${row.id}-edit">编辑</button><button class="button danger small" data-delete="${row.id}">删除</button></td></tr>`).join('') : '<tr><td colspan="6"><p class="empty">没有符合条件的收支。调整筛选，或记下第一笔账。</p></td></tr>'}</tbody></table></div><div class="panel-head" style="margin-top:16px"><span class="label">导出当前筛选</span><button class="button secondary small" id="export">下载 CSV</button></div></section>`);
+    const page = state.transactionPage;
+    const noAccounts = state.data.accounts.length === 0;
+    renderShell(`<section class="panel"><div class="panel-head"><div><h2>本月流水</h2><p>筛选结果来自家庭账本的真实记录。</p></div><button class="button" id="new-transaction"${noAccounts ? ' disabled aria-describedby="account-required-note"' : ''}>记一笔收支</button></div>${noAccounts ? '<p id="account-required-note" class="status error">暂无可用账户，请联系家庭管理员先创建账户。</p>' : ''}<form class="filters" id="filters"><div class="field"><label for="filter-kind">类型</label><select id="filter-kind" name="kind"><option value="">全部</option><option value="income"${selected(filters.kind,'income')}>收入</option><option value="expense"${selected(filters.kind,'expense')}>支出</option></select></div><div class="field"><label for="filter-account">账户</label><select id="filter-account" name="accountId"><option value="">全部账户</option>${state.data.accounts.map(a => `<option value="${a.id}"${selected(filters.accountId,a.id)}>${esc(a.name)}</option>`).join('')}</select></div><div class="field"><label for="filter-member">成员</label><select id="filter-member" name="memberId"><option value="">全部成员</option>${state.data.members.map(m => `<option value="${m.id}"${selected(filters.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="filter-category">分类</label><select id="filter-category" name="categoryId"><option value="">全部分类</option>${state.data.categories.map(c => `<option value="${c.id}"${selected(filters.categoryId,c.id)}>${esc(c.name)}</option>`).join('')}</select></div><div class="field"><label for="filter-q">关键词</label><input id="filter-q" name="q" value="${esc(filters.q)}" placeholder="商家、地点或备注"></div><button class="button secondary" type="submit">应用筛选</button></form><div class="table-wrap"><table class="ledger-table"><thead><tr><th>日期</th><th>收支</th><th>项目</th><th>成员</th><th>金额</th><th><span class="visually-hidden">操作</span></th></tr></thead><tbody>${transactions.length ? transactions.map(row => `<tr><td>${esc(row.occurredOn)}</td><td class="kind-${row.kind}">${row.kind === 'income' ? '收入' : '支出'}</td><td><strong>${esc(row.categoryName)}</strong><br><span>${esc(row.merchant || row.note || '未填写说明')}</span></td><td>${esc(row.memberName)}</td><td class="amount ${row.kind === 'expense' ? 'kind-expense' : 'kind-income'}">${row.kind === 'expense' ? '−' : '+'}${money(row.amount)}</td><td class="row-actions"><button class="button secondary small" data-edit="${row.id}" data-focus-key="transaction-${row.id}-edit">编辑</button><button class="button danger small" data-delete="${row.id}">删除</button></td></tr>`).join('') : '<tr><td colspan="6"><p class="empty">没有符合条件的收支。调整筛选，或记下第一笔账。</p></td></tr>'}</tbody></table></div><nav class="pagination" aria-label="收支分页"><button class="button secondary small" id="previous-page"${page.page === 0 ? ' disabled' : ''}>上一页</button><span>第 ${page.totalPages === 0 ? 0 : page.page + 1} / ${page.totalPages} 页，共 ${page.totalElements} 笔</span><button class="button secondary small" id="next-page"${page.hasNext ? '' : ' disabled'}>下一页</button></nav><div class="panel-head" style="margin-top:16px"><span class="label">导出当前筛选</span><button class="button secondary small" id="export">下载 CSV</button></div></section>`);
     document.getElementById('new-transaction').onclick = () => transactionDialog();
-    document.getElementById('filters').onsubmit = async event => { event.preventDefault(); const form = new FormData(event.currentTarget); state.filters = { kind: form.get('kind'), memberId: form.get('memberId'), categoryId: form.get('categoryId'), q: form.get('q') }; await refreshSafely('筛选条件已应用'); };
+    document.getElementById('filters').onsubmit = async event => { event.preventDefault(); const form = new FormData(event.currentTarget); state.filters = { kind: form.get('kind'), accountId: form.get('accountId'), memberId: form.get('memberId'), categoryId: form.get('categoryId'), q: form.get('q') }; state.transactionPage.page = 0; await refreshSafely('筛选条件已应用'); };
     app.querySelectorAll('[data-edit]').forEach(button => button.onclick = () => transactionDialog(transactions.find(row => row.id === Number(button.dataset.edit))));
     app.querySelectorAll('[data-delete]').forEach(button => button.onclick = () => removeTransaction(button.dataset.delete));
+    document.getElementById('previous-page').onclick = async () => { if (state.transactionPage.page > 0) { state.transactionPage.page -= 1; await refreshSafely('已加载上一页'); } };
+    document.getElementById('next-page').onclick = async () => { if (state.transactionPage.hasNext) { state.transactionPage.page += 1; await refreshSafely('已加载下一页'); } };
     document.getElementById('export').onclick = downloadCsv;
   }
 
@@ -188,7 +216,41 @@ import { state } from './ui-state.js';
 
   function appendDialog(title, content, submitLabel, onSubmit, focusSelector) { const dialog = document.createElement('dialog'); const titleId = `dialog-title-${Date.now()}`; let submitted = false; dialog.setAttribute('aria-labelledby', titleId); dialog.innerHTML = `<form class="modal-card" method="dialog"><div class="panel-head"><h2 id="${titleId}">${title}</h2><button type="button" class="button secondary small" aria-label="关闭">关闭</button></div>${content}<p class="status error" role="status"></p><div class="modal-actions"><button class="button secondary" type="button">取消</button><button class="button" type="submit">${submitLabel}</button></div></form>`; document.body.append(dialog); const form = dialog.querySelector('form'); const close = () => dialog.close(); dialog.querySelector('[aria-label="关闭"]').onclick = close; dialog.querySelector('.modal-actions .secondary').onclick = close; dialog.addEventListener('close', () => { dialog.remove(); if (!submitted && focusSelector) queueMicrotask(() => document.querySelector(focusSelector)?.focus()); }); dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); form.onsubmit = async event => { event.preventDefault(); const status = dialog.querySelector('.status'); const submit = form.querySelector('[type="submit"]'); submit.disabled = true; try { await onSubmit(new FormData(form)); submitted = true; state.focusSelector = focusSelector; close(); notice(`${submitLabel}成功`); } catch (problem) { if (problem.sessionExpired) return; submit.disabled = false; status.textContent = problem.fields ? Object.values(problem.fields).join('；') : problem.message; } }; dialog.showModal(); dialog.querySelector('input,select,textarea')?.focus(); return dialog; }
 
-  function transactionDialog(row) { const isEdit = Boolean(row); const values = row || { kind: 'expense', amount: '', occurredOn: `${state.month}-01`, memberId: state.data.members[0]?.id, categoryId: '', merchant: '', location: '', note: '' }; const categoryOptions = state.data.categories.map(c => `<option value="${c.id}" data-kind="${c.kind}"${selected(values.categoryId,c.id)}>${esc(c.name)}（${c.kind === 'income' ? '收入' : '支出'}）</option>`).join(''); const focusSelector = isEdit ? `[data-focus-key="transaction-${row.id}-edit"]` : '#new-transaction'; const dialog = appendDialog(isEdit ? '编辑收支' : '记一笔收支', `<div class="modal-grid"><div class="field"><label for="tx-kind">类型</label><select id="tx-kind" name="kind"><option value="expense"${selected(values.kind,'expense')}>支出</option><option value="income"${selected(values.kind,'income')}>收入</option></select></div><div class="field"><label for="tx-amount">金额</label><input id="tx-amount" name="amount" inputmode="decimal" required value="${esc(values.amount)}" placeholder="例如 88.60"></div><div class="field"><label for="tx-date">日期</label><input id="tx-date" name="occurredOn" type="date" required value="${esc(values.occurredOn)}"></div><div class="field"><label for="tx-member">成员</label><select id="tx-member" name="memberId" required>${state.data.members.map(m => `<option value="${m.id}"${selected(values.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="tx-category">分类</label><select id="tx-category" name="categoryId" required>${categoryOptions}</select></div><div class="field"><label for="tx-merchant">商家</label><input id="tx-merchant" name="merchant" value="${esc(values.merchant)}"></div><div class="field wide"><label for="tx-location">地点</label><input id="tx-location" name="location" value="${esc(values.location)}"></div><div class="field wide"><label for="tx-note">备注</label><textarea id="tx-note" name="note">${esc(values.note)}</textarea></div></div>`, isEdit ? '保存修改' : '保存收支', async form => { const payload = Object.fromEntries(form); payload.memberId = Number(payload.memberId); payload.categoryId = Number(payload.categoryId); return write(isEdit ? `/api/transactions/${row.id}` : '/api/transactions', isEdit ? 'PATCH' : 'POST', payload, isEdit ? '收支已保存' : '收支已保存'); }, focusSelector); const kind = dialog.querySelector('#tx-kind'); const category = dialog.querySelector('#tx-category'); const matchCategories = () => { [...category.options].forEach(option => { option.hidden = option.dataset.kind !== kind.value; }); const current = category.selectedOptions[0]; if (!current || current.dataset.kind !== kind.value) { category.value = [...category.options].find(option => option.dataset.kind === kind.value)?.value || ''; } }; kind.onchange = matchCategories; matchCategories(); }
+  function transactionDialog(row) {
+    const isEdit = Boolean(row);
+    const values = row || { kind: 'expense', amount: '', occurredOn: `${state.month}-01`, accountId: state.data.accounts[0]?.id, memberId: state.data.members[0]?.id, categoryId: '', merchant: '', location: '', note: '' };
+    const categoryOptions = state.data.categories.map(c => `<option value="${c.id}" data-kind="${c.kind}"${selected(values.categoryId,c.id)}>${esc(c.name)}（${c.kind === 'income' ? '收入' : '支出'}）</option>`).join('');
+    const focusSelector = isEdit ? `[data-focus-key="transaction-${row.id}-edit"]` : '#new-transaction';
+    const dialog = appendDialog(
+      isEdit ? '编辑收支' : '记一笔收支',
+      `<div class="modal-grid"><div class="field"><label for="tx-kind">类型</label><select id="tx-kind" name="kind"><option value="expense"${selected(values.kind,'expense')}>支出</option><option value="income"${selected(values.kind,'income')}>收入</option></select></div><div class="field"><label for="tx-amount">金额</label><input id="tx-amount" name="amount" inputmode="decimal" required value="${esc(values.amount)}" placeholder="例如 88.60"></div><div class="field"><label for="tx-date">日期</label><input id="tx-date" name="occurredOn" type="date" required value="${esc(values.occurredOn)}"></div><div class="field"><label for="tx-account">账户</label><select id="tx-account" name="accountId" required></select></div><div class="field"><label for="tx-member">成员</label><select id="tx-member" name="memberId" required>${state.data.members.map(m => `<option value="${m.id}"${selected(values.memberId,m.id)}>${esc(m.name)}</option>`).join('')}</select></div><div class="field"><label for="tx-category">分类</label><select id="tx-category" name="categoryId" required>${categoryOptions}</select></div><div class="field"><label for="tx-merchant">商家</label><input id="tx-merchant" name="merchant" value="${esc(values.merchant)}"></div><div class="field wide"><label for="tx-location">地点</label><input id="tx-location" name="location" value="${esc(values.location)}"></div><div class="field wide"><label for="tx-note">备注</label><textarea id="tx-note" name="note">${esc(values.note)}</textarea></div></div>`,
+      isEdit ? '保存修改' : '保存收支',
+      form => write(
+        isEdit ? `/api/transactions/${row.id}` : '/api/transactions',
+        isEdit ? 'PATCH' : 'POST',
+        transactionPayload(form, { activeAccounts: state.data.accounts, existingAccountId: row?.accountId }),
+        '收支已保存'
+      ),
+      focusSelector
+    );
+    const accountState = configureAccountSelect(
+      dialog.querySelector('#tx-account'), state.data.accounts, values.accountId, values.accountName);
+    if (!accountState.canSubmit) {
+      dialog.querySelector('[type="submit"]').disabled = true;
+      dialog.querySelector('.status').textContent = accountState.message;
+    }
+    const kind = dialog.querySelector('#tx-kind');
+    const category = dialog.querySelector('#tx-category');
+    const matchCategories = () => {
+      [...category.options].forEach(option => { option.hidden = option.dataset.kind !== kind.value; });
+      const current = category.selectedOptions[0];
+      if (!current || current.dataset.kind !== kind.value) {
+        category.value = [...category.options].find(option => option.dataset.kind === kind.value)?.value || '';
+      }
+    };
+    kind.onchange = matchCategories;
+    matchCategories();
+  }
   function memberDialog(member) { const value = member || { name: '', roleLabel: '' }; appendDialog(member ? '编辑成员' : '新增成员', `<div class="form-grid"><div class="field"><label for="member-name">姓名</label><input id="member-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="member-role">身份说明</label><input id="member-role" name="roleLabel" value="${esc(value.roleLabel)}" placeholder="例如 爸爸"></div></div>`, member ? '保存修改' : '新增成员', form => write(member ? `/api/members/${member.id}` : '/api/members', member ? 'PATCH' : 'POST', Object.fromEntries(form), '成员已保存'), member ? `[data-member-edit="${member.id}"]` : '#new-member'); }
   function categoryDialog(category) { const value = category || { kind: 'expense', name: '', color: '#3B7A72' }; appendDialog(category ? '编辑分类' : '新增分类', `<div class="form-grid"><div class="field"><label for="category-kind">类型</label><select id="category-kind" name="kind"><option value="expense"${selected(value.kind,'expense')}>支出</option><option value="income"${selected(value.kind,'income')}>收入</option></select></div><div class="field"><label for="category-name">名称</label><input id="category-name" name="name" required value="${esc(value.name)}"></div><div class="field"><label for="category-color">标记颜色</label><input id="category-color" name="color" required value="${esc(value.color)}" pattern="^#[0-9A-Fa-f]{6}$"></div></div>`, category ? '保存修改' : '新增分类', form => write(category ? `/api/categories/${category.id}` : '/api/categories', category ? 'PATCH' : 'POST', Object.fromEntries(form), '分类已保存'), category ? `[data-category-edit="${category.id}"]` : '#new-category'); }
   async function removeResource(base, id, label) { if (!window.confirm(`删除这位${label}？被账目使用时系统会说明原因。`)) return; try { await write(`${base}/${id}`, 'DELETE', undefined, `${label}已删除`); notice(`${label}已删除`); } catch (problem) { if (!problem.sessionExpired) notice(problem.message, 'error'); } }

@@ -20,6 +20,14 @@ test('initial state derives the month from local date getters', () => {
   const state = createInitialState(localDate);
 
   assert.equal(state.month, '2028-01');
+  assert.deepEqual(state.data.accounts, []);
+  assert.deepEqual(state.transactionPage, {
+    page: 0,
+    size: 20,
+    totalElements: 0,
+    totalPages: 0,
+    hasNext: false
+  });
   state.month = '2026-09';
   assert.equal(state.month, '2026-09');
 });

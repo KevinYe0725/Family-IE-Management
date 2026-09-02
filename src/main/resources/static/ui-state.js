@@ -8,8 +8,9 @@ export function createInitialState(date = new Date()) {
   return {
     month: localYearMonth(date),
     route: 'dashboard',
-    filters: { kind: '', memberId: '', categoryId: '', q: '' },
-    data: { session: null, members: [], categories: [], transactions: [], dashboard: null, analysis: null },
+    filters: { kind: '', accountId: '', memberId: '', categoryId: '', q: '' },
+    transactionPage: { page: 0, size: 20, totalElements: 0, totalPages: 0, hasNext: false },
+    data: { session: null, accounts: [], members: [], categories: [], transactions: [], dashboard: null, analysis: null },
     flash: null
   };
 }

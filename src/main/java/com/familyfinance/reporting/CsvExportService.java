@@ -21,7 +21,7 @@ public class CsvExportService {
     }
 
     public byte[] export(long householdId, TransactionFilter filter) {
-        List<FinancialTransaction> transactions = transactionService.findFiltered(householdId, filter);
+        List<FinancialTransaction> transactions = transactionService.findAllForCsvExport(householdId, filter);
         StringBuilder csv = new StringBuilder("日期,类型,金额,成员,分类,商家,地点,备注\n");
         for (FinancialTransaction transaction : transactions) {
             csv.append(transaction.getOccurredOn()).append(',')

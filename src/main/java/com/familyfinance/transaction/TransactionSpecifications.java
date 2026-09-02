@@ -16,9 +16,11 @@ final class TransactionSpecifications {
 
     static Specification<FinancialTransaction> matching(TransactionCriteria criteria) {
         return (root, query, builder) -> {
-            root.fetch("member", JoinType.LEFT);
-            root.fetch("category", JoinType.LEFT);
-            root.fetch("account", JoinType.LEFT);
+            if (FinancialTransaction.class.equals(query.getResultType())) {
+                root.fetch("member", JoinType.LEFT);
+                root.fetch("category", JoinType.LEFT);
+                root.fetch("account", JoinType.LEFT);
+            }
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.equal(root.get("household").get("id"), criteria.householdId()));
             if (criteria.kind() != null) {

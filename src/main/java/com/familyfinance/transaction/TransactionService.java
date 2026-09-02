@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class TransactionService {
 
+    private static final int MAX_PAGE_SIZE = 50;
     private static final Sort DEFAULT_SORT = Sort.by(
             Sort.Order.desc("occurredOn"),
             Sort.Order.desc("id"));
@@ -60,13 +62,23 @@ public class TransactionService {
         this.filterParser = filterParser;
     }
 
-    public List<TransactionResponse> list(long householdId, TransactionFilter filter) {
-        return findFiltered(householdId, filter).stream()
-                .map(TransactionResponse::from)
-                .toList();
+    public TransactionPage list(long householdId, TransactionFilter filter, int page, int size) {
+        TransactionCriteria criteria = filterParser.parse(householdId, filter);
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(MAX_PAGE_SIZE, Math.max(1, size));
+        var result = transactionRepository.findAll(
+                TransactionSpecifications.matching(criteria),
+                PageRequest.of(safePage, safeSize, DEFAULT_SORT));
+        return new TransactionPage(
+                result.getContent().stream().map(TransactionResponse::from).toList(),
+                safePage,
+                safeSize,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext());
     }
 
-    public List<FinancialTransaction> findFiltered(long householdId, TransactionFilter filter) {
+    public List<FinancialTransaction> findAllForCsvExport(long householdId, TransactionFilter filter) {
         TransactionCriteria criteria = filterParser.parse(householdId, filter);
         return transactionRepository.findAll(TransactionSpecifications.matching(criteria), DEFAULT_SORT);
     }
