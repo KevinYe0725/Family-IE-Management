@@ -117,12 +117,14 @@
 
 家庭数据依然按当前 `household_id` 隔离。权限服务同时检查家庭、角色、资源创建者和待办分配人，控制器不自行拼装权限判断。
 
+“删除家庭”实现为所有者发起的安全归档：要求再次输入家庭名称确认，撤销所有有效邀请、停用全部 Membership 并禁止新登录，但保留历史财务数据和数据库备份，不执行级联物理删除。
+
 ## 5. 数据模型
 
 ### 5.1 身份与家庭
 
 - `app_users(id, email, display_name, password_hash, status, created_at, updated_at)`
-- `households(id, name, created_at, updated_at)`
+- `households(id, name, status, archived_at, created_at, updated_at)`
 - `household_memberships(id, household_id, user_id, role, status, joined_at)`
 - `family_members(id, household_id, linked_user_id, name, role_label, created_at)`
 - `family_invites(id, household_id, token_hash, role, expires_at, max_uses, used_count, revoked_at, created_by, created_at)`
@@ -235,6 +237,7 @@
 
 - `POST /api/auth/register`
 - `POST /api/auth/change-password`
+- `GET|PATCH|DELETE /api/family`
 - `GET|POST|DELETE /api/family/invites`
 - `GET|PATCH /api/family/memberships`
 - `POST /api/family/transfer-ownership`
@@ -371,4 +374,3 @@
 - 不提供银行、支付宝、微信同步。
 - 不提供 OCR、邮箱验证码、密码邮件找回和原生 App。
 - 不拆分微服务，不引入 Redis、MQ 或外部任务调度平台。
-
