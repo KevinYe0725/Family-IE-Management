@@ -34,6 +34,22 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Reject an unrelated HTTP service on port 8080
+        shell: pwsh
+        run: |
+          $fake = Start-Process python -ArgumentList '-m', 'http.server', '8080', '--bind', '127.0.0.1' -PassThru
+          try {
+            Start-Sleep -Seconds 2
+            & .\start-local.cmd -NoBrowser -Smoke
+            if ($LASTEXITCODE -eq 0) {
+              throw 'The startup script incorrectly accepted an unrelated HTTP 200 service.'
+            }
+            Write-Host 'Unrelated port owner was rejected as expected.'
+          }
+          finally {
+            Stop-Process -Id $fake.Id -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Run Windows one-click startup smoke
         shell: cmd
         run: start-local.cmd -NoBrowser -Smoke
