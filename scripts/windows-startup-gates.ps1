@@ -62,11 +62,12 @@ function Get-FreePort {
     }
 }
 
-function Add-GateLogDirectory([System.Diagnostics.Process]$Process, [string]$LogDirectory) {
+function Add-ImmutableGateLogDirectory([object]$Target, [string]$LogDirectory) {
     $ValidatedLogDirectory = [System.IO.Path]::GetFullPath($LogDirectory)
     Assert-UnderSessionRoot $ValidatedLogDirectory
-    $Process | Add-Member -MemberType NoteProperty -Name GateLogDirectory -Value $ValidatedLogDirectory
-    return $Process
+    $Getter = { $ValidatedLogDirectory }.GetNewClosure()
+    $Target | Add-Member -MemberType ScriptProperty -Name GateLogDirectory -Value $Getter
+    return $Target
 }
 
 function Get-ProcessLog([object]$Process) {
@@ -102,7 +103,7 @@ function Start-Launcher(
     $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments `
         -WorkingDirectory $ScenarioRoot -RedirectStandardOutput $StandardOutput `
         -RedirectStandardError $StandardError -PassThru
-    $Process = Add-GateLogDirectory $Process $LogDirectory
+    $Process = Add-ImmutableGateLogDirectory $Process $LogDirectory
     return $Process
 }
 
@@ -198,15 +199,33 @@ function Test-ExitedProcessLogRetrieval {
     $Process = Start-Process -FilePath $env:ComSpec -ArgumentList $Arguments `
         -WorkingDirectory $Scenario -RedirectStandardOutput $StandardOutput `
         -RedirectStandardError $StandardError -PassThru
-    $Process = Add-GateLogDirectory $Process $LogDirectory
+    $Process = Add-ImmutableGateLogDirectory $Process $LogDirectory
     Wait-ForExit $Process 30 'Exited-process log regression child'
     Assert-Equal 0 $Process.ExitCode 'Exited-process log regression child failed.'
 
+    $TamperedLogDirectory = Join-Path $Scenario 'tampered-logs'
+    $LiveMutationRejected = $false
+    try {
+        $Process.GateLogDirectory = $TamperedLogDirectory
+    }
+    catch {
+        $LiveMutationRejected = $true
+    }
+    Assert-True $LiveMutationRejected 'The real process log directory metadata remained writable.'
+    Assert-Equal $LogDirectory ([string]$Process.GateLogDirectory) 'The real process log directory metadata changed.'
+
     # This deliberately carries no StartInfo, proving log lookup depends only
     # on the immutable directory captured when the child was launched.
-    $DetachedLogReference = [pscustomobject]@{
-        GateLogDirectory = [string]$Process.GateLogDirectory
+    $DetachedLogReference = Add-ImmutableGateLogDirectory ([pscustomobject]@{}) $Process.GateLogDirectory
+    $DetachedMutationRejected = $false
+    try {
+        $DetachedLogReference.GateLogDirectory = $TamperedLogDirectory
     }
+    catch {
+        $DetachedMutationRejected = $true
+    }
+    Assert-True $DetachedMutationRejected 'The detached log directory metadata remained writable.'
+    Assert-Equal $LogDirectory ([string]$DetachedLogReference.GateLogDirectory) 'The detached log directory metadata changed.'
     Assert-True ((Get-ProcessLog $DetachedLogReference) -match 'PROCESS_LOG_METADATA_OK') 'Could not retrieve logs after the child exited without StartInfo metadata.'
     Assert-NoScenarioProcesses $Scenario
 }
