@@ -22,4 +22,13 @@ class WindowsStartupGateIsolationTest {
                 "$SourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path",
                 "& git -C $SourceRoot archive --format=zip --output=$Archive HEAD");
     }
+
+    @Test
+    void exitedProcessLogLookupUsesExplicitImmutableMetadata() throws Exception {
+        String gate = Files.readString(Path.of("scripts", "windows-startup-gates.ps1"));
+
+        assertThat(gate)
+                .doesNotContain("$Process.StartInfo.WorkingDirectory")
+                .contains("GateLogDirectory");
+    }
 }

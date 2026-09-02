@@ -62,10 +62,22 @@ function Get-FreePort {
     }
 }
 
-function Get-ProcessLog([System.Diagnostics.Process]$Process) {
-    $LogRoot = $Process.StartInfo.WorkingDirectory
-    $Prefix = Join-Path $LogRoot 'windows-gate-logs'
-    $Logs = @(Get-ChildItem -LiteralPath $Prefix -File -ErrorAction SilentlyContinue |
+function Add-GateLogDirectory([System.Diagnostics.Process]$Process, [string]$LogDirectory) {
+    $ValidatedLogDirectory = [System.IO.Path]::GetFullPath($LogDirectory)
+    Assert-UnderSessionRoot $ValidatedLogDirectory
+    $Process | Add-Member -MemberType NoteProperty -Name GateLogDirectory -Value $ValidatedLogDirectory
+    return $Process
+}
+
+function Get-ProcessLog([object]$Process) {
+    $LogDirectoryProperty = $Process.PSObject.Properties['GateLogDirectory']
+    if ($null -eq $LogDirectoryProperty -or
+        [string]::IsNullOrWhiteSpace([string]$LogDirectoryProperty.Value)) {
+        throw 'Process log metadata is missing its immutable GateLogDirectory.'
+    }
+    $LogDirectory = [System.IO.Path]::GetFullPath([string]$LogDirectoryProperty.Value)
+    Assert-UnderSessionRoot $LogDirectory
+    $Logs = @(Get-ChildItem -LiteralPath $LogDirectory -File -ErrorAction SilentlyContinue |
             Sort-Object Name |
             ForEach-Object { "--- $($_.Name) ---`n$((Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue))" })
     return [string]::Join("`n", $Logs)
@@ -87,9 +99,11 @@ function Start-Launcher(
     if ($Smoke) {
         $Arguments += ' -Smoke'
     }
-    return Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments `
+    $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments `
         -WorkingDirectory $ScenarioRoot -RedirectStandardOutput $StandardOutput `
         -RedirectStandardError $StandardError -PassThru
+    $Process = Add-GateLogDirectory $Process $LogDirectory
+    return $Process
 }
 
 function Wait-ForExit([System.Diagnostics.Process]$Process, [int]$TimeoutSeconds, [string]$Description) {
@@ -172,6 +186,29 @@ function Invoke-Smoke([string]$ScenarioRoot, [int]$Port, [string]$Label) {
     }
     Assert-PortReleased $Port
     Assert-NoScenarioProcesses $ScenarioRoot
+}
+
+function Test-ExitedProcessLogRetrieval {
+    $Scenario = New-Scenario 'process-log-regression'
+    $LogDirectory = Join-Path $Scenario 'windows-gate-logs'
+    New-Item -ItemType Directory -Path $LogDirectory | Out-Null
+    $StandardOutput = Join-Path $LogDirectory 'exited-child.stdout.log'
+    $StandardError = Join-Path $LogDirectory 'exited-child.stderr.log'
+    $Arguments = '/d /s /c "echo PROCESS_LOG_METADATA_OK"'
+    $Process = Start-Process -FilePath $env:ComSpec -ArgumentList $Arguments `
+        -WorkingDirectory $Scenario -RedirectStandardOutput $StandardOutput `
+        -RedirectStandardError $StandardError -PassThru
+    $Process = Add-GateLogDirectory $Process $LogDirectory
+    Wait-ForExit $Process 30 'Exited-process log regression child'
+    Assert-Equal 0 $Process.ExitCode 'Exited-process log regression child failed.'
+
+    # This deliberately carries no StartInfo, proving log lookup depends only
+    # on the immutable directory captured when the child was launched.
+    $DetachedLogReference = [pscustomobject]@{
+        GateLogDirectory = [string]$Process.GateLogDirectory
+    }
+    Assert-True ((Get-ProcessLog $DetachedLogReference) -match 'PROCESS_LOG_METADATA_OK') 'Could not retrieve logs after the child exited without StartInfo metadata.'
+    Assert-NoScenarioProcesses $Scenario
 }
 
 function Get-DirectorySnapshot([string]$Path) {
@@ -463,15 +500,17 @@ try {
             (Get-Content -LiteralPath $TestClasspathFile -Raw).Trim()
         ))
 
-    Write-Host 'Gate 1/5: Smoke leaves absent production paths absent.'
+    Write-Host 'Gate 0/6: Exited-process logs use immutable launch metadata.'
+    Test-ExitedProcessLogRetrieval
+    Write-Host 'Gate 1/6: Smoke leaves absent production paths absent.'
     Test-AbsentProductionPathsSmoke
-    Write-Host 'Gate 2/5: Smoke preserves sentinels and honors a custom port.'
+    Write-Host 'Gate 2/6: Smoke preserves sentinels and honors a custom port.'
     Test-SentinelProductionPathsAndCustomPortSmoke
-    Write-Host 'Gate 3/5: An unrelated listener is rejected.'
+    Write-Host 'Gate 3/6: An unrelated listener is rejected.'
     Test-UnrelatedPortRejection
-    Write-Host 'Gate 4/5: Legacy backup, collision, restart, restore, login, and ledger checks.'
+    Write-Host 'Gate 4/6: Legacy backup, collision, restart, restore, login, and ledger checks.'
     Test-BackupRestartCollisionAndRestore
-    Write-Host 'Gate 5/5: A locked companion retains only a partial backup and prevents startup.'
+    Write-Host 'Gate 5/6: A locked companion retains only a partial backup and prevents startup.'
     Test-InterruptedCompanionCopy
 
     $Succeeded = $true
