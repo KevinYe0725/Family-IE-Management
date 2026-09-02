@@ -1,5 +1,7 @@
 package com.familyfinance.transaction;
 
+import java.math.BigDecimal;
+
 public record TransactionFilter(
         String month,
         String from,
@@ -7,5 +9,7 @@ public record TransactionFilter(
         String kind,
         Long memberId,
         Long categoryId,
-        String q) {
+        String q,
+        BigDecimal minAmount,
+        BigDecimal maxAmount) {
 }

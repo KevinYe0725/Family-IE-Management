@@ -41,6 +41,13 @@ public class ReportingController {
         return ApiEnvelope.data(analysisService.analysis(currentHousehold.id(authentication), parseMonth(month)));
     }
 
+    @GetMapping("/api/reporting/category-stats")
+    ApiEnvelope<CategoryStatsResponse> categoryStats(
+            Authentication authentication,
+            @RequestParam(required = false) String month) {
+        return ApiEnvelope.data(analysisService.categoryStats(currentHousehold.id(authentication), parseMonth(month)));
+    }
+
     private static YearMonth parseMonth(String rawMonth) {
         if (rawMonth == null || rawMonth.isBlank()) {
             return YearMonth.now();

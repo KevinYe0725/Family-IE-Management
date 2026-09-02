@@ -1,5 +1,6 @@
 package com.familyfinance.transaction;
 
+import java.math.BigDecimal;
 import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMemberRepository;
@@ -51,7 +52,10 @@ class TransactionFilterParser {
             fields.put("q", "关键字长度不能超过 100 个字符");
         }
         throwIfInvalid(fields);
-        return new TransactionCriteria(householdId, from, to, kind, filter.memberId(), filter.categoryId(), keyword);
+        return new TransactionCriteria(householdId, from, to, kind, filter.memberId(), filter.categoryId(), keyword,
+            filter.minAmount() != null ? filter.minAmount().multiply(new BigDecimal("100")) : null,
+            filter.maxAmount() != null ? filter.maxAmount().multiply(new BigDecimal("100")) : null
+        );
     }
 
     private void requireMemberExists(long householdId, long memberId, Map<String, String> fields) {

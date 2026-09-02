@@ -180,6 +180,33 @@ public class AnalysisService {
                 + DashboardService.formatCents(transaction.getAmountCents()) + "。";
     }
 
+    public CategoryStatsResponse categoryStats(long householdId, YearMonth month) {
+        List<FinancialTransaction> transactions = transactionRepository.findByHouseholdIdAndOccurredOnBetween(
+                householdId,
+                month.atDay(1),
+                month.atEndOfMonth(),
+                MONTH_SORT);
+
+        Map<Long, CategoryTotal> totals = new LinkedHashMap<>();
+        for (FinancialTransaction transaction : transactions) {
+            if (transaction.getKind() == TransactionKind.EXPENSE) {
+                totals.computeIfAbsent(
+                                transaction.getCategory().getId(),
+                                ignored -> new CategoryTotal(
+                                        transaction.getCategory().getId(),
+                                        transaction.getCategory().getName()))
+                        .amountCents += transaction.getAmountCents();
+            }
+        }
+
+        List<CategoryStatsResponse.Item> items = totals.values().stream()
+                .sorted(Comparator.comparingLong((CategoryTotal t) -> t.amountCents).reversed())
+                .map(t -> new CategoryStatsResponse.Item(t.name, t.amountCents))
+                .toList();
+
+        return new CategoryStatsResponse(items);
+    }
+
     private static final class CategoryTotal {
         private final long id;
         private final String name;

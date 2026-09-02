@@ -1,5 +1,6 @@
 package com.familyfinance.reporting;
 
+import java.math.BigDecimal;
 import com.familyfinance.shared.CurrentHousehold;
 import com.familyfinance.transaction.TransactionFilter;
 import org.springframework.http.ContentDisposition;
@@ -33,8 +34,10 @@ public class ExportController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) String q) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q);
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount) {
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, memberId, categoryId, q, minAmount, maxAmount);
         byte[] body = csvExportService.export(currentHousehold.id(authentication), filter);
         return ResponseEntity.ok()
                 .contentType(CSV_UTF8)

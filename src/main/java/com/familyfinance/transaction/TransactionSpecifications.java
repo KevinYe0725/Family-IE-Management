@@ -44,6 +44,12 @@ final class TransactionSpecifications {
                         builder.like(builder.lower(root.join("category").get("name")), pattern, LIKE_ESCAPE),
                         builder.like(builder.lower(root.join("member").get("name")), pattern, LIKE_ESCAPE)));
             }
+            if (criteria.minAmount() != null) {
+                predicates.add(builder.greaterThanOrEqualTo(root.get("amountCents"), criteria.minAmount()));
+            }
+            if (criteria.maxAmount() != null) {
+                predicates.add(builder.lessThanOrEqualTo(root.get("amountCents"), criteria.maxAmount()));
+            }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
     }
