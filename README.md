@@ -6,6 +6,24 @@
 
 前提：Java 17。
 
+### Windows 一键启动
+
+在 CMD 或 PowerShell 中进入项目目录，然后运行：
+
+```bat
+start-local.cmd
+```
+
+脚本会检查 Java 版本和 8080 端口，使用项目自带的 Maven Wrapper 启动 Spring Boot，并在服务就绪后自动打开浏览器。停止应用时，在启动终端中按 `Ctrl+C`。
+
+如果 8080 端口已被其他程序使用，可以指定另一个端口：
+
+```bat
+start-local.cmd -Port 8090
+```
+
+### macOS / Linux
+
 ```bash
 ./mvnw spring-boot:run
 ```
