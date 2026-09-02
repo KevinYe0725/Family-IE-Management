@@ -149,7 +149,7 @@ public class RecurringService {
             Authentication authentication, long ruleId, RecurringRulePatchRequest request) {
         FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireAdmin(authentication);
         long householdId = access.context().householdId();
-        RecurringRule rule = findRule(householdId, ruleId);
+        RecurringRule rule = findLockedRuleAfterHouseholdLock(householdId, ruleId);
         if (!rule.isActive()) throw new ResourceConflictException("RULE_ARCHIVED", "周期规则已归档");
         Map<String, String> fields = new LinkedHashMap<>();
         TransactionKind kind = request == null || request.kind() == null ? rule.getKind() : request.kind();
@@ -209,13 +209,12 @@ public class RecurringService {
     @Transactional
     public void archive(Authentication authentication, long ruleId) {
         FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireAdmin(authentication);
-        RecurringRule rule = findRule(access.context().householdId(), ruleId);
+        RecurringRule rule = findLockedRuleAfterHouseholdLock(access.context().householdId(), ruleId);
         if (!rule.isActive()) return;
         rule.archive();
-        occurrences.findByRuleIdOrderByDueOnAscIdAsc(ruleId).forEach(RecurringOccurrence::cancel);
         try {
             rules.flush();
-            occurrences.flush();
+            occurrences.cancelPendingByRuleId(ruleId);
         } catch (DataIntegrityViolationException exception) {
             throw staleWrite();
         }
@@ -318,8 +317,9 @@ public class RecurringService {
         }
     }
 
-    private RecurringRule findRule(long householdId, long ruleId) {
-        return rules.findByIdAndHouseholdId(ruleId, householdId)
+    /** Caller must already own the household row lock; mutations always lock household, then rule. */
+    private RecurringRule findLockedRuleAfterHouseholdLock(long householdId, long ruleId) {
+        return rules.findLockedByIdAndHouseholdId(ruleId, householdId)
                 .orElseThrow(() -> new ResourceNotFoundException("周期规则不存在"));
     }
 

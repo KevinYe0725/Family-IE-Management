@@ -2,6 +2,8 @@ package com.familyfinance.ledger.recurring;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +15,8 @@ import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.ledger.FinancialAccountRepository;
 import com.familyfinance.transaction.FinancialTransactionRepository;
 import com.familyfinance.transaction.TransactionSourceType;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -23,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -30,9 +35,11 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -54,6 +61,9 @@ class RecurringConcurrencyTest {
     @Autowired FamilyMemberRepository members;
     @Autowired AppUserRepository users;
     @Autowired TransactionTemplate transactionTemplate;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired RecurringRuleRepository rules;
+    @MockitoSpyBean RecurringOccurrenceRepository occurrenceSpy;
 
     @Test
     void concurrentConfirmationsReturnTheSameTransactionAndCommitOnlyOne() throws Exception {
@@ -145,7 +155,115 @@ class RecurringConcurrencyTest {
         }
     }
 
+    @Test
+    void generatorAndArchiveSerializeOnRuleLockThenArchiveBulkCancelsEveryPendingOccurrence() throws Exception {
+        PreparedRule prepared = prepareOwnerRule("90.00");
+        CountDownLatch generatorHasRuleLock = new CountDownLatch(1);
+        CountDownLatch allowGenerator = new CountDownLatch(1);
+        BlockingOccurrenceInsertTrigger.install(jdbc, generatorHasRuleLock, allowGenerator);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            Future<Integer> generation = executor.submit(() -> {
+                Thread.currentThread().setName("recurring-generator-archive");
+                return recurringService.generateDueOccurrences();
+            });
+            assertThat(generatorHasRuleLock.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<MvcResult> archive = executor.submit(() -> {
+                Thread.currentThread().setName("recurring-archive");
+                return mvc.perform(delete("/api/recurring-rules/{id}", prepared.ruleId())
+                                .session(prepared.session()).with(csrf()))
+                        .andReturn();
+            });
+
+            awaitBlockedDatabaseSession();
+            assertThat(archive.isDone()).as("archive must wait while generation owns the rule row").isFalse();
+            allowGenerator.countDown();
+            assertThat(generation.get(5, TimeUnit.SECONDS)).isEqualTo(1);
+            assertThat(archive.get(5, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(204);
+
+            assertThat(jdbc.queryForObject(
+                    "select count(*) from recurring_occurrences where rule_id=? and status='PENDING'",
+                    Long.class,
+                    prepared.ruleId())).isZero();
+            assertThat(jdbc.queryForObject(
+                    "select active from recurring_rules where id=?", Boolean.class, prepared.ruleId())).isFalse();
+            assertThat(jdbc.queryForObject(
+                    "select next_due_on is null from recurring_rules where id=?",
+                    Boolean.class,
+                    prepared.ruleId())).isTrue();
+            Mockito.verify(occurrenceSpy, Mockito.never())
+                    .findByRuleIdOrderByDueOnAscIdAsc(prepared.ruleId());
+        } finally {
+            allowGenerator.countDown();
+            executor.shutdownNow();
+            BlockingOccurrenceInsertTrigger.remove(jdbc);
+        }
+    }
+
+    @Test
+    void generatorAndUpdateSerializeOnRuleLockWithoutLosingTheAdvancedCursor() throws Exception {
+        PreparedRule prepared = prepareOwnerRule("91.00");
+        CountDownLatch generatorHasRuleLock = new CountDownLatch(1);
+        CountDownLatch allowGenerator = new CountDownLatch(1);
+        BlockingOccurrenceInsertTrigger.install(jdbc, generatorHasRuleLock, allowGenerator);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            Future<Integer> generation = executor.submit(() -> {
+                Thread.currentThread().setName("recurring-generator-update");
+                return recurringService.generateDueOccurrences();
+            });
+            assertThat(generatorHasRuleLock.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<MvcResult> update = executor.submit(() -> {
+                Thread.currentThread().setName("recurring-update");
+                return mvc.perform(patch("/api/recurring-rules/{id}", prepared.ruleId())
+                                .session(prepared.session()).with(csrf())
+                                .contentType("application/json")
+                                .content("{\"amount\":\"92.00\"}"))
+                        .andReturn();
+            });
+
+            awaitBlockedDatabaseSession();
+            assertThat(update.isDone()).as("update must wait while generation owns the rule row").isFalse();
+            allowGenerator.countDown();
+            assertThat(generation.get(5, TimeUnit.SECONDS)).isEqualTo(1);
+            assertThat(update.get(5, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+
+            assertThat(jdbc.queryForObject(
+                    "select amount_cents from recurring_rules where id=?", Long.class, prepared.ruleId()))
+                    .isEqualTo(9200L);
+            assertThat(jdbc.queryForObject(
+                    "select next_due_on from recurring_rules where id=?", java.time.LocalDate.class, prepared.ruleId()))
+                    .isEqualTo(java.time.LocalDate.parse("2026-10-03"));
+            assertThat(jdbc.queryForObject(
+                    "select count(*) from recurring_occurrences where rule_id=? and due_on=date '2026-09-03'",
+                    Long.class,
+                    prepared.ruleId())).isEqualTo(1);
+        } finally {
+            allowGenerator.countDown();
+            executor.shutdownNow();
+            BlockingOccurrenceInsertTrigger.remove(jdbc);
+        }
+    }
+
     private PreparedOccurrence prepareOwnerOccurrence(String amount) throws Exception {
+        PreparedRule prepared = prepareOwnerRule(amount);
+        recurringService.generateDueOccurrences();
+        return new PreparedOccurrence(
+                prepared.session(), prepared.householdId(),
+                occurrences.findByRuleIdOrderByDueOnAscIdAsc(prepared.ruleId()).get(0).getId());
+    }
+
+    private PreparedRule prepareOwnerRule(String amount) throws Exception {
         MockHttpSession owner = login();
         AppUser ownerUser = users.findByEmail("demo@local.family").orElseThrow();
         long householdId = ownerUser.getHousehold().getId();
@@ -166,9 +284,7 @@ class RecurringConcurrencyTest {
                 .andExpect(status().isCreated()).andReturn();
         long ruleId = objectMapper.readTree(created.getResponse().getContentAsString())
                 .path("data").path("id").asLong();
-        recurringService.generateDueOccurrences();
-        return new PreparedOccurrence(
-                owner, householdId, occurrences.findByRuleIdOrderByDueOnAscIdAsc(ruleId).get(0).getId());
+        return new PreparedRule(owner, householdId, ruleId);
     }
 
     private MvcResult atBarrier(
@@ -196,7 +312,56 @@ class RecurringConcurrencyTest {
         }
     }
 
+    private void awaitBlockedDatabaseSession() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Long blocked = jdbc.queryForObject(
+                    "select count(*) from information_schema.sessions where blocker_id is not null",
+                    Long.class);
+            if (blocked != null && blocked > 0) return;
+            Thread.sleep(10);
+        }
+        throw new AssertionError("concurrent recurring mutation never reached the database lock barrier");
+    }
+
     record PreparedOccurrence(MockHttpSession session, long householdId, long occurrenceId) {}
+    record PreparedRule(MockHttpSession session, long householdId, long ruleId) {}
+
+    public static final class BlockingOccurrenceInsertTrigger implements org.h2.api.Trigger {
+        private static volatile CountDownLatch entered;
+        private static volatile CountDownLatch release;
+
+        static void install(JdbcTemplate jdbc, CountDownLatch enteredLatch, CountDownLatch releaseLatch) {
+            entered = enteredLatch;
+            release = releaseLatch;
+            jdbc.execute("drop trigger if exists recurring_occurrence_insert_barrier");
+            jdbc.execute("create trigger recurring_occurrence_insert_barrier before insert on recurring_occurrences "
+                    + "for each row call 'com.familyfinance.ledger.recurring.RecurringConcurrencyTest$"
+                    + "BlockingOccurrenceInsertTrigger'");
+        }
+
+        static void remove(JdbcTemplate jdbc) {
+            jdbc.execute("drop trigger if exists recurring_occurrence_insert_barrier");
+            entered = null;
+            release = null;
+        }
+
+        @Override
+        public void fire(Connection connection, Object[] oldRow, Object[] newRow) throws SQLException {
+            CountDownLatch currentEntered = entered;
+            CountDownLatch currentRelease = release;
+            if (currentEntered == null || currentRelease == null) return;
+            currentEntered.countDown();
+            try {
+                if (!currentRelease.await(5, TimeUnit.SECONDS)) {
+                    throw new SQLException("recurring occurrence insert barrier timed out");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new SQLException("recurring occurrence insert barrier interrupted", exception);
+            }
+        }
+    }
 
     @TestConfiguration
     static class FixedClockConfiguration {

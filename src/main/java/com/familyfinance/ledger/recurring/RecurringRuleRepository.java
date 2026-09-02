@@ -9,6 +9,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.QueryHints;
+import jakarta.persistence.QueryHint;
 
 public interface RecurringRuleRepository extends JpaRepository<RecurringRule, Long> {
     @EntityGraph(attributePaths = {"account", "member", "category", "assignedUser", "createdBy"})
@@ -18,7 +20,9 @@ public interface RecurringRuleRepository extends JpaRepository<RecurringRule, Lo
     Page<RecurringRule> findByHouseholdId(Long householdId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"account", "member", "category", "assignedUser", "createdBy"})
-    Optional<RecurringRule> findByIdAndHouseholdId(Long id, Long householdId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "1000"))
+    Optional<RecurringRule> findLockedByIdAndHouseholdId(Long id, Long householdId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"household", "account", "member", "category", "assignedUser", "createdBy"})

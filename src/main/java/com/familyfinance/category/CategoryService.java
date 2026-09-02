@@ -96,6 +96,10 @@ public class CategoryService {
                 && category.getKind() != request.kind()) {
             throw resourceInUse("该分类已被收支记录使用，无法修改收支类型");
         }
+        if (categories.countBudgetReferences(householdId, categoryId) > 0
+                && category.getKind() != request.kind()) {
+            throw resourceInUse("该分类已被预算或预算修订历史使用，无法修改收支类型");
+        }
         if (categories.countRecurringReferences(householdId, categoryId) > 0
                 && category.getKind() != request.kind()) {
             throw resourceInUse("该分类已被周期规则使用，无法修改收支类型");

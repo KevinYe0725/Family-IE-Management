@@ -279,6 +279,90 @@ class CategoryHierarchyApiTest {
         }
     }
 
+    @Test
+    void kindChangeIsBlockedByCurrentCategoryBudgetButOtherEditsRemainAllowed() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        long compatibleParentId = createCategory(session, "expense", unique("兼容父类"), null);
+        long categoryId = createCategory(session, "expense", unique("当前预算分类"), null);
+        jdbc.update("insert into budgets "
+                        + "(household_id,period_month,scope_type,category_id,amount_cents,version,active) "
+                        + "values (?,?,?,?,?,?,?)",
+                household.getId(), "2026-09", "CATEGORY", categoryId, 10000L, 1, true);
+
+        mvc.perform(patch("/api/categories/{id}", categoryId)
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content(categoryBody("income", unique("禁止改类型"), null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("预算")));
+
+        mvc.perform(patch("/api/categories/{id}", categoryId)
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content(categoryBody("expense", unique("允许改名和移动"), compatibleParentId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.kind").value("expense"))
+                .andExpect(jsonPath("$.data.parentId").value(compatibleParentId));
+    }
+
+    @Test
+    void kindChangeIsBlockedWhenOnlyImmutableBudgetRevisionReferencesCategory() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        long categoryId = createCategory(session, "expense", unique("历史预算分类"), null);
+        long userId = users.findByEmail("demo@local.family").orElseThrow().getId();
+        jdbc.update("insert into budgets "
+                        + "(household_id,period_month,scope_type,amount_cents,version,active) "
+                        + "values (?,?,?,?,?,?)",
+                household.getId(), "2026-10", "TOTAL", 20000L, 2, true);
+        long budgetId = jdbc.queryForObject(
+                "select id from budgets where household_id=? and period_month='2026-10' and scope_type='TOTAL'",
+                Long.class,
+                household.getId());
+        jdbc.update("insert into budget_revisions "
+                        + "(household_id,budget_id,old_amount_cents,new_amount_cents,changed_by,changed_at,"
+                        + "old_period_month,new_period_month,old_scope_type,new_scope_type,old_category_id,"
+                        + "new_category_id,old_member_id,new_member_id,old_active,new_active) "
+                        + "values (?,?,?,?,?,current_timestamp,?,?,?,?,?,?,?,?,?,?)",
+                household.getId(), budgetId, 10000L, 20000L, userId,
+                "2026-10", "2026-10", "CATEGORY", "TOTAL", categoryId,
+                null, null, null, true, true);
+
+        mvc.perform(patch("/api/categories/{id}", categoryId)
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content(categoryBody("income", unique("历史禁止改类型"), null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("预算")));
+    }
+
+    @Test
+    void kindChangeIsBlockedByAnArchivedRecurringRuleReference() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        FamilyMember member = members.findByHouseholdOrderById(household).get(0);
+        long categoryId = createCategory(session, "expense", unique("历史周期分类"), null);
+        long userId = users.findByEmail("demo@local.family").orElseThrow().getId();
+        long accountId = accounts.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(household.getId())
+                .orElseThrow().getId();
+        jdbc.update("insert into recurring_rules "
+                        + "(household_id,kind,amount_cents,schedule_type,interval_value,day_of_month,next_due_on,"
+                        + "account_id,member_id,category_id,active,created_by,assigned_user_id,paused) "
+                        + "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                household.getId(), "EXPENSE", 100L, "MONTHLY", 1, 1, null,
+                accountId, member.getId(), categoryId, false, userId, userId, false);
+
+        mvc.perform(patch("/api/categories/{id}", categoryId)
+                        .session(session).with(csrf()).contentType("application/json")
+                        .content(categoryBody("income", unique("周期禁止改类型"), null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("周期规则")));
+    }
+
     private void assertDeleteBlocked(MockHttpSession session, long categoryId, String messagePart) throws Exception {
         mvc.perform(delete("/api/categories/{id}", categoryId).session(session).with(csrf()))
                 .andExpect(status().isConflict())

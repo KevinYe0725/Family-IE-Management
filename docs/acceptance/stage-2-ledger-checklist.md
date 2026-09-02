@@ -6,9 +6,9 @@
 
 | 验收条件 | 可重复证据 |
 | --- | --- |
-| Flyway 新库迁移完整 | 首次启动后读取 Flyway 历史，成功版本必须依次为 V1、V2、V3、V4、V5、V6。 |
+| Flyway 新库迁移完整 | 首次启动后读取 Flyway 历史，成功版本必须依次为 V1、V2、V3、V4、V5、V6、V7；V7 在安装复合外键前以具名守卫拒绝已有的跨家庭或分类类型错误。 |
 | Plan 1 登录与安全边界兼容 | 未登录读取账本返回 401；邮箱 `CREATE` 注册得到 `OWNER`；登录使用真实会话 Cookie；缺少 CSRF 请求头的账户写入返回 403。 |
-| 注册默认值与账户 API | `CREATE` 家庭自动产生一个默认账户；所有者再通过真实 HTTP 创建验收银行卡并记录其 ID。 |
+| 注册默认值与账户 API | `CREATE` 家庭自动产生默认账户和默认分类，但不产生缺少显式月份/金额的预算；所有者再通过真实 HTTP 创建验收银行卡并记录其 ID，并显式创建后续验收预算。 |
 | 两级支出分类 | 通过 HTTP 创建“居家服务”一级分类和“物业费”二级分类；树投影核对父子 ID、层级、类型、名称、颜色、默认标记、创建时间和唯一的父子结构。 |
 | 预算与不可变修订 | 为二级分类创建 500.00 元月预算，再用版本号修改为 1000.00 元；修订记录必须保留旧值、新值和修改人 ID。 |
 | 固定时钟生成待确认项 | 测试范围内注入上海时区固定时钟并以 `app.scheduling.enabled=false` 关闭常规调度；仅由测试上下文的受保护触发器调用生产 `RecurringService`，月度规则只生成一个 2026-09-03 `PENDING` 项，不等待系统时间。生产默认仍启用每日 `00:10` `Asia/Shanghai` 调度。 |
@@ -37,7 +37,7 @@ git diff --check
 
 - `StageTwoFoundationSmokeTest`：第一阶段文件库升级、旧演示登录、创建/邀请加入家庭和成员越权拒绝。
 - `SprintOneSmokeTest`：第一阶段真实 HTTP 收支、筛选、看板、分析、CSV 和退出流程。
-- `FlywayFreshDatabaseTest`、`FlywayStageOneUpgradeTest`、`LedgerStageTwoMigrationTest`、`BudgetRevisionMigrationTest`：新库与旧库迁移以及 V1–V6 结构/数据约束。
+- `FlywayFreshDatabaseTest`、`FlywayStageOneUpgradeTest`、`LedgerStageTwoMigrationTest`、`BudgetRevisionMigrationTest`、`LedgerIntegrityMigrationTest`：新库与旧库迁移以及 V1–V7 结构/数据约束和失败关闭守卫。
 - `scripts/unix-startup-gates.sh`：macOS/Linux 的 10 个隔离启动、备份、恢复和失败保护场景。
 
 Windows 启动仍必须由 Windows runner 单独执行 `scripts/windows-cmd-quote-regression.ps1` 与 `scripts/windows-startup-gates.ps1`；本机 macOS 的成功不能替代 Windows 运行证据。

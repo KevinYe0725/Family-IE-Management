@@ -89,6 +89,15 @@ class RecurringConfirmationApiTest {
         assertThat(transaction.getOccurredOn()).isEqualTo(java.time.LocalDate.parse("2026-09-03"));
         assertThat(transaction.getSourceType()).isEqualTo(TransactionSourceType.RECURRING);
         assertThat(transaction.getSourceId()).isEqualTo(occurrence.getId());
+        mvc.perform(delete("/api/transactions/{id}", firstTransaction).session(memberSession).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("历史")));
+        mvc.perform(delete("/api/transactions/{id}", firstTransaction).session(owner).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"));
+        assertThat(transactions.findById(firstTransaction)).isPresent();
         mvc.perform(get("/api/budgets/usage").session(owner).param("periodMonth", "2026-09"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].spent").value("123.45"));

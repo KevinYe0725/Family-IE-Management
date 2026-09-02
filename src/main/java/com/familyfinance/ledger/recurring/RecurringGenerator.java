@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RecurringGenerator {
+    // The generator takes only rule-row locks. Rule mutations take household then rule,
+    // and the generator never requests a household lock, so the order cannot cycle.
     // Bounds one rule to ten years of monthly catch-up per daily scheduler invocation.
     static final int MAX_OCCURRENCES_PER_RULE_PER_RUN = 120;
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");

@@ -102,7 +102,7 @@ git commit -m "feat: migrate ledger accounts budgets and recurring rules"
 
 **Interfaces:**
 - Produces account CRUD and requires `accountId` for new transactions.
-- Registration CREATE now creates the default account in the same transaction.
+- Registration CREATE now creates the default account alongside the existing default categories in the same transaction. It does not invent a persisted budget month or amount; budgets are created only by an explicit household request in Task 4.
 
 - [ ] **Step 1: Write failing account API tests**
 

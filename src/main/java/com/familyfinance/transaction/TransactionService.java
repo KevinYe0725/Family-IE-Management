@@ -178,6 +178,11 @@ public class TransactionService {
         long householdId = access.context().householdId();
         FinancialTransaction transaction = findOne(householdId, transactionId);
         permissions.requireCanMutateTransaction(access.context(), transaction.getCreatedByUser().getId());
+        if (transaction.getSourceType() != TransactionSourceType.MANUAL) {
+            throw new ResourceConflictException(
+                    "RESOURCE_IN_USE",
+                    "该收支记录由周期账单或贷款确认生成，属于关联历史，无法删除");
+        }
         transactionRepository.delete(transaction);
     }
 

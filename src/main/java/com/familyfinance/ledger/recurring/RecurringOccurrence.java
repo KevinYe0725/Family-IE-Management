@@ -68,8 +68,4 @@ public class RecurringOccurrence {
         this.confirmedTransaction = transaction;
         this.status = RecurringOccurrenceStatus.CONFIRMED;
     }
-
-    void cancel() {
-        if (status == RecurringOccurrenceStatus.PENDING) status = RecurringOccurrenceStatus.CANCELLED;
-    }
 }

@@ -25,7 +25,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("6");
+        assertThat(result.version()).isEqualTo("7");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions")).isEqualTo(12);
         assertThat(result.queryLong("select count(*) from financial_accounts where household_id=1 "
@@ -55,7 +55,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("6");
+        assertThat(result.version()).isEqualTo("7");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
                 .isEqualTo(12);
@@ -72,7 +72,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("6");
+        assertThat(result.version()).isEqualTo("7");
         assertThat(legacyTransactionRows(database)).containsExactlyElementsOf(before);
         assertThat(result.queryLong("select count(*) from financial_transactions where created_by_user_id=1"))
                 .isEqualTo(12);
@@ -152,7 +152,7 @@ class LedgerStageTwoMigrationTest {
 
         MigrationResult result = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(result.version()).isEqualTo("6");
+        assertThat(result.version()).isEqualTo("7");
         assertThat(result.queryLong("select count(*) from financial_accounts")).isEqualTo(2);
         assertThat(result.queryLong("select count(*) from households h where not exists "
                 + "(select 1 from financial_accounts a where a.household_id=h.id and a.name='默认账户')"))

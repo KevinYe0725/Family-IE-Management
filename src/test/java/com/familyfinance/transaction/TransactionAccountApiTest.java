@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -60,6 +61,9 @@ class TransactionAccountApiTest {
 
     @Autowired
     EntityManager entityManager;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void createRequiresAnActiveAccountFromTheCurrentHousehold() throws Exception {
@@ -213,6 +217,35 @@ class TransactionAccountApiTest {
         FinancialTransaction saved = transactions.findById(transactionId).orElseThrow();
         assertThat(saved.getAccount().getId()).isEqualTo(secondAccountId);
         assertThat(saved.getCreatedByUser().getId()).isEqualTo(memberUser.getId());
+    }
+
+    @Test
+    void loanSourcedHistoryCannotBeDeletedByItsMemberCreatorOrAnOwner() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        MockHttpSession memberSession = join(owner, "loan-source-owner@example.com", HouseholdRole.MEMBER);
+        var memberUser = users.findByEmail("loan-source-owner@example.com").orElseThrow();
+        long householdId = memberUser.getHousehold().getId();
+        long memberId = linkedMember(householdId, memberUser.getId()).getId();
+        long categoryId = expenseCategoryId(householdId);
+        long accountId = accounts.findFirstByHouseholdIdAndArchivedAtIsNullOrderById(householdId)
+                .orElseThrow().getId();
+        long transactionId = createTransaction(
+                memberSession, accountId, memberId, categoryId, "贷款来源历史", null);
+        jdbc.update("update financial_transactions set source_type='LOAN', source_id=? where id=?",
+                900_000L + transactionId, transactionId);
+        entityManager.clear();
+
+        mvc.perform(delete("/api/transactions/{id}", transactionId)
+                        .session(memberSession).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("历史")));
+        mvc.perform(delete("/api/transactions/{id}", transactionId)
+                        .session(owner).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"));
+        assertThat(transactions.findById(transactionId)).isPresent();
     }
 
     private long createTransaction(

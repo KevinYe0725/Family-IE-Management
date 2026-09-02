@@ -79,6 +79,7 @@ class StageTwoLedgerSmokeTest {
             assertThat(initialAccounts).hasSize(1);
             long defaultAccountId = initialAccounts.get(0).path("id").asLong();
             assertAccount(initialAccounts.get(0), defaultAccountId, "默认账户", "CASH", "0.00");
+            assertThat(owner.data(owner.get("/api/budgets?periodMonth=" + PERIOD))).isEmpty();
             long accountId = owner.data(owner.expectStatus(
                     owner.write("POST", "/api/accounts", accountBody()), 201)).path("id").asLong();
 
@@ -408,7 +409,7 @@ class StageTwoLedgerSmokeTest {
                 versions.add(rows.getString(1));
             }
         }
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
     }
 
     private static void assertReciprocalRecurringLink(Path database, State state) throws Exception {
