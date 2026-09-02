@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
+import java.time.Instant;
+import com.familyfinance.household.AppUserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -27,6 +29,7 @@ class InviteApiTest {
 
     @Autowired
     FamilyInviteRepository invites;
+    @Autowired AppUserRepository users;
 
     @Test
     void ownerCreatesInviteButOnlyHashIsStored() throws Exception {
@@ -47,7 +50,7 @@ class InviteApiTest {
         org.assertj.core.api.Assertions.assertThat(invite.getTokenHash()).isEqualTo(InviteService.sha256(token));
         org.assertj.core.api.Assertions.assertThat(invite.getTokenHash()).doesNotContain(token);
         org.assertj.core.api.Assertions.assertThat(invite.getExpiresAt())
-                .isAfter(invite.getCreatedAt().plus(java.time.Duration.ofDays(6)));
+                .isEqualTo(invite.getCreatedAt().plus(java.time.Duration.ofDays(7)));
     }
 
     @Test
@@ -68,6 +71,27 @@ class InviteApiTest {
         registerJoin("revoked@example.com", token)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("INVITE_REVOKED"));
+    }
+
+    @Test
+    void invalidAndExpiredTokensUseStructuredInviteErrors() throws Exception {
+        registerJoin("invalid@example.com", "not-a-real-token").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVITE_INVALID"));
+        var owner = users.findByEmail("demo@local.family").orElseThrow();
+        String expired = "expired-token";
+        invites.save(new FamilyInvite(owner.getHousehold(), InviteService.sha256(expired), HouseholdRole.MEMBER,
+                Instant.now().minusSeconds(1), 1, owner, Instant.now().minusSeconds(10)));
+        registerJoin("expired@example.com", expired).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVITE_EXPIRED"));
+    }
+
+    @Test
+    void inviteListIsBoundedAndStableDescending() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        for (int index = 0; index < 55; index++) createInvite(owner);
+        mvc.perform(get("/api/family/invites").param("size", "999").session(owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.size").value(50))
+                .andExpect(jsonPath("$.data.hasNext").value(true));
     }
 
     private String createInvite(MockHttpSession session) throws Exception {
