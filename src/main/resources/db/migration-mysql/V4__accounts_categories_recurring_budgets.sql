@@ -21,8 +21,6 @@ select id, '默认账户', 'CASH', 'CNY', 0
 from households;
 
 alter table categories add column parent_id bigint;
-alter table categories add constraint ck_categories_not_self_parent
-    check (parent_id is null or parent_id <> id);
 alter table categories add constraint uk_categories_id_household unique (id, household_id);
 alter table categories add constraint uk_categories_id_household_kind unique (id, household_id, kind);
 alter table categories add constraint fk_categories_parent_household_kind
