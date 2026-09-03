@@ -18,6 +18,10 @@ final class MigrationTestSupport {
         return migrate(database, false);
     }
 
+    static MigrationResult migrateFreshDatabaseTo(Path database, String targetVersion) {
+        return migrate(database, false, targetVersion);
+    }
+
     static MigrationResult migrateExistingDatabase(Path database) {
         return migrate(database, true, null);
     }

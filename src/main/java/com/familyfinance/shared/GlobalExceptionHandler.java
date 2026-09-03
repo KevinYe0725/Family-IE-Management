@@ -6,6 +6,7 @@ import com.familyfinance.category.CategoryHierarchyException;
 import com.familyfinance.identity.PasswordChangeException;
 import com.familyfinance.identity.RegistrationRequestBodyTooLargeException;
 import com.familyfinance.identity.RegistrationRateLimitedException;
+import com.familyfinance.investment.InvestmentValidationException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -55,6 +56,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiEnvelope<Void>> handleAssetValidation(AssetValidationException exception) {
         return ResponseEntity.unprocessableEntity()
                 .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查资产信息", exception.fields())));
+    }
+
+    @ExceptionHandler(InvestmentValidationException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleInvestmentValidation(InvestmentValidationException exception) {
+        return ResponseEntity.unprocessableEntity()
+                .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查投资信息", exception.fields())));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

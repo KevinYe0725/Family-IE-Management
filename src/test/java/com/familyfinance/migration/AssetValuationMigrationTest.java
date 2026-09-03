@@ -12,7 +12,7 @@ class AssetValuationMigrationTest {
 
     @Test
     void freshDatabaseIncludesPersistedFetchTimeAndLatestValuationIndex() {
-        MigrationResult migrated = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh-v9"));
+        MigrationResult migrated = MigrationTestSupport.migrateFreshDatabaseTo(tempDir.resolve("fresh-v9"), "9");
 
         assertThat(migrated.version()).isEqualTo("9");
         assertThat(migrated.queryLong("""
@@ -67,7 +67,7 @@ class AssetValuationMigrationTest {
                 values (800,1,800,date '2026-08-31',55000000,'MANUAL','迁移前估值',1)
                 """);
 
-        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
+        MigrationResult migrated = MigrationTestSupport.migrateExistingDatabaseTo(database, "9");
 
         assertThat(migrated.version()).isEqualTo("9");
         assertThat(migrated.queryLong("select value_cents from asset_valuations where id=800"))

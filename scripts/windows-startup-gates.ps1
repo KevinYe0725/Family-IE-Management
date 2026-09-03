@@ -582,7 +582,7 @@ function Test-BackupRestartCollisionAndRestore {
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V9; no migration backup is required') 'Current V9 restart did not take the explicit backup-skip branch.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V10; no migration backup is required') 'Current V10 restart did not take the explicit backup-skip branch.'
     $CompletedAfterRestart = @(Get-CompletedBackups $BackupRoot)
     $PartialsAfterRestart = @(Get-PartialBackups $BackupRoot)
     Assert-Equal $CompletedCount $CompletedAfterRestart.Count 'Already-migrated restart created another legacy backup.'
@@ -664,22 +664,22 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Pending
     }
-    Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V9') 'V7 pending migration was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V10') 'V7 pending migration was not reported explicitly.'
     $PendingBackups = @(Get-CompletedBackups $PendingBackupRoot)
     Assert-Equal 1 $PendingBackups.Count 'V7 pending migration did not receive exactly one verified backup.'
-    Invoke-MigrationFixture $PendingScenario 'assert-version-9'
+    Invoke-MigrationFixture $PendingScenario 'assert-version-10'
 
     $RestartPort = Get-FreePort
-    $Restart = Start-Launcher $PendingScenario $RestartPort 'v9-current'
+    $Restart = Start-Launcher $PendingScenario $RestartPort 'v10-current'
     try {
         Wait-ForReady $RestartPort $Restart 180
     }
     finally {
         Stop-ProcessTree $Restart
     }
-    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V9; no migration backup is required') 'Current V9 was not reported explicitly.'
+    Assert-True (Test-ProcessLogContains $Restart 'is current at repository migration V10; no migration backup is required') 'Current V10 was not reported explicitly.'
     $CurrentBackups = @(Get-CompletedBackups $PendingBackupRoot)
-    Assert-Equal 1 $CurrentBackups.Count 'Current V9 created an unnecessary backup.'
+    Assert-Equal 1 $CurrentBackups.Count 'Current V10 created an unnecessary backup.'
 
     $FailedScenario = New-Scenario 'failed-v7-recovery'
     New-StageOneFixture $FailedScenario | Out-Null
@@ -703,7 +703,7 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Recovery
     }
-    Invoke-MigrationFixture $FailedScenario 'assert-version-9'
+    Invoke-MigrationFixture $FailedScenario 'assert-version-10'
     $RecoveredBackups = @(Get-CompletedBackups $FailedBackupRoot)
     Assert-Equal 2 $RecoveredBackups.Count 'Repaired V6 state did not receive a fresh verified retry backup.'
     $RecoveredPartials = @(Get-PartialBackups $FailedBackupRoot)
@@ -714,7 +714,7 @@ function Test-ExactMigrationStatesAndRecovery {
                 Name = 'future'
                 Make = 'make-future-history'
                 Assert = 'assert-future-history'
-                Message = 'migration newer than repository V9'
+                Message = 'migration newer than repository V10'
             },
             [pscustomobject]@{
                 Name = 'ambiguous'
@@ -791,7 +791,7 @@ try {
     Test-UnrelatedPortRejection
     Write-Host 'Gate 4/7: Legacy backup, collision, restart, restore, login, and ledger checks.'
     Test-BackupRestartCollisionAndRestore
-    Write-Host 'Gate 5/7: Exact V7, V9, failed, repaired, future, and ambiguous states are handled safely.'
+    Write-Host 'Gate 5/7: Exact V7, V10, failed, repaired, future, and ambiguous states are handled safely.'
     Test-ExactMigrationStatesAndRecovery
     Write-Host 'Gate 6/7: A locked companion retains only a partial backup and prevents startup.'
     Test-InterruptedCompanionCopy
