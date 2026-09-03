@@ -4,6 +4,7 @@
 .worktrees/
 .superpowers/
 node_modules/
+frontend/node/
 coverage/
 output/
 target/

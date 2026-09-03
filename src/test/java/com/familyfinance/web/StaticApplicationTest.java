@@ -33,16 +33,10 @@ class StaticApplicationTest {
                 .andExpect(forwardedUrl("index.html"));
         mvc.perform(get("/index.html"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML));
-        mvc.perform(get("/styles.css"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/css"));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/assets/app-")));
         mvc.perform(get("/app.js"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/javascript"));
-        mvc.perform(get("/api-client.js"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/javascript"));
+                .andExpect(status().isNotFound());
         mvc.perform(get("/transactions"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/index.html"));
