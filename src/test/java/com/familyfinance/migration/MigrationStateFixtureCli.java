@@ -22,7 +22,7 @@ public final class MigrationStateFixtureCli {
             case "migrate-to-7" -> flyway(url, "7").migrate();
             case "fail-v7-budget" -> createExpectedFailedV7(url);
             case "repair-v7-budget" -> repairExpectedFailedV7(url);
-            case "assert-version-10" -> assertVersionTen(url);
+            case "assert-version-11" -> assertVersionEleven(url);
             case "make-future-history" -> updateHistoryVersion(url, "7", "99");
             case "make-ambiguous-history" -> updateHistoryVersion(url, "7", "not-numeric");
             case "assert-future-history" -> assertHistoryVersion(url, "99");
@@ -61,13 +61,13 @@ public final class MigrationStateFixtureCli {
         flyway(url, null).repair();
     }
 
-    private static void assertVersionTen(String url) throws Exception {
+    private static void assertVersionEleven(String url) throws Exception {
         try (var connection = DriverManager.getConnection(url, "sa", "");
                 var rows = connection.createStatement().executeQuery(
                         "select count(*) from \"flyway_schema_history\" "
-                                + "where \"version\"='10' and \"success\"=true")) {
+                                + "where \"version\"='11' and \"success\"=true")) {
             rows.next();
-            if (rows.getLong(1) != 1) throw new AssertionError("Expected one successful V10 row");
+            if (rows.getLong(1) != 1) throw new AssertionError("Expected one successful V11 row");
         }
     }
 

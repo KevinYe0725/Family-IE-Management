@@ -667,7 +667,7 @@ function Test-ExactMigrationStatesAndRecovery {
     Assert-True (Test-ProcessLogContains $Pending 'behind repository migration V10') 'V7 pending migration was not reported explicitly.'
     $PendingBackups = @(Get-CompletedBackups $PendingBackupRoot)
     Assert-Equal 1 $PendingBackups.Count 'V7 pending migration did not receive exactly one verified backup.'
-    Invoke-MigrationFixture $PendingScenario 'assert-version-10'
+    Invoke-MigrationFixture $PendingScenario 'assert-version-11'
 
     $RestartPort = Get-FreePort
     $Restart = Start-Launcher $PendingScenario $RestartPort 'v10-current'
@@ -703,7 +703,7 @@ function Test-ExactMigrationStatesAndRecovery {
     finally {
         Stop-ProcessTree $Recovery
     }
-    Invoke-MigrationFixture $FailedScenario 'assert-version-10'
+    Invoke-MigrationFixture $FailedScenario 'assert-version-11'
     $RecoveredBackups = @(Get-CompletedBackups $FailedBackupRoot)
     Assert-Equal 2 $RecoveredBackups.Count 'Repaired V6 state did not receive a fresh verified retry backup.'
     $RecoveredPartials = @(Get-PartialBackups $FailedBackupRoot)

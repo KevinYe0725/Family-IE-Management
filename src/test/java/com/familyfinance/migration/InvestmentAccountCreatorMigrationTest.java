@@ -22,7 +22,7 @@ class InvestmentAccountCreatorMigrationTest {
 
         MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(migrated.version()).isEqualTo("10");
+        assertThat(migrated.version()).isEqualTo("11");
         assertThat(migrated.queryLong("select created_by from investment_accounts where id=910"))
                 .isEqualTo(1L);
         assertThat(migrated.queryLong("""
@@ -34,7 +34,7 @@ class InvestmentAccountCreatorMigrationTest {
 
     @Test
     void accountCreatorMustBelongToItsHousehold() {
-        MigrationResult migrated = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh-v10"));
+        MigrationResult migrated = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh-v11"));
         migrated.executeUpdate("""
                 insert into households (id,name,created_at,status) values
                     (100,'投资家庭一',current_timestamp,'ACTIVE'),

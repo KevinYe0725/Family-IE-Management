@@ -1,0 +1,2 @@
+package com.familyfinance.loan; import com.familyfinance.shared.Money; import java.time.LocalDate;
+public record LoanInstallmentResponse(long id,int installmentNo,LocalDate dueOn,String principal,String interest,LoanInstallmentStatus status) { static LoanInstallmentResponse from(LoanInstallment i){return new LoanInstallmentResponse(i.getId(),i.getInstallmentNo(),i.getDueOn(),Money.formatCents(i.getPrincipalCents()),Money.formatCents(i.getInterestCents()),i.getStatus());} }

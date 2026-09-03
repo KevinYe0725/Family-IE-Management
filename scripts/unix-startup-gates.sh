@@ -821,7 +821,7 @@ start_application "$failed_scenario" "$recovery_port" "$recovery_log"
 recovery_process_id=$started_process_id
 wait_for_ready "$recovery_port" "$recovery_process_id" "$recovery_log"
 stop_process "$recovery_process_id"
-migration_fixture "$failed_scenario" assert-version-10
+migration_fixture "$failed_scenario" assert-version-11
 assert_equal 2 "$(count_completed_backups "$failed_scenario/data-backups")" \
     'Repaired V6 state did not receive a fresh verified migration retry backup.'
 assert_equal 0 "$(count_partial_backups "$failed_scenario/data-backups")" \
