@@ -16,14 +16,17 @@ public class ReportingController {
 
     private final DashboardService dashboardService;
     private final AnalysisService analysisService;
+    private final PortfolioService portfolioService;
     private final CurrentHousehold currentHousehold;
 
     public ReportingController(
             DashboardService dashboardService,
             AnalysisService analysisService,
+            PortfolioService portfolioService,
             CurrentHousehold currentHousehold) {
         this.dashboardService = dashboardService;
         this.analysisService = analysisService;
+        this.portfolioService = portfolioService;
         this.currentHousehold = currentHousehold;
     }
 
@@ -43,6 +46,11 @@ public class ReportingController {
             @RequestParam(defaultValue = "false") boolean rollupCategories) {
         return ApiEnvelope.data(analysisService.analysis(
                 currentHousehold.id(authentication), parseMonth(month), rollupCategories));
+    }
+
+    @GetMapping("/api/portfolio")
+    ApiEnvelope<PortfolioResponse> portfolio(Authentication authentication) {
+        return ApiEnvelope.data(portfolioService.portfolio(currentHousehold.id(authentication)));
     }
 
     private static YearMonth parseMonth(String rawMonth) {

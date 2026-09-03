@@ -96,6 +96,17 @@ class ReportingApiTest {
                 .andExpect(jsonPath("$.data.insights.length()").value(0));
     }
 
+    @Test
+    void portfolioIsAvailableToMembersAndReturnsBoundedEmptyView() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/portfolio").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.positions.length()").value(0))
+                .andExpect(jsonPath("$.data.totals.cost").value("0.00"))
+                .andExpect(jsonPath("$.data.totals.marketValue").value("0.00"));
+    }
+
     private MockHttpSession login() throws Exception {
         MvcResult login = mvc.perform(post("/api/auth/login")
                         .with(csrf())

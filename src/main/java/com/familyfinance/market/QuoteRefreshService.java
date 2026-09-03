@@ -7,6 +7,7 @@ import com.familyfinance.investment.InvestmentTradeRepository;
 import com.familyfinance.investment.InvestmentTradeType;
 import com.familyfinance.investment.Security;
 import com.familyfinance.investment.SecurityRepository;
+import com.familyfinance.household.HouseholdRepository;
 import com.familyfinance.shared.ResourceConflictException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -26,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,7 @@ public class QuoteRefreshService {
     private final FamilyMutationAuthorization authorization;
     private final Clock clock;
     private final MarketSleeper sleeper;
+    private final HouseholdRepository households;
     private final ConcurrentHashMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, CompletableFuture<MarketRefreshResponse>> inFlight = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, Instant> lastManualRefresh = new ConcurrentHashMap<>();
@@ -51,9 +54,18 @@ public class QuoteRefreshService {
             SecurityRepository securities, MarketPriceSnapshotRepository snapshots,
             ManualPriceOverrideRepository overrides, CurrentMembership currentMembership,
             FamilyMutationAuthorization authorization, Clock clock, MarketSleeper sleeper) {
+        this(provider, trades, securities, snapshots, overrides, currentMembership, authorization, clock, sleeper, null);
+    }
+
+    @Autowired
+    public QuoteRefreshService(MarketQuoteProvider provider, InvestmentTradeRepository trades,
+            SecurityRepository securities, MarketPriceSnapshotRepository snapshots,
+            ManualPriceOverrideRepository overrides, CurrentMembership currentMembership,
+            FamilyMutationAuthorization authorization, Clock clock, MarketSleeper sleeper,
+            HouseholdRepository households) {
         this.provider = provider; this.trades = trades; this.securities = securities; this.snapshots = snapshots;
         this.overrides = overrides; this.currentMembership = currentMembership; this.authorization = authorization;
-        this.clock = clock; this.sleeper = sleeper;
+        this.clock = clock; this.sleeper = sleeper; this.households = households;
     }
 
     @Transactional
@@ -102,7 +114,40 @@ public class QuoteRefreshService {
 
     public List<MarketPriceResponse> list(Authentication authentication) {
         long householdId = currentMembership.require(authentication).householdId();
+        return effectivePrices(householdId);
+    }
+
+    /** Returns the same manual-first price projection used by the market read API. */
+    public List<MarketPriceResponse> effectivePrices(long householdId) {
         return prices(householdId, heldSecurities(householdId));
+    }
+
+    /**
+     * Background refresh deliberately has no authenticated actor or manual one-minute limit.
+     * A bad household/provider response is isolated so later households still get a chance to refresh.
+     */
+    @Transactional
+    public void refreshScheduledHouseholds() {
+        if (!provider.available() || households == null) return;
+        for (var household : households.findAll()) {
+            try {
+                refreshScheduledHousehold(household.getId());
+            } catch (RuntimeException ignored) {
+                // Scheduler work is derived data: one household must not stop the next one.
+            }
+        }
+    }
+
+    @Transactional
+    void refreshScheduledHousehold(long householdId) {
+        ReentrantLock lock = locks.computeIfAbsent(householdId, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            List<Security> held = heldSecurities(householdId);
+            if (!held.isEmpty()) saveQuotes(fetchWithRetry(symbols(held)));
+        } finally {
+            lock.unlock();
+        }
     }
 
     private List<DailyQuote> fetchWithRetry(Set<String> symbols) {
