@@ -2,6 +2,7 @@ import Button from '@douyinfe/semi-ui/lib/es/button';
 import { IconBell, IconMenu, IconSidebar } from '@douyinfe/semi-icons';
 import type { Session } from '../api/contracts';
 import { canManage, roleLabel } from './navigation';
+import { useNavigate } from 'react-router-dom';
 
 export function WorkspaceHeader({
   session,
@@ -18,6 +19,7 @@ export function WorkspaceHeader({
   onOpenMobile: () => void;
   onLogout: () => void;
 }) {
+  const navigate = useNavigate();
   return (
     <header className="workspace-header">
       <div className="header-leading">
@@ -30,9 +32,9 @@ export function WorkspaceHeader({
         <span className="workspace-crumb">家账 / 我的家庭</span>
       </div>
       <div className="header-actions">
-        {canManage(session.role) && <Button theme="borderless" size="small">邀请成员</Button>}
-        {session.role === 'OWNER' && <Button theme="borderless" size="small">管理家庭</Button>}
-        <button type="button" className="icon-button notification-button" aria-label="查看提醒"><IconBell /></button>
+        {canManage(session.role) && <Button theme="borderless" size="small" onClick={() => navigate('/workspace/family')}>邀请成员</Button>}
+        {session.role === 'OWNER' && <Button theme="borderless" size="small" onClick={() => navigate('/workspace/family')}>管理家庭</Button>}
+        <button type="button" className="icon-button notification-button" aria-label="查看提醒" onClick={() => navigate('/workspace/notifications')}><IconBell /></button>
         <div className="user-chip">
           <span className="user-avatar" aria-hidden="true">{session.displayName.slice(0, 1)}</span>
           <div><strong>{session.displayName}</strong><span>{roleLabel(session.role)}</span></div>

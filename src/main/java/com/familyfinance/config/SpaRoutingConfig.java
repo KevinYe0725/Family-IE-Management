@@ -11,5 +11,7 @@ public class SpaRoutingConfig implements WebMvcConfigurer {
     public void addViewControllers(ViewControllerRegistry registry) {
         registry.addViewController("/{route:^(?!api$)[^.]+}")
                 .setViewName("forward:/index.html");
+        registry.addViewController("/workspace/{*path}")
+                .setViewName("forward:/index.html");
     }
 }

@@ -231,6 +231,10 @@ if ($Smoke) {
         -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow
     try {
         Wait-ForApplication $Process
+        $ReactEntry = Invoke-WebRequest -UseBasicParsing -Uri $AppUrl -TimeoutSec 5
+        if ($ReactEntry.StatusCode -ne 200 -or $ReactEntry.Content -notmatch '/assets/app-[^"'']+\.js') {
+            throw 'React workspace entry or hashed application asset was not served by the smoke instance.'
+        }
         Write-Step "Smoke check passed: $AppUrl"
         Open-Application
     }

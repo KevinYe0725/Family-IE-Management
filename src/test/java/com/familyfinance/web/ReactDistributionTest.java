@@ -34,4 +34,11 @@ class ReactDistributionTest {
         mvc.perform(get("/assets/app-missing.js"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void nestedWorkspaceRouteRefreshesThroughTheReactEntry() throws Exception {
+        mvc.perform(get("/workspace/transactions"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
+    }
 }

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '../api/contracts';
 import { SIDEBAR_PREFERENCE_KEY, WorkspaceLayout } from './WorkspaceLayout';
 
@@ -14,9 +15,11 @@ const session = (role: Session['role']): Session => ({
 });
 
 const renderLayout = (role: Session['role'] = 'OWNER') => render(
-  <MemoryRouter initialEntries={['/workspace/overview']}>
-    <WorkspaceLayout session={session(role)} onLogout={vi.fn()} />
-  </MemoryRouter>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter initialEntries={['/workspace/overview']}>
+      <WorkspaceLayout session={session(role)} onLogout={vi.fn()} />
+    </MemoryRouter>
+  </QueryClientProvider>
 );
 
 it.each([

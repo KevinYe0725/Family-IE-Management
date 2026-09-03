@@ -17,6 +17,7 @@ on:
       - scripts/windows-startup-gates.ps1
       - .github/workflows/windows-startup-smoke.yml
       - pom.xml
+      - frontend/**
       - mvnw.cmd
       - .mvn/**
       - src/**
@@ -32,6 +33,7 @@ on:
       - scripts/windows-startup-gates.ps1
       - .github/workflows/windows-startup-smoke.yml
       - pom.xml
+      - frontend/**
       - mvnw.cmd
       - .mvn/**
       - src/**

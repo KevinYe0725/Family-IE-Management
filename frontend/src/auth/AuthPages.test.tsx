@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { AuthContext, type AuthContextValue } from './AuthProvider';
+import { AuthProvider, useAuth } from './AuthProvider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChangePasswordPage } from './ChangePasswordPage';
 import { LoginPage } from './LoginPage';
 import { RegisterPage } from './RegisterPage';
@@ -14,6 +16,7 @@ const authValue = (overrides: Partial<AuthContextValue> = {}): AuthContextValue 
   register: vi.fn(),
   logout: vi.fn(),
   changePassword: vi.fn(),
+  request: vi.fn(),
   ...overrides
 });
 
@@ -22,6 +25,28 @@ const renderWithAuth = (ui: React.ReactNode, value: AuthContextValue) => render(
     <AuthContext.Provider value={value}>{ui}</AuthContext.Provider>
   </MemoryRouter>
 );
+
+function AuthWriteProbe() {
+  const auth = useAuth();
+  return <><button onClick={() => auth.login('demo@local.family', 'demo1234')}>探针登录</button><button onClick={() => auth.request('/api/test-write', { method: 'POST', body: {} })}>探针写入</button></>;
+}
+
+it('loads a fresh CSRF token for the first write after login migrates the session', async () => {
+  let csrfLoads = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === '/api/session') return new Response(JSON.stringify({ error: { code: 'AUTH_REQUIRED', message: '请先登录' } }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    if (path === '/api/csrf') return new Response(JSON.stringify({ data: { headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: `token-${++csrfLoads}` } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (path === '/api/auth/login') return new Response(JSON.stringify({ data: { userId: 1, householdId: 1, email: 'demo@local.family', displayName: '演示用户', role: 'OWNER', username: 'demo' } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ data: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }));
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={new QueryClient()}><AuthProvider><AuthWriteProbe /></AuthProvider></QueryClientProvider>);
+  await user.click(screen.getByRole('button', { name: '探针登录' }));
+  await user.click(screen.getByRole('button', { name: '探针写入' }));
+  await waitFor(() => expect(csrfLoads).toBe(2));
+  vi.unstubAllGlobals();
+});
 
 it('submits normalized email for create-family registration with Enter', async () => {
   const register = vi.fn().mockResolvedValue(undefined);

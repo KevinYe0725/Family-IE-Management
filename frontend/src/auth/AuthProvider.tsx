@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createApiClient } from '../api/client';
+import type { ApiRequestOptions } from '../api/client';
 import type { ChangePasswordRequest, RegisterRequest, RegisterResponse, Session } from '../api/contracts';
 
 export type AuthStatus = 'loading' | 'anonymous' | 'authenticated';
@@ -13,6 +14,7 @@ export interface AuthContextValue {
   register: (request: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  request: <T>(path: string, options?: ApiRequestOptions) => Promise<T>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const body = new URLSearchParams({ username: email, password });
     const value = await client.api<Session>('/api/auth/login', { method: 'POST', body });
+    client.invalidateCsrf();
     client.resetSessionExpiry();
     setNotice(null);
     setSession(value);
@@ -85,8 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     register,
     logout,
-    changePassword
-  }), [session, status, notice, login, register, logout, changePassword]);
+    changePassword,
+    request: client.api
+  }), [session, status, notice, login, register, logout, changePassword, client]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

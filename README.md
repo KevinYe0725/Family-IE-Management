@@ -1,6 +1,6 @@
 # 家账：家庭收支管理系统
 
-一个用于课程演示的 Spring Boot 家庭收支 Web 应用。它把每笔收入和支出放在同一条家庭现金流账轨上，并提供成员与分类管理、筛选、统计、规则分析和 CSV 导出。
+一个可本地运行的 Spring Boot + React 家庭财务工作区。它把日常收支、预算、周期账单、资产、A 股持仓、贷款、提醒和家庭协作放在同一条家庭账轨上，所有财务汇总由服务器计算并持久化。
 
 ## 运行
 
@@ -48,12 +48,30 @@ start-local.cmd -Port 8090
 
 首次启动会写入演示家庭及 2026 年 6—9 月账目。界面默认打开浏览器本地时间对应的当前月份；演示时可在账期控件中切换到 `2026-09`。默认数据文件是 `data/family-finance.mv.db`（H2 还可能创建同目录的跟随文件）。
 
+### React 家庭财务工作区
+
+- 桌面端保留 52px 应用轨道和可隐藏模块栏；手机端使用可关闭、可恢复焦点的模块抽屉。
+- 总览集中显示服务器提供的现金流、净资产、负债、预算、投资与提醒状态；行情始终标明来源、日期、陈旧或缺失状态。
+- 收支页面提供账户、两级分类、组合筛选以及收支新增、编辑和删除；长表格在手机端自动转为卡片。
+- 预算、周期账单、资产估值、投资交易、贷款计划和家庭角色均连接对应后端 API，并按 `OWNER`、`ADMIN`、`MEMBER` 权限显示操作。
+- 浏览器只在 `localStorage` 保存模块栏布局偏好，不保存密码、令牌或任何财务记录。
+
+如果要单独开发前端，可在后端运行时另开终端：
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+日常交付仍使用仓库根目录的一键启动脚本；Maven 会下载固定 Node/npm、运行前端测试并把哈希静态资源打入可执行 JAR，不要求系统全局安装 Node。
+
 ### 第二阶段家庭与登录基础
 
 - `POST /api/auth/register` 支持 `CREATE` 创建新家庭及其 `OWNER`，或携带邀请 Token 以 `JOIN` 加入已有家庭。
 - 所有者或管理员可创建 `MEMBER` 邀请；只有所有者可以调整家庭成员角色。邀请 Token 仅在创建响应中显示一次，请通过受信任方式转交。
 - 第一阶段的 `demo` 数据升级后会对应 `demo@local.family` 和 `OWNER` 角色；旧用户名仅保留为登录兼容别名。
-- 当前随应用提供的原生 HTML/JavaScript 界面仍是第一阶段界面的渐进增强版本，尚未显示注册、邀请、家庭资料、成员角色和所有权转让入口；这些能力目前通过下方 API 提供，计划在后续 React 前端阶段接入。
+- React 界面已经接入注册、邀请、家庭资料、成员角色、所有权转让、密码修改和家庭安全归档；邀请原文只在创建成功页面显示一次。
 
 ### 第二阶段账本、预算与周期账单
 
@@ -88,7 +106,7 @@ start-local.cmd -Port 8090
 ./mvnw -q -Dtest=StageTwoLedgerSmokeTest test
 ```
 
-详细覆盖范围和平台边界见 `docs/acceptance/stage-2-ledger-checklist.md`。
+详细覆盖范围和平台边界见 `docs/acceptance/stage-2-ledger-checklist.md`，React 工作区验收见 `docs/acceptance/stage-2-frontend-checklist.md`。
 
 第二阶段资产/投资/行情的真实 HTTP、Cookie/CSRF、文件 H2 重启和无 Token 手工价格验收可单独运行：
 
@@ -138,7 +156,8 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `src/main/java/com/familyfinance/market`：日线行情提供者、快照、手工价格与调度刷新。
 - `src/main/java/com/familyfinance/transaction`：收支记录与筛选。
 - `src/main/java/com/familyfinance/reporting`：看板、规则分析、CSV 与投资组合报告。
-- `src/main/resources/static`：原生 HTML、CSS、JavaScript 单页界面。
+- `frontend`：React、TypeScript、Vite、Semi Design 与 TanStack Query 工作区。
+- `target/classes/static`：Maven 生命周期生成并打包的 React 哈希静态资源，不在源码目录手工维护。
 
 ## API 概览
 
@@ -172,6 +191,6 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 
 API 响应通过 `X-Request-ID` 返回请求关联 ID；未预期的服务器异常只向客户端返回通用 500 内容，并在服务端以该 ID 记录堆栈，便于排查而不记录请求体、密码或 CSRF 令牌。
 
-## 当前静态界面不包含
+## 明确不包含
 
-当前原生静态界面已经支持收支的账户选择/筛选和两级分类维护，但没有独立的账户管理、预算、周期账单、贷款、提醒、净资产或债务分析页面，也尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
+密码找回、附件、OCR、银行或支付平台同步、证券下单、盘中实时行情、原生 App、系统推送和 AI 对话不属于第二阶段范围。没有 `TUSHARE_TOKEN` 时外部行情刷新会明确显示不可用，手工价格功能仍可使用；Token 不会进入浏览器界面或存储。
