@@ -743,7 +743,7 @@ for collision in "$scenario/data-backups"/*; do
 done
 stop_process "$first_process_id"
 
-printf '%s\n' 'Gate 9/14: A V7 database is backed up before its pending V10 migrations.'
+printf '%s\n' 'Gate 9/14: A V7 database is backed up before its pending V12 migrations.'
 pending_scenario=$(new_scenario v7-pending-migration)
 new_stage_one_fixture "$pending_scenario"
 migration_fixture "$pending_scenario" migrate-to-7
@@ -756,10 +756,10 @@ pending_marker=$pending_scenario/launched
 [ -f "$pending_marker" ] || fail 'The V7 pending-migration scenario did not reach application launch.'
 assert_equal 1 "$(count_completed_backups "$pending_scenario/data-backups")" \
     'The V7 pending-migration database did not receive exactly one verified backup.'
-grep -F 'behind repository migration V10' "$pending_scenario/pending.log" >/dev/null ||
+grep -F 'behind repository migration V12' "$pending_scenario/pending.log" >/dev/null ||
     fail 'The V7 pending-migration branch was not reported explicitly.'
 
-printf '%s\n' 'Gate 10/14: Current V10 skips migration backup.'
+printf '%s\n' 'Gate 10/14: Current V12 skips migration backup.'
 scenario=$backup_restore_scenario
 completed_before_restart=$(count_completed_backups "$scenario/data-backups")
 restart_port=$(get_free_port)
@@ -770,8 +770,8 @@ wait_for_ready "$restart_port" "$restart_process_id" "$restart_log"
 stop_process "$restart_process_id"
 assert_equal "$completed_before_restart" "$(count_completed_backups "$scenario/data-backups")" 'Already-migrated restart created another backup.'
 assert_equal 0 "$(count_partial_backups "$scenario/data-backups")" 'Already-migrated restart left a partial directory.'
-grep -F 'is current at repository migration V10; no migration backup is required' "$restart_log" >/dev/null ||
-    fail 'Current V10 restart did not take the explicit skip branch.'
+grep -F 'is current at repository migration V12; no migration backup is required' "$restart_log" >/dev/null ||
+    fail 'Current V12 restart did not take the explicit skip branch.'
 
 printf '%s\n' 'Gate 11/14: Restored legacy backup preserves login plus 12 rows.'
 mkdir "$scenario/migrated-before-restore"
@@ -829,7 +829,7 @@ assert_equal 0 "$(count_partial_backups "$failed_scenario/data-backups")" \
 
 printf '%s\n' 'Gate 13/14: Future and ambiguous histories back up, refuse launch, and remain unchanged.'
 run_refused_history_state FUTURE make-future-history assert-future-history \
-    'migration newer than repository V10'
+    'migration newer than repository V12'
 run_refused_history_state AMBIGUOUS make-ambiguous-history assert-ambiguous-history \
     'Flyway history is ambiguous'
 

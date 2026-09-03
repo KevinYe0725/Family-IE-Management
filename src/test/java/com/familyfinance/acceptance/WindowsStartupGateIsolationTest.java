@@ -12,6 +12,14 @@ import org.junit.jupiter.api.Test;
 class WindowsStartupGateIsolationTest {
 
     @Test
+    void startupGatesDoNotHardCodeTheObsoleteV10LatestMigration() throws Exception {
+        assertThat(Files.readString(Path.of("scripts", "unix-startup-gates.sh")))
+                .doesNotContain("V10");
+        assertThat(Files.readString(Path.of("scripts", "windows-startup-gates.ps1")))
+                .doesNotContain("V10");
+    }
+
+    @Test
     void sourceCheckoutIsReferencedOnlyForGitArchiveReads() throws Exception {
         List<String> sourceCheckoutReferences = Files.readAllLines(
                         Path.of("scripts", "windows-startup-gates.ps1"))
