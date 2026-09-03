@@ -189,6 +189,41 @@ class InvestmentTradeApiTest {
     }
 
     @Test
+    void inactiveSharedSecurityReturnsSafeConflictForResolveAndCodeBasedTradeEntry() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        long accountId = createAccount(owner, "停用证券账户");
+        long securityId = resolveSecurity(owner, "000001.SZ", "平安银行");
+        jdbc.update("update securities set active=false where id=?", securityId);
+
+        for (String endpointBody : List.of(
+                "{\"tsCode\":\"000001.sz\",\"name\":\"任意名称\"}",
+                """
+                        {"accountId":%d,"tsCode":"000001.sz","securityName":"任意名称",
+                         "type":"BUY","quantity":"1.0000","price":"1.00","fee":"0.00",
+                         "tradedOn":"2026-01-01"}
+                        """.formatted(accountId))) {
+            boolean resolve = endpointBody.startsWith("{\"tsCode");
+            MvcResult result = mvc.perform(post(resolve ? "/api/securities/resolve" : "/api/investment-trades")
+                            .session(owner).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(endpointBody))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("SECURITY_INACTIVE"))
+                    .andExpect(jsonPath("$.error.message").value("证券当前不可用"))
+                    .andReturn();
+            assertThat(result.getResponse().getContentAsString())
+                    .doesNotContain("平安银行")
+                    .doesNotContain("任意名称")
+                    .doesNotContain("IllegalStateException");
+        }
+        assertThat(jdbc.queryForObject(
+                "select count(*) from securities where ts_code='000001.SZ'", Long.class)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "select active from securities where id=?", Boolean.class, securityId)).isFalse();
+        assertThat(jdbc.queryForObject(
+                "select count(*) from investment_trades where account_id=?", Long.class, accountId)).isZero();
+    }
+
+    @Test
     void tradesCalculatePositionsEnforceHistoryAndExposeStableFilteredPages() throws Exception {
         MockHttpSession owner = login("demo", "demo1234");
         MockHttpSession member = join(owner, uniqueEmail("trade-member"), HouseholdRole.MEMBER);
@@ -257,6 +292,51 @@ class InvestmentTradeApiTest {
                 .andExpect(status().isNoContent());
         assertThat(jdbc.queryForObject("select count(*) from investment_trades where id=?", Long.class, firstBuy))
                 .isZero();
+    }
+
+    @Test
+    void crossAccountAndSecurityMoveRollsBackInvalidTargetThenReplaysBothPositions() throws Exception {
+        MockHttpSession owner = login("demo", "demo1234");
+        long originAccount = createAccount(owner, "原账户");
+        long targetAccount = createAccount(owner, "目标账户");
+        long originSecurity = resolveSecurity(owner, "600000.SH", "浦发银行");
+        long targetSecurity = resolveSecurity(owner, "000001.SZ", "平安银行");
+        long originBuy = createTrade(owner, tradeBody(
+                originAccount, originSecurity, "BUY", "100.0000", "10.00", "0.00", "2026-01-01"));
+        long movedSell = createTrade(owner, tradeBody(
+                originAccount, originSecurity, "SELL", "60.0000", "15.00", "0.00", "2026-01-02"));
+        createTrade(owner, tradeBody(
+                targetAccount, targetSecurity, "BUY", "20.0000", "10.00", "0.00", "2026-01-01"));
+        String before = tradeRow(movedSell);
+
+        mvc.perform(patch("/api/investment-trades/{id}", movedSell).session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountId\":" + targetAccount + ",\"securityId\":" + targetSecurity + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_HOLDING"));
+        assertThat(tradeRow(movedSell)).isEqualTo(before);
+
+        createTrade(owner, tradeBody(
+                targetAccount, targetSecurity, "BUY", "80.0000", "10.00", "0.00", "2026-01-01"));
+
+        mvc.perform(patch("/api/investment-trades/{id}", movedSell).session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountId\":" + targetAccount + ",\"securityId\":" + targetSecurity + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.position.accountId").value(targetAccount))
+                .andExpect(jsonPath("$.data.position.security.id").value(targetSecurity))
+                .andExpect(jsonPath("$.data.position.quantity").value(40.0000))
+                .andExpect(jsonPath("$.data.position.cost").value("400.00"))
+                .andExpect(jsonPath("$.data.trade.createdBy").value(1))
+                .andExpect(jsonPath("$.data.trade.sourceType").value("MANUAL"));
+        mvc.perform(patch("/api/investment-trades/{id}", originBuy).session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.position.accountId").value(originAccount))
+                .andExpect(jsonPath("$.data.position.security.id").value(originSecurity))
+                .andExpect(jsonPath("$.data.position.quantity").value(100.0000))
+                .andExpect(jsonPath("$.data.position.cost").value("1000.00"));
+        assertThat(tradeRow(movedSell)).contains("|1|MANUAL|NULL");
     }
 
     @Test
@@ -368,6 +448,15 @@ class InvestmentTradeApiTest {
 
     private long currentUserId(String email) {
         return jdbc.queryForObject("select id from app_users where email=?", Long.class, email);
+    }
+
+    private String tradeRow(long tradeId) {
+        return jdbc.queryForObject("""
+                select concat(account_id,'|',security_id,'|',trade_type,'|',
+                              coalesce(cast(quantity as varchar),'NULL'),'|',price_cents,'|',fee_cents,'|',
+                              cast(traded_on as varchar),'|',created_by,'|',source_type,'|',coalesce(source_id,'NULL'))
+                from investment_trades where id=?
+                """, String.class, tradeId);
     }
 
     private MockHttpSession join(MockHttpSession owner, String email, HouseholdRole role) throws Exception {

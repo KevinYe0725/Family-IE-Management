@@ -2,6 +2,7 @@ package com.familyfinance.investment;
 
 import com.familyfinance.family.CurrentMembership;
 import com.familyfinance.family.FamilyMutationAuthorization;
+import com.familyfinance.shared.ResourceConflictException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -64,19 +65,20 @@ public class SecurityService {
         String code = normalizeCode(rawCode, fields);
         String name = normalizeName(rawName, fields);
         if (!fields.isEmpty()) return null;
-        Security existing = securities.findByTsCodeAndActiveTrue(code).orElse(null);
-        if (existing != null) return existing;
+        Security existing = securities.findByTsCode(code).orElse(null);
+        if (existing != null) return requireActive(existing);
         String market = code.substring(7);
         try {
             jdbc.update("""
                     insert into securities (market,ts_code,name,security_type,active)
                     values (?,?,?,'STOCK',true)
                     """, market, code, name);
-        } catch (DataIntegrityViolationException ignoredDuplicate) {
-            // A concurrent household may have registered the same shared reference row.
+        } catch (DataIntegrityViolationException exception) {
+            if (!isNaturalKeyDuplicate(exception)) throw exception;
+            // A concurrent household registered the same shared reference row first.
         }
-        return securities.findByTsCodeAndActiveTrue(code)
-                .orElseThrow(() -> new IllegalStateException("证券代码创建后无法读取"));
+        return requireActive(securities.findByTsCode(code)
+                .orElseThrow(() -> new IllegalStateException("证券代码创建后无法读取")));
     }
 
     Security findActive(long id, Map<String, String> fields) {
@@ -99,6 +101,26 @@ public class SecurityService {
         if (value.isEmpty()) fields.put("name", "证券名称不能为空");
         else if (value.length() > 100) fields.put("name", "证券名称长度不能超过 100 个字符");
         return value;
+    }
+
+    private static Security requireActive(Security security) {
+        if (!security.isActive()) {
+            throw new ResourceConflictException("SECURITY_INACTIVE", "证券当前不可用");
+        }
+        return security;
+    }
+
+    private static boolean isNaturalKeyDuplicate(DataIntegrityViolationException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toUpperCase(Locale.ROOT)
+                    .contains("UK_SECURITIES_MARKET_CODE")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     static void throwIfInvalid(Map<String, String> fields) {

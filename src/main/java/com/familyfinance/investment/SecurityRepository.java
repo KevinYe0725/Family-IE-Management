@@ -11,6 +11,8 @@ public interface SecurityRepository extends JpaRepository<Security, Long> {
 
     Optional<Security> findByTsCodeAndActiveTrue(String tsCode);
 
+    Optional<Security> findByTsCode(String tsCode);
+
     Optional<Security> findByIdAndActiveTrue(Long id);
 
     @Query("""
