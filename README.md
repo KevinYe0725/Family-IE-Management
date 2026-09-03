@@ -6,13 +6,19 @@
 
 生产运行环境是 Ubuntu 22.04 + Java 17 + MySQL 8。完整初始化和 systemd 配置见 docs/operations/mysql-server-runbook.md。
 
-服务启动后默认绑定服务器 127.0.0.1:8080，可通过 SSH 隧道访问：
+服务启动后由 Nginx 监听服务器 80 端口并代理到本机 127.0.0.1:8080。请先在阿里云安全组放行入站 TCP 80，然后直接访问：
+
+```text
+http://YOUR_SERVER_IP
+```
+
+如果暂时不开放安全组，也可以使用 SSH 隧道访问：
 
 ~~~bash
 ssh -N -L 18080:127.0.0.1:8080 family-finance-server
 ~~~
 
-然后打开 http://127.0.0.1:18080。首次启动会由 Flyway 初始化 MySQL V1–V12，并写入演示家庭：
+打开对应地址后，首次启动会由 Flyway 初始化 MySQL V1–V12，并写入演示家庭：
 
 - 邮箱：demo@local.family（兼容旧用户名 demo）
 - 密码：demo1234
@@ -95,23 +101,15 @@ npm run dev
 
 完整范围、API/UI 边界见 `docs/acceptance/stage-2-loans-reporting-checklist.md`。
 
-## 安全地重置本地数据
+## 数据库说明
 
-先停止应用，再将整个 `data/` 目录移动到一个带日期的备份目录，例如 `data-backup-2026-09-02/`。确认备份可恢复后，再启动应用；系统会创建全新的演示数据。
+生产环境只使用 MySQL 8。H2 仅用于 Maven 测试，测试配置为随机内存库，不读取或写入服务器生产库。不要在服务器上执行 `mvn clean` 作为数据重置方式；如需重置，请先制作 MySQL 备份并确认恢复方案。
 
-不要在应用运行时删除数据库文件，也不要把重置命令用于其他目录。
+当前服务器已按演示需要开放 MySQL TCP 3306，并创建了仅授权 `family_finance.*` 的 `family_finance_remote` 账号。数据库密码只保存在服务器的 `/etc/family-finance/mysql-remote.env`；正式使用时建议把安全组来源收窄为固定 IP，或恢复为 SSH 隧道访问。
 
-## 第一阶段数据升级备份与恢复
+服务器使用 MySQL 8 的事务和 Flyway 迁移，不再对 H2 文件执行生产迁移检查。H2 迁移历史仍用于测试夹具，生产迁移位置为 `classpath:db/migration-mysql`。
 
-Windows `start-local.cmd` 与 macOS/Linux `./start-local.sh` 会用项目固定的 H2 2.3.232 运行时只读检查非空主库 `data/family-finance.mv.db` 的 Flyway history，并与仓库最新数字迁移版本比较。Windows 通过 Java 17 源码模式运行仓库内的小型 JDBC 检查器，SQL 和本地 `sa`/空密码配置都留在 Java 内部，不跨 PowerShell 原生参数边界，也不生成或提交编译产物。`NO_HISTORY` 或 `BEHIND_CURRENT`（例如 V6 等待 V7）都会在真正启动应用前复制所有 `family-finance.*.db` 跟随文件（包括零字节文件）到 `data-backups/<时间戳>/`；只有 `CURRENT` 跳过迁移备份。macOS/Linux 还会比较检查前后的主库哈希。自动升级仅支持该项目实际使用的 MVStore `.mv.db` 格式。每个文件都采用流式 SHA-256 校验；备份完成目录中的 `RESTORE.txt` 记录文件清单、校验值和恢复提示。`data-backups/` 不会提交到 Git。
-
-备份先写入同名 `.partial` 目录，全部复制、哈希和清单写入成功后才原子发布为完成目录。检查、复制或校验失败时应用不会启动，并会保留 `.partial` 目录供排查。若 history 含失败迁移，脚本会先保存一份校验通过的当前状态备份，再拒绝启动并提示：先修复无效数据，再显式运行 Flyway `repair`，检查备份后重试；启动器绝不会自动 `repair`。未来版本或含糊 history 同样会先备份当前状态，再拒绝启动且保持 history 不变。没有现有主库时不会创建备份。
-
-macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串行化备份。若另一个启动仍在执行，或异常终止留下了无法确认归属的锁，脚本会拒绝启动且不会自行删除该锁；请先确认没有启动或迁移进程仍在运行，再人工检查锁目录和 `.partial` 证据。
-
-如迁移失败或要回退，先停止应用，将当前 `data/` 目录保留到另一个安全位置，再把某个已验证备份目录中的全部数据库文件复制回 `data/`。不要复制 `.partial` 目录；它表示备份未完整完成。恢复后再启动应用并验证可登录和账目数据。
-
-`start-local.cmd -NoBrowser -Smoke` 始终使用 `target/` 中随机的专用数据库，并且不会读取、迁移或备份生产 `data/` 文件。
+MySQL 的备份、恢复和迁移失败处理由服务器运维流程负责；应用启动失败时请先查看 `journalctl -u family-finance`，不要自动执行 `flyway repair`。
 
 ## 结构
 
@@ -165,4 +163,3 @@ API 响应通过 `X-Request-ID` 返回请求关联 ID；未预期的服务器异
 ## 明确不包含
 
 密码找回、附件、OCR、银行或支付平台同步、证券下单、盘中实时行情、原生 App、系统推送和 AI 对话不属于第二阶段范围。没有 `TUSHARE_TOKEN` 时外部行情刷新会明确显示不可用，手工价格功能仍可使用；Token 不会进入浏览器界面或存储。
-
