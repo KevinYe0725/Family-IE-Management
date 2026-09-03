@@ -21,7 +21,7 @@ Make MySQL 8 the only production runtime database and run the Family Finance Spr
 ### Production runtime
 
 1. `spring.datasource` defaults to MySQL 8 using environment-backed values (`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`).
-2. Flyway uses `classpath:db/migration/mysql`, whose V1–V12 scripts are MySQL-compatible equivalents of the current schema history.
+2. Flyway uses `classpath:db/migration-mysql`, whose V1–V12 scripts are MySQL-compatible equivalents of the current schema history. The location is kept outside `db/migration` because Flyway scans classpath subdirectories recursively.
 3. The application uses MySQL Connector/J and Flyway's MySQL database module. JPA remains `ddl-auto=validate`; Hibernate does not create or mutate the schema.
 4. MySQL listens locally on the server. The application is managed by systemd and stores no database credential in source control, logs, or the repository.
 

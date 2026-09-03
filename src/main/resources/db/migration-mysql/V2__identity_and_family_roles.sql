@@ -1,0 +1,62 @@
+alter table app_users add column email varchar(254);
+alter table app_users add column display_name varchar(40);
+alter table app_users add column status varchar(16) default 'ACTIVE' not null;
+alter table households add column status varchar(16) default 'ACTIVE' not null;
+alter table households add column archived_at datetime(6);
+
+update app_users
+set email = case
+        when username = 'demo' then 'demo@local.family'
+        else concat('legacy-', id, '@local.family')
+    end,
+    display_name = case
+        when username = 'demo' then '演示用户'
+        else substring(username, 1, 40)
+    end;
+
+alter table app_users modify column email varchar(254) not null;
+create unique index uk_app_users_email on app_users(email);
+
+create table household_memberships (
+    id bigint auto_increment primary key,
+    household_id bigint not null,
+    user_id bigint not null,
+    role varchar(16) not null,
+    status varchar(16) not null,
+    joined_at datetime(6) not null,
+    constraint uk_membership_household_user unique (household_id, user_id),
+    constraint fk_membership_household foreign key(household_id) references households(id),
+    constraint fk_membership_user foreign key(user_id) references app_users(id)
+);
+
+alter table family_members add column linked_user_id bigint;
+alter table family_members add constraint fk_family_members_linked_user
+    foreign key (linked_user_id) references app_users(id);
+
+insert into household_memberships (household_id, user_id, role, status, joined_at)
+select household_id, id, 'OWNER', 'ACTIVE', created_at
+from app_users
+where username = 'demo';
+
+update family_members
+set linked_user_id = (
+    select id from app_users where username = 'demo'
+)
+where household_id = (select household_id from app_users where username = 'demo')
+  and name = 'Kevin';
+
+create table family_invites (
+    id bigint auto_increment primary key,
+    household_id bigint not null,
+    token_hash varchar(64) not null,
+    role varchar(16) not null,
+    expires_at datetime(6) not null,
+    max_uses integer not null,
+    used_count integer default 0 not null,
+    revoked_at datetime(6),
+    created_by bigint not null,
+    created_at datetime(6) not null,
+    constraint uk_family_invites_token_hash unique (token_hash),
+    constraint fk_family_invites_household foreign key (household_id) references households(id),
+    constraint fk_family_invites_created_by foreign key (created_by) references app_users(id)
+);

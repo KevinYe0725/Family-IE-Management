@@ -7,7 +7,7 @@ import java.time.*;
 
 @Entity @Table(name="loan_prepayments")
 public class LoanPrepayment {
- @Id @GeneratedValue(strategy=GenerationType.SEQUENCE,generator="loan_prepayment_seq") @SequenceGenerator(name="loan_prepayment_seq",sequenceName="loan_prepayment_id_seq",allocationSize=1) private Long id;
+ @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id;
  @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="household_id") private Household household;
  @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="loan_id") private Loan loan;
  @Column(name="request_key",nullable=false) private String requestKey;
