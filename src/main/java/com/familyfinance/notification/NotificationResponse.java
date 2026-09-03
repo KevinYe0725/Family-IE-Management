@@ -1,0 +1,2 @@
+package com.familyfinance.notification;
+public record NotificationResponse(long id,NotificationType type,String title,String body,String referenceType,long referenceId,java.time.Instant dueAt,java.time.Instant readAt,java.time.Instant resolvedAt,Long userId){static NotificationResponse from(Notification n){return new NotificationResponse(n.getId(),n.getType(),n.getTitle(),n.getBody(),n.getReferenceType(),n.getReferenceId(),n.getDueAt(),n.getReadAt(),n.getResolvedAt(),n.getUser()==null?null:n.getUser().getId());}}

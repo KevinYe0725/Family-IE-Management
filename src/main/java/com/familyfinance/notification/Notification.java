@@ -1,0 +1,9 @@
+package com.familyfinance.notification;
+import com.familyfinance.household.*;
+import jakarta.persistence.*;
+import java.time.*;
+@Entity @Table(name="notifications") public class Notification {
+ @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="household_id") private Household household; @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="user_id") private AppUser user; @Enumerated(EnumType.STRING) @Column(nullable=false) private NotificationType type; @Column(nullable=false) private String title; private String body; @Column(name="reference_type",nullable=false) private String referenceType; @Column(name="reference_id",nullable=false) private long referenceId; @Column(name="due_at") private Instant dueAt; @Column(name="read_at") private Instant readAt; @Column(name="resolved_at") private Instant resolvedAt;
+ protected Notification(){} Notification(Household household,AppUser user,NotificationType type,String title,String body,String referenceType,long referenceId,Instant dueAt){this.household=household;this.user=user;this.type=type;this.title=title;this.body=body;this.referenceType=referenceType;this.referenceId=referenceId;this.dueAt=dueAt;}
+ public Long getId(){return id;} public Household getHousehold(){return household;} public AppUser getUser(){return user;} public NotificationType getType(){return type;} public String getTitle(){return title;} public String getBody(){return body;} public String getReferenceType(){return referenceType;} public long getReferenceId(){return referenceId;} public Instant getDueAt(){return dueAt;} public Instant getReadAt(){return readAt;} public Instant getResolvedAt(){return resolvedAt;} void read(Instant at){if(readAt==null)readAt=at;} void resolve(Instant at){if(resolvedAt==null)resolvedAt=at;}
+}

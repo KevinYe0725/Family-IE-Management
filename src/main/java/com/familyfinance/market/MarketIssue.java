@@ -1,0 +1,5 @@
+package com.familyfinance.market;
+import com.familyfinance.household.Household;
+import jakarta.persistence.*;
+import java.time.*;
+@Entity @Table(name="market_issues") public class MarketIssue { @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="household_id") private Household household; @Column(name="error_code",nullable=false) private String errorCode; @Column(nullable=false) private boolean active=true; @Column(name="occurred_at",nullable=false) private Instant occurredAt; @Column(name="resolved_at") private Instant resolvedAt; protected MarketIssue(){} MarketIssue(Household h,String code,Instant now){household=h;errorCode=code;occurredAt=now;} public Long getId(){return id;} public boolean isActive(){return active;} public String getErrorCode(){return errorCode;} public Household getHousehold(){return household;} void reopen(Instant now){active=true;occurredAt=now;resolvedAt=null;} void resolve(Instant now){active=false;resolvedAt=now;} }

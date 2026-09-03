@@ -133,6 +133,27 @@ public class FinancialTransaction {
         return transaction;
     }
 
+    public static FinancialTransaction loanPayment(
+            Household household, FinancialAccount account, AppUser createdByUser, FamilyMember member,
+            Category category, long amountCents, LocalDate occurredOn, Long sourceId, Instant createdAt) {
+        FinancialTransaction transaction = new FinancialTransaction(
+                household, account, createdByUser, member, category, TransactionKind.EXPENSE, amountCents,
+                occurredOn, null, null, "贷款还款", createdAt, createdAt);
+        transaction.sourceType = TransactionSourceType.LOAN_PAYMENT;
+        transaction.sourceId = Objects.requireNonNull(sourceId, "sourceId must not be null");
+        return transaction;
+    }
+
+    public static FinancialTransaction loanPrepayment(
+            Household household, FinancialAccount account, AppUser createdByUser, FamilyMember member,
+            Category category, long amountCents, LocalDate occurredOn, Long sourceId, Instant createdAt) {
+        FinancialTransaction transaction = loanPayment(
+                household, account, createdByUser, member, category, amountCents, occurredOn, sourceId, createdAt);
+        transaction.sourceType = TransactionSourceType.LOAN_PREPAYMENT;
+        transaction.note = "贷款提前还款";
+        return transaction;
+    }
+
     public Long getId() {
         return id;
     }

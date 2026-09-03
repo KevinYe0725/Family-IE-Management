@@ -46,6 +46,7 @@ public class QuoteRefreshService {
     private final Clock clock;
     private final MarketSleeper sleeper;
     private final HouseholdRepository households;
+    private final MarketIssueService marketIssues;
     private final ConcurrentHashMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, CompletableFuture<MarketRefreshResponse>> inFlight = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, Instant> lastManualRefresh = new ConcurrentHashMap<>();
@@ -54,7 +55,7 @@ public class QuoteRefreshService {
             SecurityRepository securities, MarketPriceSnapshotRepository snapshots,
             ManualPriceOverrideRepository overrides, CurrentMembership currentMembership,
             FamilyMutationAuthorization authorization, Clock clock, MarketSleeper sleeper) {
-        this(provider, trades, securities, snapshots, overrides, currentMembership, authorization, clock, sleeper, null);
+        this(provider, trades, securities, snapshots, overrides, currentMembership, authorization, clock, sleeper, null, null);
     }
 
     @Autowired
@@ -62,10 +63,19 @@ public class QuoteRefreshService {
             SecurityRepository securities, MarketPriceSnapshotRepository snapshots,
             ManualPriceOverrideRepository overrides, CurrentMembership currentMembership,
             FamilyMutationAuthorization authorization, Clock clock, MarketSleeper sleeper,
-            HouseholdRepository households) {
+            HouseholdRepository households, MarketIssueService marketIssues) {
         this.provider = provider; this.trades = trades; this.securities = securities; this.snapshots = snapshots;
         this.overrides = overrides; this.currentMembership = currentMembership; this.authorization = authorization;
         this.clock = clock; this.sleeper = sleeper; this.households = households;
+        this.marketIssues = marketIssues;
+    }
+
+    public QuoteRefreshService(MarketQuoteProvider provider, InvestmentTradeRepository trades,
+            SecurityRepository securities, MarketPriceSnapshotRepository snapshots,
+            ManualPriceOverrideRepository overrides, CurrentMembership currentMembership,
+            FamilyMutationAuthorization authorization, Clock clock, MarketSleeper sleeper,
+            HouseholdRepository households) {
+        this(provider, trades, securities, snapshots, overrides, currentMembership, authorization, clock, sleeper, households, null);
     }
 
     @Transactional
@@ -96,11 +106,13 @@ public class QuoteRefreshService {
                 response = new MarketRefreshResponse("READY", saved, null, prices(householdId, held));
             }
             }
+            if (marketIssues != null) marketIssues.clear(householdId);
             ownFlight.complete(response);
             return response;
         } catch (MarketProviderException exception) {
             MarketRefreshResponse response = new MarketRefreshResponse(
                     "ERROR", 0, exception.code(), prices(householdId, heldSecurities(householdId)));
+            if (marketIssues != null) marketIssues.record(householdId, exception.code());
             ownFlight.complete(response);
             return response;
         } catch (RuntimeException exception) {

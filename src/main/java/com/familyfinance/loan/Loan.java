@@ -55,4 +55,12 @@ public class Loan {
         this.principalCents=principal; this.currentPrincipalCents=principal; this.annualRate=rate; this.termMonths=term; this.repaymentMethod=method; this.startOn=start; replaceSchedule(schedule);
     }
     void archive(Instant at) { if (status == LoanStatus.ACTIVE) { status=LoanStatus.ARCHIVED; archivedAt=at; } }
+    void applyPrincipalPayment(long amount, Instant at) {
+        if (amount <= 0 || amount > currentPrincipalCents) throw new IllegalArgumentException("invalid principal payment");
+        currentPrincipalCents -= amount;
+        if (currentPrincipalCents == 0) { status = LoanStatus.CLOSED; archivedAt = at; }
+    }
+    void cancelPendingInstallments() { installments.forEach(LoanInstallment::cancel); }
+    void appendSchedule(List<InstallmentDraft> drafts) { drafts.forEach(d -> installments.add(new LoanInstallment(this, d))); }
+    int nextInstallmentNo() { return installments.stream().mapToInt(LoanInstallment::getInstallmentNo).max().orElse(0) + 1; }
 }

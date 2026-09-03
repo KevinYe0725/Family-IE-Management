@@ -17,6 +17,7 @@ public interface RecurringOccurrenceRepository
         extends JpaRepository<RecurringOccurrence, Long>, JpaSpecificationExecutor<RecurringOccurrence> {
     boolean existsByRuleIdAndDueOn(Long ruleId, LocalDate dueOn);
     List<RecurringOccurrence> findByRuleIdOrderByDueOnAscIdAsc(Long ruleId);
+    List<RecurringOccurrence> findByHouseholdIdAndStatusAndDueOnLessThanEqualOrderByDueOnAscIdAsc(Long householdId, RecurringOccurrenceStatus status, LocalDate dueOn);
 
     @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query("""

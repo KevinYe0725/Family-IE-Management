@@ -13,6 +13,7 @@ public interface FamilyMemberRepository extends JpaRepository<FamilyMember, Long
     List<FamilyMember> findByHouseholdIdOrderById(Long householdId);
 
     Optional<FamilyMember> findByIdAndHouseholdId(Long id, Long householdId);
+    Optional<FamilyMember> findFirstByHouseholdIdAndLinkedUserId(Long householdId, Long linkedUserId);
 
     @Query(value = """
             select count(*) from (
