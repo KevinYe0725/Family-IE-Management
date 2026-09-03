@@ -50,7 +50,7 @@ export function LoginPage() {
       description="进入你的家庭空间，继续共同整理每一笔生活账目。"
       footer={<>还没有家庭空间？ <Link to="/register">创建或加入家庭</Link></>}
     >
-      {(notice || error) && <div className="form-alert" role="alert">{notice || error}</div>}
+      {(error || notice) && <div className="form-alert" role="alert">{error || notice}</div>}
       <form className="auth-form" onSubmit={submit} noValidate>
         <label htmlFor="login-email">邮箱</label>
         <Input id="login-email" value={email} onChange={setEmail} autoComplete="email" placeholder="name@example.com" />

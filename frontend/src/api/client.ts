@@ -129,7 +129,11 @@ export function createApiClient({
         fields: failure?.fields,
         requestId: requestIdFrom(response)
       });
-      if (response.status === 401 && handleUnauthorized) {
+      // Login credential failures also use HTTP 401, but they do not mean that
+      // an existing browser session expired. Keep the server's actionable
+      // LOGIN_FAILED response on the login form instead of redirecting the
+      // user into the session-expired flow.
+      if (response.status === 401 && handleUnauthorized && failure?.code !== 'LOGIN_FAILED') {
         error.sessionExpired = true;
         if (!expiryHandled) {
           expiryHandled = true;

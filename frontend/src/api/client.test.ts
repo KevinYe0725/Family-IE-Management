@@ -53,6 +53,30 @@ it('announces concurrent session expiry once and invalidates pending work', asyn
   expect((results[0] as PromiseRejectedResult).reason).toMatchObject({ status: 401, sessionExpired: true });
 });
 
+it('keeps credential failures separate from session expiry', async () => {
+  const onSessionExpired = vi.fn();
+  const client = createApiClient({
+    fetchImpl: vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/csrf') {
+        return jsonResponse(200, { data: { headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'login-token' } });
+      }
+      return jsonResponse(401, { error: { code: 'LOGIN_FAILED', message: '用户名或密码错误' } });
+    }),
+    onSessionExpired
+  });
+
+  await expect(client.api('/api/auth/login', {
+    method: 'POST',
+    body: new URLSearchParams({ username: 'missing@example.com', password: 'wrong-password' })
+  })).rejects.toMatchObject({
+    status: 401,
+    code: 'LOGIN_FAILED',
+    message: '用户名或密码错误',
+    sessionExpired: false
+  });
+  expect(onSessionExpired).not.toHaveBeenCalled();
+});
+
 it('preserves server field errors and request id for an actionable message', async () => {
   const client = createApiClient({
     fetchImpl: vi.fn(async () => jsonResponse(

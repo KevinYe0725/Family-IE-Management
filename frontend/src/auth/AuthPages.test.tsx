@@ -126,6 +126,22 @@ it('submits login using the backend form contract', async () => {
   await waitFor(() => expect(login).toHaveBeenCalledWith('demo@local.family', 'demo1234'));
 });
 
+it('shows a login failure instead of a stale session-expired notice', async () => {
+  const login = vi.fn().mockRejectedValue(new ApiError('账号或密码不正确', {
+    status: 401,
+    code: 'LOGIN_FAILED'
+  }));
+  const user = userEvent.setup();
+  renderWithAuth(<LoginPage />, authValue({ login, notice: '登录会话已过期，请重新登录。' }));
+
+  await user.type(screen.getByLabelText('邮箱'), 'missing@example.com');
+  await user.type(screen.getByLabelText('密码'), 'wrong-password');
+  await user.click(screen.getByRole('button', { name: '登录' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('账号或密码不正确');
+  expect(screen.getByRole('alert')).not.toHaveTextContent('登录会话已过期');
+});
+
 it('changes password without retaining either password in browser storage', async () => {
   const changePassword = vi.fn().mockResolvedValue(undefined);
   const user = userEvent.setup();
