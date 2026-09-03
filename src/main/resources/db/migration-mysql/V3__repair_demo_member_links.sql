@@ -38,10 +38,13 @@ set linked_user_id = (
     where username = 'demo'
 )
 where id = (
-    select min(family_members.id)
-    from family_members
-    join app_users on app_users.household_id = family_members.household_id
-    where app_users.username = 'demo'
+    select chosen.profile_id
+    from (
+        select min(family_members.id) as profile_id
+        from family_members
+        join app_users on app_users.household_id = family_members.household_id
+        where app_users.username = 'demo'
+    ) chosen
 );
 
 -- One login account maps to at most one profile inside a household. H2's
