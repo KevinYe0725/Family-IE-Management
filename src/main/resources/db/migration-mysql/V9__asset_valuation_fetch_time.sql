@@ -6,6 +6,7 @@ where fetched_at is null;
 
 alter table asset_valuations modify column fetched_at datetime(6) not null;
 
+create index ix_asset_valuations_household on asset_valuations (household_id);
 alter table asset_valuations drop index ix_asset_valuations_household_asset_date;
 
 create index ix_asset_valuations_asset_latest
