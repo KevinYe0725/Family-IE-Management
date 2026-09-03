@@ -63,6 +63,13 @@ start-local.cmd -Port 8090
 - 周期规则支持月度和周度计划。到期时先生成待确认项，分配用户确认后才创建一笔真实收支；重复确认返回同一笔收支，不会重复记账。
 - `StageTwoLedgerSmokeTest` 使用真实随机端口、HTTP Cookie/CSRF 和临时文件型 H2，完成一次创建、生成、确认和预算核对，完全关闭应用后再以同一数据库重启并核对持久化状态与 Flyway V1–V7。
 
+### 第二阶段资产、A 股投资与日线行情
+
+- 资产只覆盖房产、车辆和其他资产；现金、银行卡和钱包仍以账本账户为准，避免重复计算。资产支持当前价值与不可变估值历史（当天手工估值可更正）。
+- 家庭所有者或管理员可维护 CNY 投资账户、登记本地 A 股证券（仅 `######.SH`、`######.SZ`、`######.BJ`）、记录 BUY/SELL/DIVIDEND/FEE 历史。持仓、成本和收益始终由历史交易推导，不能直接写入。
+- 行情仅使用收盘日线；工作日上海时间 16:30 刷新，也可手动刷新。有效价格优先选择当天/最近的手工价格，否则使用最后一次已验证的日线快照；响应会显示来源、日期、抓取时间和陈旧状态。
+- 默认可在没有行情 Token 的情况下正常启动和使用。此时刷新返回 `MARKET_DISABLED`，手工价格仍可用于组合估值。若要启用 Tushare，请由使用者在自己的启动环境中填写 `TUSHARE_TOKEN`；它绝不应写入仓库、测试、日志或 H2 数据库。
+
 ## 测试
 
 ```bash
@@ -76,6 +83,14 @@ start-local.cmd -Port 8090
 ```
 
 详细覆盖范围和平台边界见 `docs/acceptance/stage-2-ledger-checklist.md`。
+
+第二阶段资产/投资/行情的真实 HTTP、Cookie/CSRF、文件 H2 重启和无 Token 手工价格验收可单独运行：
+
+```bash
+./mvnw -q -Dtest=StageTwoAssetInvestmentSmokeTest test
+```
+
+该测试只使用测试上下文中的本地行情提供者；不访问 Tushare，也不需要或读取真实 Token。完整范围与手工演示边界见 `docs/acceptance/stage-2-assets-investments-checklist.md`。
 
 ## 安全地重置本地数据
 
@@ -104,8 +119,11 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `src/main/java/com/familyfinance/category`：收入和支出分类。
 - `src/main/java/com/familyfinance/ledger`：家庭账户与周期账单。
 - `src/main/java/com/familyfinance/budget`：月度预算、修订历史与实时使用额。
+- `src/main/java/com/familyfinance/asset`：房产、车辆、其他资产与估值历史。
+- `src/main/java/com/familyfinance/investment`：投资账户、A 股证券、交易与推导持仓。
+- `src/main/java/com/familyfinance/market`：日线行情提供者、快照、手工价格与调度刷新。
 - `src/main/java/com/familyfinance/transaction`：收支记录与筛选。
-- `src/main/java/com/familyfinance/reporting`：看板、规则分析与 CSV。
+- `src/main/java/com/familyfinance/reporting`：看板、规则分析、CSV 与投资组合报告。
 - `src/main/resources/static`：原生 HTML、CSS、JavaScript 单页界面。
 
 ## API 概览
@@ -124,6 +142,12 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `GET /api/budgets/{id}/revisions`、`GET /api/budgets/usage?periodMonth=YYYY-MM`
 - `GET|POST /api/recurring-rules`、`PATCH|DELETE /api/recurring-rules/{id}`
 - `GET /api/recurring-occurrences`、`POST /api/recurring-occurrences/{id}/confirm`
+- `GET|POST /api/assets`、`GET|PATCH|DELETE /api/assets/{id}`、`GET|POST /api/assets/{id}/valuations`
+- `GET|POST /api/investment-accounts`、`GET|PATCH|DELETE /api/investment-accounts/{id}`
+- `GET /api/securities/search?q=`、`POST /api/securities/resolve`
+- `GET|POST /api/investment-trades`、`GET|PATCH|DELETE /api/investment-trades/{id}`
+- `GET /api/market-quotes`、`POST /api/market-quotes/refresh`、`POST /api/securities/{id}/manual-price`
+- `GET /api/portfolio`
 - `GET /api/dashboard?month=YYYY-MM`、`GET /api/analysis?month=YYYY-MM`
 - `GET /api/export.csv`（接受收支列表的筛选参数）
 
