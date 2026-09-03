@@ -79,7 +79,7 @@ Replace the H2 datasource and Flyway location in src/main/resources/application.
   flyway:
     baseline-on-migrate: true
     baseline-version: 1
-    locations: classpath:db/migration/mysql
+    locations: classpath:db/migration-mysql
 ~~~
 
 Keep ddl-auto=validate, open-in-view=false, and the current server binding.
@@ -133,7 +133,7 @@ git commit -m "feat: configure MySQL production runtime"
 - [ ] **Step 1: Create the MySQL migration directory and one file per existing version**
 
 ~~~bash
-mkdir -p src/main/resources/db/migration/mysql
+mkdir -p src/main/resources/db/migration-mysql
 ~~~
 
 Keep the version numbers and filenames unchanged.
@@ -168,7 +168,7 @@ Preserve all unique constraints and indexes that depend on these columns.
 
 - [ ] **Step 4: Preserve MySQL 8 constraint semantics**
 
-Keep all check constraints, foreign keys, unique keys, and indexes. Replace only H2-only expression syntax; retain current semantics for regexp_like, concat, substring, and trimmed-length checks.
+Keep all check constraints, foreign keys, unique keys, and indexes except the category self-parent CHECK, which MySQL rejects because it references an AUTO_INCREMENT column and is already enforced by the service. Replace only other H2-only expression syntax; retain current semantics for regexp_like, concat, substring, and trimmed-length checks.
 
 - [ ] **Step 5: Validate the migration source before server execution**
 

@@ -45,6 +45,7 @@ Make MySQL 8 the only production runtime database and run the Family Finance Spr
 - `timestamp with time zone` becomes `datetime(6)` so Java `Instant` values retain microsecond precision under MySQL/Hibernate.
 - Generated columns are expressed with MySQL's typed `generated always as (...) stored` form.
 - Existing constraints, indexes, unique keys, foreign keys, and check expressions are preserved unless MySQL requires an equivalent syntax.
+- MySQL rejects CHECK expressions that reference AUTO_INCREMENT columns, so the category self-parent check is enforced by the service layer rather than duplicated in MySQL DDL; all other relationship constraints remain database-enforced.
 - Migration versions remain V1 through V12 so Flyway history is easy to inspect on the fresh database.
 
 ## Data and cutover boundary
