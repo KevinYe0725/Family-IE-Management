@@ -32,7 +32,7 @@ SQL
 install -d -m 700 /etc/family-finance
 umask 077
 cat > /etc/family-finance/family-finance.env <<ENV
-SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/family_finance?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/family_finance?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true
 SPRING_DATASOURCE_USERNAME=family_finance
 SPRING_DATASOURCE_PASSWORD=${db_password}
 ENV
@@ -99,4 +99,3 @@ ssh -N -L 18080:127.0.0.1:8080 family-finance-server
 ~~~
 
 浏览器打开 http://127.0.0.1:18080。当前应用不直接暴露 MySQL 3306 或 Spring Boot 8080 到公网。
-
