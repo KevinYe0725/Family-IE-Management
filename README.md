@@ -70,6 +70,12 @@ start-local.cmd -Port 8090
 - 行情仅使用收盘日线；工作日上海时间 16:30 刷新，也可手动刷新。有效价格优先选择当天/最近的手工价格，否则使用最后一次已验证的日线快照；响应会显示来源、日期、抓取时间和陈旧状态。
 - 默认可在没有行情 Token 的情况下正常启动和使用。此时刷新返回 `MARKET_DISABLED`，手工价格仍可用于组合估值。若要启用 Tushare，请由使用者在自己的启动环境中填写 `TUSHARE_TOKEN`；它绝不应写入仓库、测试、日志或 H2 数据库。
 
+### 第二阶段贷款、提醒与家庭财务汇总
+
+- 贷款提供持久化还款计划、到期确认和幂等确认流水；确认会一次性降低剩余本金并关联真实支出流水。提醒中心汇集贷款到期、预算阈值和资产估值过期等派生提醒。
+- `GET /api/net-worth` 仅汇总活跃现金账户余额、活跃非现金资产、已有有效价格的投资市值和活跃贷款本金，避免跨模块重复计算；响应同时给出资产配置、预算、投资价格来源/手工/陈旧/缺失状态，以及最近 24 个日快照。
+- `GET /api/debt-analysis` 提供当前负债、负债率和每笔活跃贷款的已还比例。每天上海时间 23:50 生成同一家庭/日期幂等更新的净资产快照。
+
 ## 测试
 
 ```bash
@@ -91,6 +97,14 @@ start-local.cmd -Port 8090
 ```
 
 该测试只使用测试上下文中的本地行情提供者；不访问 Tushare，也不需要或读取真实 Token。完整范围与手工演示边界见 `docs/acceptance/stage-2-assets-investments-checklist.md`。
+
+第二阶段贷款、提醒和汇总的真实 HTTP、文件 H2 重启与同日快照幂等验收可单独运行：
+
+```bash
+./mvnw -q -Dtest=StageTwoLoanReportingSmokeTest test
+```
+
+完整范围、API/UI 边界见 `docs/acceptance/stage-2-loans-reporting-checklist.md`。
 
 ## 安全地重置本地数据
 
@@ -148,6 +162,9 @@ macOS/Linux 启动脚本会使用 `data-backups/.family-finance-backup.lock` 串
 - `GET|POST /api/investment-trades`、`GET|PATCH|DELETE /api/investment-trades/{id}`
 - `GET /api/market-quotes`、`POST /api/market-quotes/refresh`、`POST /api/securities/{id}/manual-price`
 - `GET /api/portfolio`
+- `GET|POST /api/loans`、`GET /api/loans/{id}/schedule`、`POST /api/loan-installments/{id}/confirm`、`POST /api/loans/{id}/prepay`
+- `GET /api/notifications`、`POST /api/notifications/{id}/read`、`POST /api/notifications/{id}/resolve`
+- `GET /api/net-worth`、`GET /api/debt-analysis`
 - `GET /api/dashboard?month=YYYY-MM`、`GET /api/analysis?month=YYYY-MM`
 - `GET /api/export.csv`（接受收支列表的筛选参数）
 
@@ -157,4 +174,4 @@ API 响应通过 `X-Request-ID` 返回请求关联 ID；未预期的服务器异
 
 ## 当前静态界面不包含
 
-当前原生静态界面已经支持收支的账户选择/筛选和两级分类维护，但没有独立的账户管理、预算管理或周期账单页面，也尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
+当前原生静态界面已经支持收支的账户选择/筛选和两级分类维护，但没有独立的账户管理、预算、周期账单、贷款、提醒、净资产或债务分析页面，也尚未接入已完成的注册、密码修改、家庭邀请、成员角色与所有权转让 API；这些入口将在后续 React 计划中实现。密码找回、附件、OCR、银行或支付平台同步、投资/行情、原生 App、推送通知和 AI 对话也不属于当前界面范围。
