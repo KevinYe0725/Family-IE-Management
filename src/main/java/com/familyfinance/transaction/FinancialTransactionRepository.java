@@ -37,7 +37,7 @@ public interface FinancialTransactionRepository
             Sort sort);
 
     @Query(value = """
-            select cast(coalesce(sum(cast(transaction_row.amount_cents as numeric(38))), 0) as varchar)
+            select concat(coalesce(sum(cast(transaction_row.amount_cents as decimal(38,0))), 0), '')
             from financial_transactions transaction_row
             left join categories category_row
               on category_row.id = transaction_row.category_id

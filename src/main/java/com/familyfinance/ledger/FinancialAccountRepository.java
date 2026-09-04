@@ -37,9 +37,9 @@ public interface FinancialAccountRepository extends JpaRepository<FinancialAccou
 
     @Query(value = """
             select account_row.id as accountId,
-                   cast(account_row.opening_balance_cents + coalesce(sum(
-                       case when transaction_row.kind = 'INCOME' then cast(transaction_row.amount_cents as numeric(38))
-                            else -cast(transaction_row.amount_cents as numeric(38)) end), 0) as varchar) as balanceCents
+                   concat(account_row.opening_balance_cents + coalesce(sum(
+                       case when transaction_row.kind = 'INCOME' then cast(transaction_row.amount_cents as decimal(38,0))
+                            else -cast(transaction_row.amount_cents as decimal(38,0)) end), 0), '') as balanceCents
             from financial_accounts account_row
             left join financial_transactions transaction_row
               on transaction_row.account_id = account_row.id
