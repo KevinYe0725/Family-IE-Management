@@ -18,7 +18,7 @@ http://YOUR_SERVER_IP
 ssh -N -L 18080:127.0.0.1:8080 family-finance-server
 ~~~
 
-打开对应地址后，首次启动会由 Flyway 初始化 MySQL V1–V12，并写入演示家庭：
+打开对应地址后，首次启动会由 Flyway 初始化 MySQL V1–V13，并写入演示家庭：
 
 - 邮箱：demo@local.family（兼容旧用户名 demo）
 - 密码：demo1234

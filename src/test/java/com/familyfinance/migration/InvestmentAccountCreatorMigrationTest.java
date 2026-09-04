@@ -22,7 +22,7 @@ class InvestmentAccountCreatorMigrationTest {
 
         MigrationResult migrated = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(migrated.version()).isEqualTo("12");
+        assertThat(migrated.version()).isEqualTo("13");
         assertThat(migrated.queryLong("select created_by from investment_accounts where id=910"))
                 .isEqualTo(1L);
         assertThat(migrated.queryLong("""

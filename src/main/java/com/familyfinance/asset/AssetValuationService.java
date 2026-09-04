@@ -3,6 +3,7 @@ package com.familyfinance.asset;
 import com.familyfinance.family.CurrentMembership;
 import com.familyfinance.family.FamilyMutationAuthorization;
 import com.familyfinance.shared.ResourceConflictException;
+import com.familyfinance.notification.NotificationService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -28,6 +29,7 @@ public class AssetValuationService {
     private final AssetService assetService;
     private final CurrentMembership currentMembership;
     private final FamilyMutationAuthorization mutationAuthorization;
+    private final NotificationService notifications;
     private final Clock clock;
 
     public AssetValuationService(
@@ -36,12 +38,14 @@ public class AssetValuationService {
             AssetService assetService,
             CurrentMembership currentMembership,
             FamilyMutationAuthorization mutationAuthorization,
+            NotificationService notifications,
             Clock clock) {
         this.assets = assets;
         this.valuations = valuations;
         this.assetService = assetService;
         this.currentMembership = currentMembership;
         this.mutationAuthorization = mutationAuthorization;
+        this.notifications = notifications;
         this.clock = clock;
     }
 
@@ -110,6 +114,7 @@ public class AssetValuationService {
                         "VALUATION_PROJECTION_CONFLICT", "资产当前价值更新失败，请重试");
             }
         }
+        notifications.generateForHousehold(access.household());
         return AssetValuationResponse.from(valuation);
     }
 

@@ -102,7 +102,7 @@ class StageTwoLoanReportingSmokeTest {
             assertThat(notifications).contains("BUDGET_LIMIT", "ASSET_VALUATION_STALE");
             first.context().getBean(NetWorthSnapshotService.class).generate(householdId, TODAY);
             first.context().getBean(NetWorthSnapshotService.class).generate(householdId, TODAY);
-            assertThat(owner.data(owner.get("/api/net-worth")).path("history")).hasSize(1);
+            assertThat(owner.data(owner.get("/api/net-worth")).path("history")).hasSize(2);
             state = new State(loanId, installmentId, transactionId);
         }
 
@@ -112,7 +112,7 @@ class StageTwoLoanReportingSmokeTest {
             assertThat(owner.data(owner.get("/api/loans/" + state.loanId())).path("currentPrincipal").asString()).isEqualTo("0.00");
             assertThat(owner.data(owner.get("/api/loans/" + state.loanId() + "/schedule")).get(0)
                     .path("confirmedTransactionId").asLong()).isEqualTo(state.transactionId());
-            assertThat(owner.data(owner.get("/api/net-worth")).path("history")).hasSize(1);
+            assertThat(owner.data(owner.get("/api/net-worth")).path("history")).hasSize(2);
             assertThat(owner.data(owner.get("/api/notifications")).path("items").toString()).contains("BUDGET_LIMIT");
         }
     }

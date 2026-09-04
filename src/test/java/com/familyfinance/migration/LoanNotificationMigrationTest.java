@@ -13,7 +13,7 @@ class LoanNotificationMigrationTest {
     @Test
     void v11AddsHouseholdScopedLoanReminderAndSnapshotSchema() {
         MigrationResult migrated = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh-v11"));
-        assertThat(migrated.version()).isEqualTo("12");
+        assertThat(migrated.version()).isEqualTo("13");
         assertThat(migrated.tables()).contains("LOANS", "LOAN_INSTALLMENTS", "NOTIFICATIONS", "NET_WORTH_SNAPSHOTS");
         assertThat(migrated.queryLong("""
                 select count(*) from information_schema.table_constraints

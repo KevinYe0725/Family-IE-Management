@@ -11,7 +11,7 @@ Make MySQL 8 the only production runtime database and run the Family Finance Spr
 ## Current evidence
 
 - The application currently defaults to file-mode H2 in `src/main/resources/application.yml`.
-- Flyway V1–V12 contain H2-oriented syntax, including identity columns, `timestamp with time zone`, and generated columns.
+- Flyway V1–V13 contain H2-oriented syntax, including identity columns, `timestamp with time zone`, and generated columns.
 - The test suite contains many `@SpringBootTest` classes without an explicit profile, while `src/test/resources/application-test.yml` already defines an isolated H2 database.
 - The server is Ubuntu 22.04.5 LTS and currently has Git but no Java, MySQL, or Docker.
 - The server repository checkout is `/root/Family-IE-Management` on `codex/family-finance-stage-2` at commit `111d340`.
@@ -21,7 +21,7 @@ Make MySQL 8 the only production runtime database and run the Family Finance Spr
 ### Production runtime
 
 1. `spring.datasource` defaults to MySQL 8 using environment-backed values (`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`).
-2. Flyway uses `classpath:db/migration-mysql`, whose V1–V12 scripts are MySQL-compatible equivalents of the current schema history. The location is kept outside `db/migration` because Flyway scans classpath subdirectories recursively.
+2. Flyway uses `classpath:db/migration-mysql`, whose V1–V13 scripts are MySQL-compatible equivalents of the current schema history. The location is kept outside `db/migration` because Flyway scans classpath subdirectories recursively.
 3. The application uses MySQL Connector/J and Flyway's MySQL database module. JPA remains `ddl-auto=validate`; Hibernate does not create or mutate the schema.
 4. MySQL listens locally on the server. The application is managed by systemd and stores no database credential in source control, logs, or the repository.
 
@@ -46,7 +46,7 @@ Make MySQL 8 the only production runtime database and run the Family Finance Spr
 - Generated columns are expressed with MySQL's typed `generated always as (...) stored` form.
 - Existing constraints, indexes, unique keys, foreign keys, and check expressions are preserved unless MySQL requires an equivalent syntax.
 - MySQL rejects CHECK expressions that reference AUTO_INCREMENT columns, so the category self-parent check is enforced by the service layer rather than duplicated in MySQL DDL; all other relationship constraints remain database-enforced.
-- Migration versions remain V1 through V12 so Flyway history is easy to inspect on the fresh database.
+- Migration versions remain V1 through V13 so Flyway history is easy to inspect on the fresh database.
 
 ## Data and cutover boundary
 
@@ -55,7 +55,7 @@ The server currently has no application database. The first MySQL startup initia
 ## Acceptance criteria
 
 1. `./mvnw package` passes on the server with tests using H2 and the production configuration compiling with MySQL Connector/J.
-2. MySQL starts, Flyway reaches V12 without validation or migration errors, and the application health endpoint returns HTTP 200.
+2. MySQL starts, Flyway reaches V13 without validation or migration errors, and the application health endpoint returns HTTP 200.
 3. A new user registration creates a user, household, membership, default account, and defaults in MySQL.
 4. After a complete service restart, the new account can log in and its household data remains available.
 5. `git status` is clean; no password, token, generated database file, or environment file is committed.

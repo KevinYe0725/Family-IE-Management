@@ -64,7 +64,9 @@ public class ReportingController {
     @GetMapping("/api/net-worth")
     ApiEnvelope<NetWorthResponse> netWorth(Authentication authentication) {
         long householdId = currentHousehold.id(authentication);
-        NetWorthResult result = netWorthService.calculate(householdId, LocalDate.now(ZoneId.of("Asia/Shanghai")));
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+        snapshots.generate(householdId, today);
+        NetWorthResult result = netWorthService.calculate(householdId, today);
         return ApiEnvelope.data(NetWorthResponse.from(result, snapshots.history(householdId)));
     }
 

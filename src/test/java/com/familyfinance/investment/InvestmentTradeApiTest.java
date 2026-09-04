@@ -355,7 +355,7 @@ class InvestmentTradeApiTest {
                 tradeBody(accountId, securityId, "SELL", "1.0000", "1.00", "0.00", "2026-01-01"),
                 tradeBody(accountId, securityId, "DIVIDEND", "1.0000", "1.00", "0.00", "2026-01-01"),
                 tradeBody(accountId, securityId, "BUY", "1.0000", "1000000000.00", "0.00", "2026-01-01"),
-                tradeBody(accountId, securityId, "BUY", "1.0000", "1.00", "0.00", "2026-09-04"))) {
+                tradeBody(accountId, securityId, "BUY", "1.0000", "1.00", "0.00", "2026-09-05"))) {
             mvc.perform(post("/api/investment-trades").session(owner).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON).content(invalid))
                     .andExpect(result -> assertThat(result.getResponse().getStatus()).isIn(409, 422));

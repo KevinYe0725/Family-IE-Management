@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
-import { LoansPage } from './LoansPage';
+import { LoansPage, formatAnnualRatePercent, loanCreatePayload, type LoanDraft } from './LoansPage';
 import { FamilyPage } from '../family/FamilyPage';
 import type { RequestFn } from '../common';
 
@@ -21,4 +21,37 @@ it('keeps financial management read-only for members and owner controls exclusiv
   render(wrap(<FamilyPage request={request as RequestFn} role="OWNER" householdName="凯文之家" />));
   expect(await screen.findByRole('button', { name: '归档家庭' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '邀请成员' })).toBeInTheDocument();
+});
+
+it('serializes loan form percentages and optional targets for the backend contract', () => {
+  const draft: LoanDraft = {
+    name: '测试房贷',
+    type: 'MORTGAGE',
+    linkedAssetId: '',
+    memberId: '',
+    assignedUserId: '1',
+    paymentAccountId: '2',
+    paymentCategoryId: '3',
+    principal: '100000.00',
+    annualRate: '4.9',
+    termMonths: '360',
+    repaymentMethod: 'EQUAL_PAYMENT',
+    startOn: '2026-09-04',
+    customSchedule: []
+  };
+
+  expect(loanCreatePayload(draft)).toMatchObject({
+    linkedAssetId: null,
+    memberId: null,
+    assignedUserId: 1,
+    paymentAccountId: 2,
+    paymentCategoryId: 3,
+    annualRate: 0.049,
+    termMonths: 360,
+    customSchedule: null
+  });
+});
+
+it('renders the stored fractional annual rate as a user-facing percentage', () => {
+  expect(formatAnnualRatePercent('0.049000')).toBe('4.9');
 });

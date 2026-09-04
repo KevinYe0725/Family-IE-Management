@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AssetsPage } from './AssetsPage';
 import { InvestmentsPage } from '../investment/InvestmentsPage';
+import { securityResolvePayload } from '../investment/InvestmentsPage';
 import type { RequestFn } from '../common';
 
 const wrap = (node: React.ReactNode) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node}</QueryClientProvider>;
@@ -24,4 +25,24 @@ it('shows server asset values and quote provenance without member mutations', as
   await userEvent.click(screen.getByRole('button', { name: '行情' }));
   expect(await screen.findByText('手工价格')).toBeInTheDocument();
   expect(screen.getByText('行情已过期')).toBeInTheDocument();
+});
+
+it('offers security registration when an investment search has no matches', async () => {
+  const request = vi.fn(async (path: string) => {
+    if (path === '/api/portfolio') return { positions: [], totals: { cost: '0.00', marketValue: '0.00', realizedProfit: '0.00', unrealizedProfit: '0.00', totalProfit: '0.00', unpricedPositions: 0 } };
+    if (path.startsWith('/api/investment-accounts')) return { items: [{ id: 1, name: '证券账户', brokerName: '测试券商', currency: 'CNY', status: 'ACTIVE', createdBy: 1, archivedAt: null }] };
+    if (path.startsWith('/api/investment-trades')) return { items: [] };
+    if (path === '/api/market-quotes') return [];
+    if (path.startsWith('/api/securities/search')) return { items: [] };
+    throw new Error(`unexpected ${path}`);
+  });
+  render(wrap(<InvestmentsPage request={request as RequestFn} role="OWNER" />));
+
+  await userEvent.click(await screen.findByRole('button', { name: '记一笔投资' }));
+  expect(await screen.findByRole('button', { name: '登记证券' })).toBeInTheDocument();
+});
+
+it('normalizes a six-digit A-share code with the selected market', () => {
+  expect(securityResolvePayload({ code: ' 000001 ', market: 'SZ', name: '平安银行' }))
+    .toEqual({ tsCode: '000001.SZ', name: '平安银行' });
 });

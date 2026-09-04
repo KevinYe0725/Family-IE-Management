@@ -78,7 +78,7 @@ systemctl status family-finance --no-pager
 journalctl -u family-finance -n 120 --no-pager
 ~~~
 
-正常日志应显示 MySQL 连接成功、Flyway 迁移到 V12、Hibernate schema validation 通过以及 Tomcat 监听 127.0.0.1:8080。
+正常日志应显示 MySQL 连接成功、Flyway 迁移到 V13、Hibernate schema validation 通过以及 Tomcat 监听 127.0.0.1:8080。
 
 ## IP 访问（Nginx）
 

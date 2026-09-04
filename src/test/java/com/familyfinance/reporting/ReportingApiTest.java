@@ -107,6 +107,16 @@ class ReportingApiTest {
                 .andExpect(jsonPath("$.data.totals.marketValue").value("0.00"));
     }
 
+    @Test
+    void netWorthReadEnsuresTodaysSnapshotIsAvailableToTheDashboard() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(get("/api/net-worth").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.history.length()")
+                        .value(org.hamcrest.Matchers.greaterThan(0)));
+    }
+
     private MockHttpSession login() throws Exception {
         MvcResult login = mvc.perform(post("/api/auth/login")
                         .with(csrf())

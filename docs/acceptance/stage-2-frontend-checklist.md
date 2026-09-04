@@ -5,7 +5,7 @@
 - [x] Vitest 产品测试覆盖总览状态、核心收支表单、资产/投资来源状态、贷款/家庭权限，以及 Wave 1 登录与响应式导航。
 - [x] TypeScript `tsc --noEmit` 通过。
 - [x] Vite 生产构建输出哈希 JavaScript/CSS，Maven 生命周期运行 `npm ci`、测试与构建。
-- [x] 所有最新迁移断言统一到 V12，第一阶段副本升级测试覆盖至当前版本。
+- [x] 所有最新迁移断言统一到 V13，第一阶段副本升级测试覆盖至当前版本。
 - [ ] GitHub Windows runner：`start-local.cmd -NoBrowser -Smoke` 下载固定前端工具链、构建 React、验证 `/api/csrf` 和 React `/` 后停止进程树（提交后远端执行）。
 - [ ] Ubuntu 远端 runner（本地交付不伪装为远端通过，后续 CI 执行）。
 

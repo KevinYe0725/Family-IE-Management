@@ -4,7 +4,7 @@
 
 **Goal:** Replace the production H2 runtime with MySQL 8 and run the application on the Ubuntu server while keeping H2 only for isolated tests.
 
-**Architecture:** Production defaults to MySQL-specific Flyway V1–V12 migrations. H2 remains test-scoped and is activated through the test profile during Maven tests. The server runs a packaged Spring Boot application under systemd with credentials supplied only by a root-readable environment file.
+**Architecture:** Production defaults to MySQL-specific Flyway V1–V13 migrations. H2 remains test-scoped and is activated through the test profile during Maven tests. The server runs a packaged Spring Boot application under systemd with credentials supplied only by a root-readable environment file.
 
 **Tech Stack:** Java 17, Spring Boot 4.1.1, Spring Data JPA, Flyway, MySQL 8.0, MySQL Connector/J, H2 test runtime, Maven Wrapper, Ubuntu systemd.
 
@@ -128,7 +128,7 @@ git commit -m "feat: configure MySQL production runtime"
 - Create: src/main/resources/db/migration-mysql/V11__loans_notifications_snapshots.sql
 - Create: src/main/resources/db/migration-mysql/V12__loan_payments_and_prepayment_requests.sql
 
-**Interfaces:** Flyway sees exactly V1–V12 under the MySQL location, and table, column, constraint, and index semantics match the existing H2 history.
+**Interfaces:** Flyway sees exactly V1–V13 under the MySQL location, and table, column, constraint, and index semantics match the existing H2 history.
 
 - [ ] **Step 1: Create the MySQL migration directory and one file per existing version**
 
@@ -269,7 +269,7 @@ systemctl status family-finance --no-pager
 journalctl -u family-finance -n 120 --no-pager
 ~~~
 
-Expected: MySQL connection succeeds, Flyway applies V1–V12, Hibernate validates the schema, and Tomcat starts on port 8080.
+Expected: MySQL connection succeeds, Flyway applies V1–V13, Hibernate validates the schema, and Tomcat starts on port 8080.
 
 ---
 

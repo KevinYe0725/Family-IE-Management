@@ -31,7 +31,7 @@ import tools.jackson.databind.JsonNode;
 public class AssetService {
 
     static final int MAX_PAGE_SIZE = 50;
-    static final long MAX_CENTS = 99_999_999_999L;
+    static final long MAX_CENTS = 999_999_999_999L;
     private static final Pattern MONEY = Pattern.compile("^(\\d+)(?:\\.(\\d{1,2}))?$");
     private static final Pattern AREA = Pattern.compile("^\\d+(?:\\.\\d{1,2})?$");
     private static final BigInteger HUNDRED = BigInteger.valueOf(100);
@@ -310,7 +310,7 @@ public class AssetService {
             cents = cents.add(BigInteger.valueOf(Long.parseLong(fraction.length() == 1 ? fraction + "0" : fraction)));
         }
         if (cents.compareTo(MAX_CENTS_INTEGER) > 0) {
-            fields.put(field, "金额不能超过 999,999,999.99");
+            fields.put(field, "金额不能超过 9,999,999,999.99");
             return null;
         }
         return cents.longValueExact();

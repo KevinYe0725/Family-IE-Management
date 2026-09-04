@@ -233,7 +233,7 @@ class AssetValuationServiceTest {
         List<String> invalidBodies = List.of(
                 valuationBody("2026-09-04", "1.00", null),
                 valuationBody("2026-09-02", "-0.01", null),
-                valuationBody("2026-09-02", "1000000000.00", null),
+                valuationBody("2026-09-02", "10000000000.00", null),
                 valuationBody("2026-09-02", "1.001", null),
                 valuationBody("2026-09-02", "1.00", "   "),
                 valuationBody("2026-09-02", "1.00", "x".repeat(501)));
@@ -260,6 +260,35 @@ class AssetValuationServiceTest {
         List<String> dates = new ArrayList<>();
         items.forEach(item -> dates.add(item.path("valuedOn").asText()));
         assertThat(dates).isSortedAccordingTo(Comparator.reverseOrder());
+    }
+
+    @Test
+    void valuationAcceptsTenBillionYuanBoundaryValue() throws Exception {
+        MockHttpSession owner = login();
+        long assetId = createOther(owner, "大额估值资产", null, "0.00", null);
+
+        mvc.perform(post("/api/assets/{id}/valuations", assetId).session(owner).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(valuationBody("2026-09-03", "9999999999", "大额估值")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.value").value("9999999999.00"));
+        assertCurrent(assetId, 999_999_999_900L);
+    }
+
+    @Test
+    void valuationWriteRegeneratesStaleAssetReminder() throws Exception {
+        MockHttpSession owner = login();
+        clock.setInstant(Instant.parse("2026-08-01T02:00:00Z"));
+        long assetId = createOther(owner, "过期估值资产", null, "100.00", null);
+        jdbc.update("update asset_valuations set valued_on=date '2026-07-01' where asset_id=?", assetId);
+        clock.setInstant(Instant.parse("2026-09-04T02:00:00Z"));
+
+        createValuation(owner, assetId, "2026-08-01", "110.00", "补录估值");
+
+        mvc.perform(get("/api/notifications").session(owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].type").value("ASSET_VALUATION_STALE"))
+                .andExpect(jsonPath("$.data.items[0].referenceId").value(assetId));
     }
 
     @Test
