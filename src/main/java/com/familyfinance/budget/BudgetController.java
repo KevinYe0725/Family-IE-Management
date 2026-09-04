@@ -53,10 +53,11 @@ public class BudgetController {
             Authentication authentication,
             @RequestParam String periodMonth,
             @RequestParam(defaultValue = "false") boolean rollupCategories,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         BudgetUsagePage result = usage.usage(
-                authentication, BudgetService.requireMonth(periodMonth), rollupCategories, page, size);
+                authentication, BudgetService.requireMonth(periodMonth), rollupCategories, includeInactive, page, size);
         return paged(result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext(),
                 ApiEnvelope.data(result.items()));
     }

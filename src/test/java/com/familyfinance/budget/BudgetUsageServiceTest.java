@@ -194,6 +194,13 @@ class BudgetUsageServiceTest {
                 .andExpect(header().string("X-Page-Size", "50"))
                 .andExpect(header().string("X-Total-Elements", "0"))
                 .andExpect(jsonPath("$.data").isEmpty());
+
+        mvc.perform(get("/api/budgets/usage").session(session)
+                        .param("periodMonth", "2026-12")
+                        .param("includeInactive", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].budget.active").value(false));
     }
 
     @Test

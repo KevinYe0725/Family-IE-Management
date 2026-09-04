@@ -38,15 +38,16 @@ public class BudgetUsageService {
             Authentication authentication,
             YearMonth periodMonth,
             boolean rollupCategories,
+            boolean includeInactive,
             int page,
             int size) {
         long householdId = currentMembership.require(authentication).householdId();
         int safePage = Math.max(0, page);
         int safeSize = BudgetService.safeSize(size);
-        var result = budgets.findByHouseholdIdAndPeriodMonthAndActiveTrue(
-                householdId,
-                periodMonth.toString(),
-                PageRequest.of(safePage, safeSize, STABLE_SORT));
+        var pageable = PageRequest.of(safePage, safeSize, STABLE_SORT);
+        var result = includeInactive
+                ? budgets.findByHouseholdIdAndPeriodMonth(householdId, periodMonth.toString(), pageable)
+                : budgets.findByHouseholdIdAndPeriodMonthAndActiveTrue(householdId, periodMonth.toString(), pageable);
         LocalDate from = periodMonth.atDay(1);
         LocalDate to = periodMonth.plusMonths(1).atDay(1);
         var items = result.getContent().stream()
