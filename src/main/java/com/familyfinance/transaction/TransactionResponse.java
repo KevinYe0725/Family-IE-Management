@@ -14,6 +14,8 @@ public record TransactionResponse(
         String accountName,
         Long memberId,
         String memberName,
+        Long createdByUserId,
+        String createdByName,
         Long categoryId,
         String categoryName,
         Long categoryParentId,
@@ -34,6 +36,8 @@ public record TransactionResponse(
                 transaction.getAccount().getName(),
                 transaction.getMember().getId(),
                 transaction.getMember().getName(),
+                transaction.getCreatedByUser().getId(),
+                transaction.getCreatedByUser().getDisplayName(),
                 transaction.getCategory().getId(),
                 transaction.getCategory().getName(),
                 transaction.getCategory().getParent() == null

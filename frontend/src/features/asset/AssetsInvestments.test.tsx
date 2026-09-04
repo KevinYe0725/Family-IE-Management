@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AssetsPage } from './AssetsPage';
 import { InvestmentsPage } from '../investment/InvestmentsPage';
 import { securityResolvePayload } from '../investment/InvestmentsPage';
+import { assetUpdatePayload } from './AssetsPage';
 import type { RequestFn } from '../common';
 
 const wrap = (node: React.ReactNode) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node}</QueryClientProvider>;
@@ -45,4 +46,27 @@ it('offers security registration when an investment search has no matches', asyn
 it('normalizes a six-digit A-share code with the selected market', () => {
   expect(securityResolvePayload({ code: ' 000001 ', market: 'SZ', name: '平安银行' }))
     .toEqual({ tsCode: '000001.SZ', name: '平安银行' });
+});
+
+it('omits immutable fields when editing an asset', () => {
+  expect(assetUpdatePayload({
+    id: 4,
+    name: '滨江小家',
+    type: 'PROPERTY',
+    ownerMemberId: '1',
+    acquiredOn: '2021-05-01',
+    purchaseValue: '2600000.00',
+    currentValue: '2850000.00',
+    address: '滨江区',
+    areaSqm: '89',
+    usageType: '自住',
+    brandModel: '',
+    plateHint: '',
+    purchaseYear: ''
+  })).toEqual({
+    name: '滨江小家',
+    ownerMemberId: 1,
+    property: { address: '滨江区', areaSqm: '89', usageType: '自住' },
+    vehicle: null
+  });
 });

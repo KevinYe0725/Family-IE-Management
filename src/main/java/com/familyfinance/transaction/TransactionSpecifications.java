@@ -18,6 +18,7 @@ final class TransactionSpecifications {
         return (root, query, builder) -> {
             if (FinancialTransaction.class.equals(query.getResultType())) {
                 root.fetch("member", JoinType.LEFT);
+                root.fetch("createdByUser", JoinType.LEFT);
                 root.fetch("category", JoinType.LEFT).fetch("parent", JoinType.LEFT);
                 root.fetch("account", JoinType.LEFT);
             }
