@@ -2,6 +2,7 @@ package com.familyfinance.asset;
 
 import com.familyfinance.family.CurrentMembership;
 import com.familyfinance.family.FamilyMutationAuthorization;
+import com.familyfinance.loan.LoanRepository;
 import com.familyfinance.household.FamilyMember;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.shared.RequestValidationException;
@@ -20,7 +21,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,7 +45,7 @@ public class AssetService {
     private final FamilyMemberRepository members;
     private final CurrentMembership currentMembership;
     private final FamilyMutationAuthorization mutationAuthorization;
-    private final JdbcTemplate jdbc;
+    private final LoanRepository loans;
     private final Clock clock;
 
     public AssetService(
@@ -54,14 +54,14 @@ public class AssetService {
             FamilyMemberRepository members,
             CurrentMembership currentMembership,
             FamilyMutationAuthorization mutationAuthorization,
-            JdbcTemplate jdbc,
+            LoanRepository loans,
             Clock clock) {
         this.assets = assets;
         this.valuations = valuations;
         this.members = members;
         this.currentMembership = currentMembership;
         this.mutationAuthorization = mutationAuthorization;
-        this.jdbc = jdbc;
+        this.loans = loans;
         this.clock = clock;
     }
 
@@ -186,15 +186,7 @@ public class AssetService {
     }
 
     private boolean hasLoanReference(long householdId, long assetId) {
-        Long tableCount = jdbc.queryForObject("""
-                select count(*) from information_schema.tables
-                where table_schema='PUBLIC' and table_name='LOANS'
-                """, Long.class);
-        if (tableCount == null || tableCount == 0) return false;
-        Long references = jdbc.queryForObject(
-                "select count(*) from loans where household_id=? and linked_asset_id=?",
-                Long.class, householdId, assetId);
-        return references != null && references > 0;
+        return loans.existsByHouseholdIdAndLinkedAsset_Id(householdId, assetId);
     }
 
     private FamilyMember resolveOwner(long householdId, Long ownerMemberId, Map<String, String> fields) {

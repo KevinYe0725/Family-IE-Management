@@ -145,10 +145,15 @@ class AssetApiTest {
                 propertyBody("面积科学计数法", memberId, "1e2"),
                 vehicleBody("年份越界", memberId, "示例车").replace("2025}", "1885}"),
                 vehicleBody("空车牌", memberId, "示例车").replace("浙A***01", "   "));
-        for (String body : invalid) {
+        for (int index = 0; index < invalid.size(); index++) {
+            String body = invalid.get(index);
+            int caseIndex = index;
+            String caseBody = body;
             mvc.perform(post("/api/assets").session(owner).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON).content(body))
-                    .andExpect(status().isUnprocessableEntity());
+                    .andExpect(result -> assertThat(result.getResponse().getStatus())
+                            .as("invalid asset case %d: %s", caseIndex, caseBody)
+                            .isEqualTo(422));
         }
 
         String exactMax = validOther
