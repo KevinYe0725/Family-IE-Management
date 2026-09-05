@@ -2,6 +2,8 @@
 
 现有账本、预算、资产、贷款、认证和家庭权限保持本体职责。新增年度统计作为可信内置插件，随应用构建部署，配置变更需重启。
 
+开发者接入与服务器操作见 [插件开发、提交与部署指南](plugin-developer-guide.md)。
+
 ## 接入协议
 
 - 后端实现 `extension.FinancePlugin`；启动时 `PluginRegistry` 收集 Bean，检查唯一 ID、路由和协议版本。`GET /api/plugins` 返回启用插件清单。
