@@ -1,8 +1,11 @@
 import { NavLink } from 'react-router-dom';
 import type { Session } from '../api/contracts';
 import { canManage, moduleItems, roleLabel } from './navigation';
+import { usePlugins } from '../extensions/registry';
+import { IconList } from '@douyinfe/semi-icons';
 
 export function ModuleLinks({ onSelect, mobile = false }: { onSelect?: () => void; mobile?: boolean }) {
+  const plugins = usePlugins();
   return (
     <nav className="module-nav" aria-label={mobile ? '移动模块导航' : '模块导航'}>
       {moduleItems.map(item => {
@@ -14,6 +17,7 @@ export function ModuleLinks({ onSelect, mobile = false }: { onSelect?: () => voi
           </NavLink>
         );
       })}
+      {plugins.items.map(item => <NavLink key={item.id} to={item.path} onClick={onSelect} aria-label={item.name} className={({ isActive }) => `module-link${isActive ? ' is-active' : ''}`}><IconList /><span>{item.name}</span></NavLink>)}
     </nav>
   );
 }

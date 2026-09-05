@@ -17,6 +17,7 @@ import { AppRail } from './AppRail';
 import { MobileModuleDrawer } from './MobileModuleDrawer';
 import { ModuleSidebar } from './ModuleSidebar';
 import { WorkspaceHeader } from './WorkspaceHeader';
+import { PluginPage } from '../extensions/registry';
 
 export const SIDEBAR_PREFERENCE_KEY = 'family-finance:module-sidebar-collapsed';
 
@@ -26,6 +27,7 @@ function WorkspaceContent({ session }: { session: Session }) {
   const location = useLocation();
   const auth = useContext(AuthContext);
   const request = auth?.request ?? pendingRequest;
+  if (location.pathname.startsWith('/workspace/extensions/')) return <PluginPage path={location.pathname} request={request} />;
   if (location.pathname === '/workspace/overview') return <DashboardPage request={request} role={session.role} displayName={session.displayName} />;
   if (location.pathname === '/workspace/transactions') return <TransactionsPage request={request} role={session.role} userId={session.userId} />;
   if (location.pathname === '/workspace/budgets') return <BudgetsPage request={request} role={session.role} />;

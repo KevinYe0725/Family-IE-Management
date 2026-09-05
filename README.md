@@ -113,6 +113,12 @@ MySQL 的备份、恢复和迁移失败处理由服务器运维流程负责；�
 
 ## 结构
 
+### 内置扩展
+
+现有业务作为本体，新增功能通过可信内置插件接入。首个插件“年度统计”提供全年收入、支出、结余、12 个月明细及月平均值（全年合计除以 12）。入口由 `/api/plugins` 返回的启用清单生成，桌面和移动导航均可访问。
+
+默认启用；启动参数 `--app.plugins.annual-stats.enabled=false` 可关闭，重启生效，无需数据库迁移。插件随 JAR 发布，不支持在线安装第三方代码。接入说明见 [插件架构](docs/architecture/extensions.md)。
+
 - `src/main/java/com/familyfinance/auth`：登录、会话与当前用户。
 - `src/main/java/com/familyfinance/identity`：注册与密码修改。
 - `src/main/java/com/familyfinance/family`：家庭 Membership、邀请、角色与权限。

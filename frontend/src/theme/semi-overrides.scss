@@ -305,6 +305,10 @@ a:hover { text-decoration: underline; }
 .pagination-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; color: var(--ledger-muted); font-size: 12px; }
 .pagination-controls button { min-height: 30px; padding: 3px 10px; border: 1px solid #c9cdd4; border-radius: 5px; background: #fff; color: var(--ledger-text); cursor: pointer; font-size: 12px; }
 .pagination-controls button:disabled { cursor: not-allowed; opacity: .45; }
+.annual-months { overflow-x: auto; }
+.annual-months table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.annual-months th, .annual-months td { padding: 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--ledger-border); }
+.annual-months th:first-child { text-align: left; }
 .timeline-list { position: relative; display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .timeline-list::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: 4px; width: 1px; background: #cad8fa; }
 .timeline-list li { position: relative; display: grid; grid-template-columns: 10px 1fr; gap: 10px; }

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { LoginPage } from '../auth/LoginPage';
 import { RegisterPage } from '../auth/RegisterPage';
 import { WorkspaceLayout } from '../layout/WorkspaceLayout';
+import { PluginProvider } from '../extensions/registry';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,7 +36,7 @@ function AppRoutes() {
   }
   return (
     <Routes>
-      <Route path="/workspace/*" element={<WorkspaceLayout session={auth.session!} onLogout={auth.logout} />} />
+      <Route path="/workspace/*" element={<PluginProvider><WorkspaceLayout session={auth.session!} onLogout={auth.logout} /></PluginProvider>} />
       <Route path="*" element={<Navigate to="/workspace/overview" replace />} />
     </Routes>
   );
