@@ -30,5 +30,8 @@ spring:
     show-sql: false
 
 app:
+  plugins:
+    monthly-pie-chart:
+      enabled: true
   seed:
     enabled: true
