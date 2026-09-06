@@ -10,7 +10,8 @@ export interface PluginDescriptor {
 
 // Only bundled and reviewed UI modules may be loaded; server metadata cannot execute remote code.
 const bundled = {
-  'annual-stats': lazy(() => import('../plugins/annual-stats/AnnualStatsPage'))
+  'annual-stats': lazy(() => import('../plugins/annual-stats/AnnualStatsPage')),
+  'monthly-pie-chart': lazy(() => import('../plugins/monthly-pie-chart/MonthlyPieChartPage'))
 };
 
 export function supportedPlugins(items: PluginDescriptor[]): PluginDescriptor[] {
