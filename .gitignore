@@ -11,4 +11,8 @@ target/
 data/*.db
 data/*.db-*
 data-backups/
+.env
+.env.*
+!.env.example
+src/main/resources/application-local.yml
 tmp/

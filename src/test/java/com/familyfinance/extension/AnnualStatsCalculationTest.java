@@ -10,9 +10,20 @@ import static org.assertj.core.api.Assertions.*;
 class AnnualStatsCalculationTest {
     @Test void roundsAveragesAndAggregatesBeyondLongWithoutOverflow() {
         var large = BigInteger.valueOf(Long.MAX_VALUE);
-        LedgerReadPort port = (auth, year) -> List.of(
-                new LedgerReadPort.MonthlyAmount(1, large, BigInteger.valueOf(100)),
-                new LedgerReadPort.MonthlyAmount(2, large, BigInteger.ZERO));
+        LedgerReadPort port = new LedgerReadPort() {
+            @Override
+            public List<MonthlyAmount> readYear(org.springframework.security.core.Authentication auth, int year) {
+                return List.of(
+                        new MonthlyAmount(1, large, BigInteger.valueOf(100)),
+                        new MonthlyAmount(2, large, BigInteger.ZERO));
+            }
+
+            @Override
+            public MonthlyPieChartData getMonthlyPieChartData(
+                    org.springframework.security.core.Authentication auth, java.time.YearMonth month) {
+                return new MonthlyPieChartData(null, List.of(), List.of(), List.of(), List.of());
+            }
+        };
         var report = new AnnualStatsPlugin(port, Clock.systemUTC()).report(null, 2026).data();
         assertThat(report.summary().income()).isEqualTo("184467440737095516.14");
         assertThat(report.summary().averageExpense()).isEqualTo("0.08");
