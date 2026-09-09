@@ -183,7 +183,6 @@ export function LoansPage({
     queryKey: ["loans", "debt-overview", loanStatus],
     queryFn: () =>
       request<LoanDebtOverview>("/api/loans/debt-overview"),
-    enabled: loanStatus === "ACTIVE",
   });
   const selectedDetail = useQuery({
     queryKey: ["loans", "detail", selectedId],
@@ -421,16 +420,13 @@ export function LoansPage({
       }
       readonly={!manager}
     >
-      {loanStatus === "ACTIVE" &&
-        loans.data &&
-        loans.data.totalElements > 0 &&
-        (debtOverview.isLoading ? (
-          <p className="source-note" role="status">
-            正在计算债务总览…
-          </p>
-        ) : debtOverview.error ? null : debtOverview.data ? (
-          <LoanDebtOverviewPanel data={debtOverview.data} />
-        ) : null)}
+      {debtOverview.isLoading ? (
+        <p className="source-note" role="status">
+          正在计算债务总览…
+        </p>
+      ) : debtOverview.error ? null : debtOverview.data ? (
+        <LoanDebtOverviewPanel data={debtOverview.data} />
+      ) : null}
       <div className="filter-bar">
         <label>
           贷款状态
@@ -1650,7 +1646,7 @@ function loanOverviewFacts(item: Loan) {
         item.nextPaymentOn
           ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
           : null,
-        strategy ? { dt: "最近调整", dd: strategy, wide: true } : null,
+        strategy ? { dt: "最近调整", dd: strategy } : null,
       ])
     : facts([
         { dt: principalLabel, dd: money(item.principal) },
