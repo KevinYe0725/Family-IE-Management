@@ -64,12 +64,23 @@ export interface Account { bankAccountId?:number|null;bankAccountName?:string|nu
 export interface BankAccount {id:number;name:string;bankName:string|null;cardLastFour:string|null;archivedAt:string|null;accounts:Account[]}
 export interface Category { id: number; kind: TransactionKind; name: string; color: string; defaultCategory: boolean; createdAt: string; parentId: number | null; level: number; children: Category[] }
 export interface Member { id: number; name: string; roleLabel: string; createdAt: string }
+export interface FamilyPerson {
+  memberId: number | null; membershipId: number | null; name: string; relationship: string | null;
+  accountDisplayName: string | null; email: string | null; role: HouseholdRole | null;
+  loginStatus: 'AVAILABLE' | 'NONE' | 'SUSPENDED';
+}
 export interface Transaction { currency?: string; id: number; kind: TransactionKind; amount: string; occurredOn: string; accountId: number; accountName: string; memberId: number; memberName: string; createdByUserId: number; createdByName: string | null; sourceId?: number | null; principalAmount?: string | null; interestAmount?: string | null; sourceType: 'MANUAL' | 'RECURRING' | 'LOAN' | 'LOAN_PAYMENT' | 'LOAN_PREPAYMENT'; categoryId: number; categoryName: string; categoryParentId: number | null; categoryLevel: number; merchant: string | null; location: string | null; note: string | null; createdAt: string; updatedAt: string }
 
-export type BudgetScopeType = 'TOTAL' | 'CATEGORY' | 'MEMBER';
-export interface Budget { id: number; periodMonth: string; scopeType: BudgetScopeType; categoryId: number | null; memberId: number | null; amount: string; version: number; active: boolean }
+export type BudgetScopeType = 'TOTAL' | 'CATEGORY' | 'MEMBER' | 'CATEGORY_MEMBER';
+export interface Budget { id: number; periodMonth: string; scopeType: BudgetScopeType; categoryId: number | null; memberId: number | null; amount: string; version: number; active: boolean; note?: string | null }
 export interface BudgetUsage { budget: Budget; spent: string; remaining: string; percent: number; status: 'ON_TRACK' | 'NEAR_LIMIT' | 'AT_LIMIT' | 'OVER_BUDGET'; rollupCategories: boolean }
-export interface BudgetRevision { id: number; budgetId: number; oldPeriodMonth: string; newPeriodMonth: string; oldAmount: string; newAmount: string; oldActive: boolean; newActive: boolean; changedAt: string }
+export interface BudgetRevision { id: number; budgetId: number; oldPeriodMonth: string; newPeriodMonth: string; oldAmount: string; newAmount: string; oldActive: boolean; newActive: boolean; oldNote?: string | null; newNote?: string | null; changedAt: string }
+export interface BudgetTotal { periodMonth: string; amount: string | null; version: number }
+export interface BudgetUsageEntry { entryId: number; occurredOn: string; amount: string; categoryId: number | null; categoryName: string; memberId: number | null; memberName: string; note: string | null; sourceType: string; sourceId: number | null }
+export interface BudgetTemplateRow { rowId: number; scopeType: BudgetScopeType; categoryId: number | null; memberId: number | null; amount: string; note: string | null }
+export interface BudgetTemplate { id: number; name: string; createdAt: string; rows: BudgetTemplateRow[] }
+export interface BudgetTemplateApply { periodMonth: string; copied: number; skipped: number }
+export interface BudgetHit { budgetId: number; scopeType: BudgetScopeType; categoryId: number | null; categoryName: string | null; memberId: number | null; memberName: string | null; amount: string; spent: string; spentAfter: string; percentAfter: number; statusAfter: 'ON_TRACK' | 'NEAR_LIMIT' | 'AT_LIMIT' | 'OVER_BUDGET' }
 
 export type RecurringScheduleType = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'WEEKLY';
 export interface RecurringRule { id: number; kind: TransactionKind; amount: string; scheduleType: RecurringScheduleType; intervalValue: number; dayOfMonth: number | null; dayOfWeek: string | null; startOn: string; endOn: string | null; nextDueOn: string | null; accountId: number; accountName: string; memberId: number; memberName: string; categoryId: number; categoryName: string; assignedUserId: number; assignedUserName: string; active: boolean; paused: boolean; createdByUserId: number }

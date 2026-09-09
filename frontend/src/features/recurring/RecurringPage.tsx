@@ -100,7 +100,9 @@ function RecurringOverview({ pendingCount, selectableCount, activeRules, loading
   activeRules: RecurringRule[];
   loading: boolean;
 }) {
-  const enabledRules = activeRules.filter(item => item.active && !item.paused);
+  const [overviewMonth, setOverviewMonth] = useState(() => businessDate().slice(0, 7));
+  const overviewMonthOptions = useMemo(() => buildMonthOptions(businessDate().slice(0, 7)), []);
+  const enabledRules = activeRules.filter(item => item.active && !item.paused && ruleRunsInMonth(item, overviewMonth));
   const income = enabledRules.filter(item => item.kind === 'income').reduce((total, item) => total + monthlyRuleAmount(item), 0);
   const expense = enabledRules.filter(item => item.kind === 'expense').reduce((total, item) => total + monthlyRuleAmount(item), 0);
   const net = income - expense;
@@ -129,17 +131,18 @@ function RecurringOverview({ pendingCount, selectableCount, activeRules, loading
     categoryStart = endAngle;
     return { ...item, startAngle, endAngle, percentage: item.amount / categoryTotal * 100 };
   });
-  const [year, month] = businessDate().split('-');
-
+  const categoryLabelLayout = buildCategoryLabelLayout(categorySegments, 310, 180, 178);
   return <section className="recurring-overview" aria-label="周期账单概览">
-    <header className="recurring-overview-top"><div><span className="recurring-overview-kicker">固定收支</span><h2>月度计划概览</h2><p>固定收入与支出按当前周期规则折算，提前看清本月安排。</p></div><span className="recurring-overview-period">{year}年{Number(month)}月</span></header>
-    <div className="recurring-overview-summary">
-      <div className={`recurring-summary-total ${net >= 0 ? 'positive' : 'negative'}`}><span>月度计划净额</span><strong>{loading ? '—' : `${net >= 0 ? '+' : '-'}${money(Math.abs(net).toFixed(2))}`}</strong><small>固定收入 − 固定支出</small></div>
-      <div className="recurring-summary-stat"><span>固定收入</span><strong className="income">{loading ? '—' : money(income.toFixed(2))}</strong><small>{enabledRules.filter(item => item.kind === 'income').length} 条规则</small></div>
-      <div className="recurring-summary-stat"><span>固定支出</span><strong className="expense">{loading ? '—' : money(expense.toFixed(2))}</strong><small>{enabledRules.filter(item => item.kind === 'expense').length} 条规则</small></div>
-      <div className="recurring-summary-stat"><span>待确认账单</span><strong>{loading ? '—' : pendingCount ?? 0}</strong><small>{selectableCount ? `${selectableCount} 项由你处理` : '到期后由你确认'}</small></div>
+    <header className="recurring-overview-top"><div><span className="recurring-overview-kicker">固定收支</span><h2>月度计划概览</h2><p>固定收入与支出按当前周期规则折算，提前看清本月安排。</p></div><label className="recurring-overview-period"><select aria-label="选择分析月份" value={overviewMonth} onChange={event => setOverviewMonth(event.target.value)}>{overviewMonthOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label></header>
+    <div className="recurring-overview-main">
+      <div className="recurring-expense-analysis"><div className="recurring-expense-analysis-heading"><span>分类分析</span><h3>支出分类</h3>{topCategory && <p>支出分类中，<strong>{topCategory.name}</strong>占比最高，共 <em>{(topCategory.amount / categoryTotal * 100).toFixed(1)}%</em>。</p>}</div>{categoryData.length ? <svg className="recurring-category-ring" viewBox="0 0 620 360" role="img" aria-label={`支出分类：${categorySegments.map(item => `${item.name} ${item.percentage.toFixed(1)}%`).join('，')}`}><circle className="recurring-category-ring-track" cx="310" cy="180" r="170" />{categorySegments.map(item => { const fullRing = item.endAngle - item.startAngle >= 359.9; const path = fullRing ? '' : categoryArcPath(310, 180, 160, 95, item.startAngle, item.endAngle); const midAngle = fullRing ? 0 : (item.startAngle + item.endAngle) / 2; const anchor = categoryPolarPoint(310, 180, 178, midAngle); const layout = categoryLabelLayout.get(item.name) ?? { right: anchor.x >= 310, labelY: anchor.y }; const bendX = layout.right ? 525 : 95; const textX = layout.right ? 535 : 85; const labelName = compactCategoryName(item.name); return <g key={item.name}><title>{item.name}</title>{fullRing ? <circle cx="310" cy="180" r="128" fill="none" stroke={item.color} strokeWidth="64" /> : <path className="recurring-category-ring-segment" d={path} fill={item.color} />}<path className="recurring-category-ring-leader" d={`M ${anchor.x.toFixed(1)} ${anchor.y.toFixed(1)} L ${bendX} ${anchor.y.toFixed(1)} L ${textX} ${layout.labelY}`} /><circle className="recurring-category-ring-dot" cx={anchor.x} cy={anchor.y} r="2.5" fill={item.color} /><text className="recurring-category-ring-label" x={layout.right ? textX + 6 : textX - 6} y={layout.labelY} textAnchor={layout.right ? 'start' : 'end'} dominantBaseline="middle"><tspan x={layout.right ? textX + 6 : textX - 6} textLength={Math.min(72, Array.from(labelName).length * 12)} lengthAdjust="spacingAndGlyphs">{labelName}</tspan><tspan x={layout.right ? textX + 6 : textX - 6} dy="14" className="recurring-category-ring-value">{item.percentage.toFixed(1)}%</tspan></text></g>; })}<circle className="recurring-category-ring-hole" cx="310" cy="180" r="95" /><text className="recurring-category-ring-center-name" x="310" y="170" textAnchor="middle" dominantBaseline="middle">{compactCategoryName(topCategory?.name ?? '暂无')}</text><text className="recurring-category-ring-center-value" x="310" y="202" textAnchor="middle" dominantBaseline="middle">{topCategory ? `${(topCategory.amount / categoryTotal * 100).toFixed(1)}%` : '—'}</text></svg> : <p className="recurring-chart-empty">{loading ? '正在读取周期规则…' : '暂无执行中的支出规则'}</p>}</div>
+      <div className="recurring-overview-summary">
+        <div className={`recurring-summary-total ${net >= 0 ? 'positive' : 'negative'}`}><span>月度计划净额</span><strong>{loading ? '—' : `${net >= 0 ? '+' : '-'}${money(Math.abs(net).toFixed(2))}`}</strong><small>固定收入 − 固定支出</small></div>
+        <div className="recurring-summary-stat"><span>固定收入</span><strong className="income">{loading ? '—' : money(income.toFixed(2))}</strong><small>{enabledRules.filter(item => item.kind === 'income').length} 条规则</small></div>
+        <div className="recurring-summary-stat"><span>固定支出</span><strong className="expense">{loading ? '—' : money(expense.toFixed(2))}</strong><small>{enabledRules.filter(item => item.kind === 'expense').length} 条规则</small></div>
+        <div className="recurring-summary-stat"><span>待确认账单</span><strong>{loading ? '—' : pendingCount ?? 0}</strong><small>{selectableCount ? `${selectableCount} 项由你处理` : '到期后由你确认'}</small></div>
+      </div>
     </div>
-    <div className="recurring-expense-analysis"><div className="recurring-expense-analysis-heading"><span>分类分析</span><h3>支出分类</h3>{topCategory && <p>支出分类中，<strong>{topCategory.name}</strong>占比最高，共 <em>{(topCategory.amount / categoryTotal * 100).toFixed(1)}%</em>。</p>}</div>{categoryData.length ? <svg className="recurring-category-ring" viewBox="0 0 1300 250" role="img" aria-label={`支出分类：${categorySegments.map(item => `${item.name} ${item.percentage.toFixed(1)}%`).join('，')}`}><circle className="recurring-category-ring-track" cx="650" cy="125" r="105" />{categorySegments.map(item => { const fullRing = item.endAngle - item.startAngle >= 359.9; const path = fullRing ? '' : categoryArcPath(650, 125, 105, 62, item.startAngle, item.endAngle); const midAngle = fullRing ? 0 : (item.startAngle + item.endAngle) / 2; const anchor = categoryPolarPoint(650, 125, 115, midAngle); const right = anchor.x >= 650; const labelY = Math.max(24, Math.min(226, anchor.y)); const bendX = right ? 1050 : 250; const textX = right ? 1220 : 80; return <g key={item.name}>{fullRing ? <circle cx="650" cy="125" r="83" fill="none" stroke={item.color} strokeWidth="43" /> : <path className="recurring-category-ring-segment" d={path} fill={item.color} />}<path className="recurring-category-ring-leader" d={`M ${anchor.x.toFixed(1)} ${anchor.y.toFixed(1)} L ${bendX} ${anchor.y.toFixed(1)} L ${textX} ${labelY}`} /><circle className="recurring-category-ring-dot" cx={anchor.x} cy={anchor.y} r="2.5" fill={item.color} /><text className="recurring-category-ring-label" x={right ? textX + 6 : textX - 6} y={labelY} textAnchor={right ? 'start' : 'end'} dominantBaseline="middle"><tspan>{item.name} </tspan><tspan className="recurring-category-ring-value">{item.percentage.toFixed(1)}%</tspan></text></g>; })}<circle className="recurring-category-ring-hole" cx="650" cy="125" r="62" /><text className="recurring-category-ring-center-name" x="650" y="119" textAnchor="middle" dominantBaseline="middle">{topCategory?.name ?? '暂无'}</text><text className="recurring-category-ring-center-value" x="650" y="143" textAnchor="middle" dominantBaseline="middle">{topCategory ? `${(topCategory.amount / categoryTotal * 100).toFixed(1)}%` : '—'}</text></svg> : <p className="recurring-chart-empty">{loading ? '正在读取周期规则…' : '暂无执行中的支出规则'}</p>}</div>
   </section>;
 }
 
@@ -222,6 +225,46 @@ function monthlyRuleAmount(item: RecurringRule) {
   if (item.scheduleType === 'YEARLY') return amount / (12 * interval);
   if (item.scheduleType === 'WEEKLY') return amount * (52 / (12 * interval));
   return amount / interval;
+}
+
+function compactCategoryName(name:string){const letters=Array.from(name);return letters.length>6?letters.slice(0,5).join("")+"…":name;}
+
+function ruleRunsInMonth(item: RecurringRule, month: string) {
+  const startMonth = item.startOn?.slice(0, 7) ?? '';
+  const endMonth = item.endOn?.slice(0, 7);
+  return startMonth <= month && (!endMonth || endMonth >= month);
+}
+
+function buildMonthOptions(anchorMonth: string) {
+  const [year, month] = anchorMonth.split('-').map(Number);
+  return Array.from({ length: 25 }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1 + index - 12, 1));
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    return { value, label: `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月` };
+  });
+}
+
+function buildCategoryLabelLayout(segments: Array<{ name: string; startAngle: number; endAngle: number }>, cx: number, cy: number, radius: number) {
+  const left: Array<{ name: string; y: number }> = [];
+  const right: Array<{ name: string; y: number }> = [];
+  segments.forEach(item => {
+    const angle = (item.startAngle + item.endAngle) / 2;
+    const point = categoryPolarPoint(cx, cy, radius, angle);
+    (point.x >= cx ? right : left).push({ name: item.name, y: point.y });
+  });
+  const layout = new Map<string, { right: boolean; labelY: number }>();
+  const place = (items: Array<{ name: string; y: number }>, isRight: boolean) => {
+    items.sort((a, b) => a.y - b.y);
+    const top = 42;
+    const bottom = 318;
+    items.forEach((item, index) => layout.set(item.name, {
+      right: isRight,
+      labelY: items.length === 1 ? cy : top + (bottom - top) * index / (items.length - 1),
+    }));
+  };
+  place(left, false);
+  place(right, true);
+  return layout;
 }
 
 function periodRuleAmount(item: RecurringRule, period: AnalysisPeriod) {

@@ -1,0 +1,39 @@
+-- V43: reusable budget templates (MySQL dialect).
+-- A template stores the shape/amount/note of a set of budget rows without a month;
+-- applying it materializes active budget rows in the chosen month.
+create table budget_templates (
+    id bigint auto_increment primary key,
+    household_id bigint not null,
+    name varchar(100) not null,
+    created_by bigint,
+    created_at datetime(6) not null,
+    constraint uk_budget_templates_household_name unique (household_id, name),
+    constraint uk_budget_templates_id_household unique (id, household_id),
+    constraint fk_budget_templates_household foreign key (household_id) references households(id)
+);
+
+create table budget_template_rows (
+    id bigint auto_increment primary key,
+    household_id bigint not null,
+    template_id bigint not null,
+    scope_type varchar(16) not null,
+    category_id bigint,
+    member_id bigint,
+    amount_cents bigint not null,
+    note varchar(200),
+    constraint ck_budget_template_rows_scope check (
+        (scope_type = 'CATEGORY' and category_id is not null and member_id is null)
+        or (scope_type = 'MEMBER' and category_id is null and member_id is not null)
+        or (scope_type = 'CATEGORY_MEMBER' and category_id is not null and member_id is not null)
+    ),
+    constraint ck_budget_template_rows_amount
+        check (amount_cents > 0 and amount_cents <= 99999999999),
+    constraint fk_budget_template_rows_template
+        foreign key (template_id, household_id) references budget_templates (id, household_id),
+    constraint fk_budget_template_rows_category
+        foreign key (category_id, household_id) references categories (id, household_id),
+    constraint fk_budget_template_rows_member
+        foreign key (member_id, household_id) references family_members (id, household_id)
+);
+
+create index ix_budget_template_rows_template on budget_template_rows (template_id, id);

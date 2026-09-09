@@ -3,15 +3,18 @@ package com.familyfinance.loan;
 import com.familyfinance.shared.DecimalMoney;
 import java.math.BigDecimal;
 import jakarta.persistence.EntityManager;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Whole history, not a schedule page or a possibly cached JPA collection. */
 @Service
 public class LoanTotalsService {
- private final JdbcTemplate jdbc; private final EntityManager em;
- public LoanTotalsService(JdbcTemplate jdbc,EntityManager em){this.jdbc=jdbc;this.em=em;}
+ private static final ZoneId BUSINESS_ZONE=ZoneId.of("Asia/Shanghai");
+ private final JdbcTemplate jdbc; private final EntityManager em; private final Clock clock;
+ public LoanTotalsService(JdbcTemplate jdbc,EntityManager em,Clock clock){this.jdbc=jdbc;this.em=em;this.clock=clock;}
  public record Totals(String scheduledRepaymentTotal,String remainingRepaymentTotal,String paidRepaymentTotal,PrepaymentStrategy latestStrategy,int remainingTerm,LocalDate maturityOn,LocalDate nextPaymentOn,String nextPaymentAmount,int overdueInstallments,String overdueAmount,int overdueDays){}
  public Totals read(Loan loan,boolean current){
   if(current)em.flush();
@@ -22,7 +25,7 @@ public class LoanTotalsService {
   for(BigDecimal cash:jdbc.query("select coalesce(cast(t.amount_cents as decimal(21,2))/100,p.amount+p.interest_amount) from loan_prepayments p left join financial_transactions t on t.id=p.transaction_id and t.household_id=p.household_id where p.household_id=? and p.loan_id=? order by p.id"+lock,(rs,n)->rs.getBigDecimal(1),h,id))paid=paid.add(cash);
   var pending=rows.stream().filter(row->"PENDING".equals(row.status())).toList();
   // 逾期：未确认且到期日早于今日的待还期次（仅状态计算，不落表）。
-  LocalDate today=LocalDate.now();
+  LocalDate today=LocalDate.now(clock.withZone(BUSINESS_ZONE));
   BigDecimal overdue=BigDecimal.ZERO;int overdueInstallments=0;LocalDate oldestDue=null;
   for(var row:rows){if("PENDING".equals(row.status())&&row.dueOn()!=null&&row.dueOn().isBefore(today)){overdueInstallments++;overdue=overdue.add(row.principal().add(row.interest()));if(oldestDue==null||row.dueOn().isBefore(oldestDue))oldestDue=row.dueOn();}}
   int overdueDays=oldestDue==null?0:(int)java.time.temporal.ChronoUnit.DAYS.between(oldestDue,today);

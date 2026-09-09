@@ -10,7 +10,8 @@ public record BudgetResponse(
         Long memberId,
         String amount,
         Integer version,
-        boolean active) {
+        boolean active,
+        String note) {
 
     static BudgetResponse from(Budget budget) {
         return new BudgetResponse(
@@ -21,6 +22,7 @@ public record BudgetResponse(
                 budget.getMember() == null ? null : budget.getMember().getId(),
                 Money.formatCents(budget.getAmountCents()),
                 budget.getVersion(),
-                budget.isActive());
+                budget.isActive(),
+                budget.getNote());
     }
 }

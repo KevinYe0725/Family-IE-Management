@@ -32,7 +32,7 @@ public class CsvExportService {
             csv.append(transaction.getOccurredOn()).append(',')
                     .append(label(transaction.getKind())).append(',')
                     .append(Money.formatCents(transaction.getAmountCents())).append(',')
-                    .append(escape(transaction.getMember().getName())).append(',')
+                    .append(escape(transaction.getMember() == null ? "全体（家庭共同）" : transaction.getMember().getName())).append(',')
                     .append(escape(transaction.getCategory().getName())).append(',')
                     .append(escape(transaction.getMerchant())).append(',')
                     .append(escape(transaction.getLocation())).append(',')

@@ -7,5 +7,6 @@ public record BudgetPatchRequest(
         Long categoryId,
         Long memberId,
         String amount,
-        Boolean active) {
+        Boolean active,
+        String note) {
 }

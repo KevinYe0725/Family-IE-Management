@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PaymentPreview } from './accounting';
 import { DashboardPage } from './dashboard/DashboardPage';
@@ -31,6 +31,8 @@ it('keeps yesterday cost estimates qualified in history rows and chart when toda
     return [];
   }) as RequestFn;
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DashboardPage request={request} role="OWNER" /></QueryClientProvider>);
+  await screen.findByText(/2026-01-03：.*含成本估算.*1/);
+  fireEvent.click(screen.getByRole('button', { name: '查看净资产详情' }));
   const yesterday = await screen.findByRole('row', { name: /2026-01-03/ , hidden: true });
   expect(within(yesterday).getByText(/含成本估算.*1/)).toBeInTheDocument();
   expect(within(yesterday).getByText(/按生效日期重算/)).toBeInTheDocument();

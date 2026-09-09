@@ -3,33 +3,39 @@ package com.familyfinance.loan;
 import com.familyfinance.family.CurrentMembership;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Aggregated debt overview for all ACTIVE loans of the current household (read-only). */
 @Service
-@Transactional(readOnly = true)
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class LoanDebtOverviewService {
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private final CurrentMembership current;
     private final JdbcTemplate jdbc;
+    private final Clock clock;
 
-    public LoanDebtOverviewService(CurrentMembership current, JdbcTemplate jdbc) {
+    public LoanDebtOverviewService(CurrentMembership current, JdbcTemplate jdbc, Clock clock) {
         this.current = current;
         this.jdbc = jdbc;
+        this.clock = clock;
     }
 
     public LoanDebtOverviewResponse overview(Authentication authentication) {
         long household = current.require(authentication).householdId();
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
         LocalDate horizon = today.plusDays(30);
 
         BigDecimal[] loan = jdbc.query(
                 "select coalesce(sum(current_principal_amount),0),"
-                        + " coalesce(sum(principal_amount * annual_rate),0),"
-                        + " coalesce(sum(principal_amount),0), count(*) "
+                        + " coalesce(sum(current_principal_amount * annual_rate),0),"
+                        + " coalesce(sum(current_principal_amount),0), count(*) "
                         + "from loans where household_id=? and status='ACTIVE'",
                 rs -> rs.next()
                         ? new BigDecimal[]{
@@ -69,13 +75,20 @@ public class LoanDebtOverviewService {
                         + " else i.principal_amount + i.interest_amount end)"
                         + " else 0 end),0) from loan_installments i"
                         + " left join financial_transactions t on t.id=i.confirmed_transaction_id"
+                        + " and t.household_id=i.household_id"
                         + " where i.household_id=?",
                 BigDecimal.class, household);
         BigDecimal paidPrepayments = jdbc.queryForObject(
-                "select coalesce(sum(t.amount_cents),0)/100.0 from financial_transactions t"
-                        + " where t.household_id=? and t.source_type='LOAN_PREPAYMENT'"
+                "select coalesce(sum(case when t.amount_cents is not null"
+                        + " then cast(t.amount_cents as decimal(21,2))/100"
+                        + " else p.amount + p.interest_amount end),0)"
+                        + " from loan_prepayments p"
+                        + " left join financial_transactions t on t.id=p.transaction_id"
+                        + " and t.household_id=p.household_id"
+                        + " where p.household_id=?"
                         + " and not exists (select 1 from loan_installments ci"
-                        + " where ci.confirmed_transaction_id=t.id)",
+                        + " where ci.household_id=p.household_id"
+                        + " and ci.confirmed_transaction_id=t.id)",
                 BigDecimal.class, household);
         BigDecimal paid = paidInstallments.add(paidPrepayments);
 

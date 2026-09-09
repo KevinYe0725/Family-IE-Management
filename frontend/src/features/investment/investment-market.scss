@@ -43,7 +43,7 @@
 .investment-other-business[open] label { margin-top: 10px; }
 .investment-available { margin: 0; color: var(--inv-text); font-size:var(--inv-font-body); font-variant-numeric: tabular-nums; }
 .investment-draft-error { margin: 0; padding: 12px 14px; border-radius: 8px; color: #aa3941; background: #fff2f2; line-height: 1.6; font-size:var(--inv-font-body); }
-.investment-saved { margin: 0; color: var(--ledger-success); font-size:var(--inv-font-body); }
+.investment-saved { display:flex;align-items:center;gap:8px;margin: 0; color: var(--ledger-success); font-size:var(--inv-font-body); }
 .market-tabs { display: flex; align-items: center; gap: 24px; border-bottom: 1px solid var(--inv-border); }
 .market-tabs button { background: none; color: var(--inv-muted); border: 0; border-bottom: 2px solid transparent; padding: 10px 2px; font: inherit; font-size:var(--inv-font-body); cursor: pointer; }
 .market-tabs button[aria-pressed=true] { border-bottom-color: var(--inv-accent); color: var(--inv-accent); font-weight: 600; }

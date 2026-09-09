@@ -181,7 +181,8 @@ export function LoansPage({
       ),
   });
   const debtOverview = useQuery({
-    queryKey: ["loans", "debt-overview", loanStatus],
+    queryKey: ["loans", "debt-overview"],
+    enabled: loanStatus === "ACTIVE",
     queryFn: () =>
       request<LoanDebtOverview>("/api/loans/debt-overview"),
   });
@@ -422,13 +423,13 @@ export function LoansPage({
       }
       readonly={!manager}
     >
-      {debtOverview.isLoading ? (
+      {loanStatus === "ACTIVE" && (debtOverview.isLoading ? (
         <p className="source-note" role="status">
           正在计算债务总览…
         </p>
-      ) : debtOverview.error ? null : debtOverview.data ? (
+      ) : debtOverview.error ? <div role="alert"><span>贷款总览暂时无法读取。</span><button type="button" className="text-action" onClick={()=>void debtOverview.refetch()}>重试总览</button></div> : debtOverview.data ? (
         <LoanDebtOverviewPanel data={debtOverview.data} />
-      ) : null}
+      ) : null)}
       <div className="filter-bar">
         <label>
           贷款状态

@@ -5,5 +5,6 @@ public record BudgetCreateRequest(
         BudgetScopeType scopeType,
         Long categoryId,
         Long memberId,
-        String amount) {
+        String amount,
+        String note) {
 }

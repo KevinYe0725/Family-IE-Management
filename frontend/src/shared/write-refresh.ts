@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ApiRequestOptions } from '../api/client';
 
 const summaries = ['dashboard', 'net-worth', 'analysis', 'debt-analysis', 'plugin'];
-const ledger = ['transactions', 'accounts', 'accounting-history', 'transfers', 'budget-usage', 'notifications', ...summaries];
+const ledger = ['transactions', 'accounts', 'accounting-history', 'transfers', 'budget-usage', 'budget-hit', 'budget-entries', 'notifications', ...summaries];
 const investments = [...ledger, 'portfolio', 'investment-setup', 'investment-accounts', 'investment-trades', 'investment-plans', 'market-quotes', 'securities', ...summaries];
 const dependencies: Record<string, string[]> = {
   transactions: ledger,
@@ -12,7 +12,8 @@ const dependencies: Record<string, string[]> = {
   accounts: ['recurring-rules', ...ledger],
   'bank-accounts': ['recurring-rules', 'investment-accounts', 'investment-plans', ...ledger],
   categories: ['categories', 'budget-revisions', 'recurring-rules', ...ledger],
-  budgets: ['budgets', 'budget-revisions', ...ledger],
+  budgets: ['budgets', 'budget-total', 'budget-revisions', ...ledger],
+  'budget-templates': ['budget-templates', 'budgets', 'budget-total', 'budget-revisions', ...ledger],
   assets: ['assets', 'asset-valuations', 'loans', ...ledger],
   'investment-accounts': investments,
   'investment-trades': investments,
@@ -25,8 +26,8 @@ const dependencies: Record<string, string[]> = {
   'recurring-rules': ['recurring-rules', 'recurring-occurrences', ...ledger],
   'recurring-occurrences': ['recurring-rules', 'recurring-occurrences', ...ledger],
   notifications: ['notifications'],
-  family: ['family', 'memberships', 'family-invites', 'members'],
-  members: ['members', ...ledger]
+  family: ['family', 'family-people', 'memberships', 'family-invites', 'members'],
+  members: ['members', 'family-people', ...ledger]
 };
 const pendingRefreshes = new WeakMap<QueryClient, Promise<void>>();
 

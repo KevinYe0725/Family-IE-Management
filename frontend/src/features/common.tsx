@@ -108,6 +108,10 @@ export function ActionDialog(props:Omit<Parameters<typeof Drawer>[0],'presentati
   return <Drawer {...props} presentation="modal"/>;
 }
 
+export function CenteredModal({ width, ...props }: Omit<Parameters<typeof ActionDialog>[0], 'size'> & { width?: number }) {
+  return <ActionDialog {...props} size={width != null && width <= 680 ? 'medium' : 'wide'} />;
+}
+
 export function ConfirmDialog({ open, title, detail, banner, confirmLabel = '确认', cancelLabel = '取消', confirmDisabled = false, danger, onConfirm, onClose, loading = false, className = '' }: { open: boolean; title: string; detail: ReactNode; banner?: ReactNode; confirmLabel?: string; cancelLabel?: string; confirmDisabled?: boolean; danger?: boolean; onConfirm: () => void; onClose: () => void; loading?: boolean; className?: string }) {
   const {id,ref} = useModal(open,onClose);
   if (!open) return null;

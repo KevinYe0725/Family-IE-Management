@@ -34,6 +34,7 @@ it('closes an invite success view cleanly and starts the next invite with defaul
   const request: RequestFn = async <T,>(path: string, options?: { method?: string }) => {
     if (options?.method === 'POST') return { token: 'one-time-token', role: 'ADMIN', maxUses: 8, expiresAt: '2026-09-08' } as T;
     if (path === '/api/family') return { id: 1, name: '家庭', status: 'ACTIVE', archivedAt: null } as T;
+    if (path === '/api/family/people') return [] as T;
     return { items: [], page: 0, size: 50, totalElements: 0, totalPages: 0, hasNext: false } as T;
   };
   const user = userEvent.setup(); render(wrap(<FamilyPage request={request} role="OWNER" />));
@@ -56,6 +57,7 @@ it('keeps financial management read-only for members and owner controls exclusiv
   const request = vi.fn(async (path: string) => {
     if (path.startsWith('/api/loans')) return { items: [], page: 0, size: 50, totalElements: 0, totalPages: 0, hasNext: false };
     if (path === '/api/family') return { id: 1, name: '凯文之家', status: 'ACTIVE', archivedAt: null };
+    if (path === '/api/family/people') return [{ memberId: 3, membershipId: 2, name: '成员', relationship: null, accountDisplayName: '成员', email: 'member@example.com', role: 'MEMBER', loginStatus: 'AVAILABLE' }];
     if (path.startsWith('/api/family/memberships')) return { items: [{ id: 2, userId: 8, email: 'member@example.com', displayName: '成员', role: 'MEMBER', status: 'ACTIVE' }], page: 0, size: 50, totalElements: 1, totalPages: 1, hasNext: false };
     if (path.startsWith('/api/family/invites')) return { items: [], page: 0, size: 50, totalElements: 0, totalPages: 0, hasNext: false };
     throw new Error(`unexpected ${path}`);

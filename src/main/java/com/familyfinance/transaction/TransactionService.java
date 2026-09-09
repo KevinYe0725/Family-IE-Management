@@ -242,9 +242,8 @@ public class TransactionService {
     }
 
     private FamilyMember resolveMember(long householdId, Long memberId, Map<String, String> fields) {
-        if (memberId == null) {
-            fields.put("memberId", "成员不能为空");
-            return null;
+        if (memberId == null || memberId == 0L) {
+            return null; // null member = 全体（家庭共同）
         }
         return memberRepository.findByIdAndHouseholdId(memberId, householdId)
                 .orElseGet(() -> {

@@ -28,7 +28,7 @@ export function OverseasMarketPanel({ request, market,initial,onBuy,onSelected,b
   const items = search.data?.items ?? [];
   const retry = () => { pollStarted.current = Date.now(); void search.refetch(); };
   return <section className="overseas-market" aria-label={market === 'HK' ? '港股只读行情' : '美股只读行情'}>
-    <p className="overseas-readonly">{tradingEnabled?'行情不会自动修改持仓，请同步实际发生的交易。':'只读行情，暂不计入家庭资产'}</p>
+    {!tradingEnabled&&<p className="overseas-readonly">只读行情，暂不计入家庭资产</p>}
     <div className="stock-explorer"><div className="stock-picker" id={pickerId} style={{ position: 'relative' }} {...compositionProps}>
       <span className="stock-picker__label" id={`${id}-label`}>证券</span>
       <Select ref={dropdown.selectRef} className="stock-picker__select" aria-labelledby={`${id}-label`} filter remote onChangeWithObject inputProps={{ maxLength: 80 }}
@@ -45,11 +45,11 @@ export function OverseasMarketPanel({ request, market,initial,onBuy,onSelected,b
           : preparing ? <><span>正在准备股票目录，首次读取可能需要一会儿。</span><button type="button" className="text-action" onClick={retry}>重试目录</button></>
             : search.data?.state === 'ERROR' ? <><span>{items.length ? '目录刷新失败，正在使用上次目录。' : '股票目录暂时不可用。'}</span><button type="button" className="text-action" onClick={retry}>重试目录</button></>
               : !search.isLoading && !waiting && !items.length ? <span>没有找到匹配股票，请检查代码或官方名称。</span>
-                : search.data?.hasNext ? <span>显示前 20 条，请输入更完整的代码或名称。</span> : null}
+                : null}
         {search.data?.stale && <span>缓存目录 · {dateText(search.data.updatedAt)}</span>}
       </div>
     </div></div>
-    {selected&&onBuy&&<Button variant="primary" disabled={busy} onClick={()=>onBuy(selected)}>{busy?'正在核对股票…':`记录买入${selected.name}`}</Button>}
     {selected?.market === market ? <StockChart key={`${market}/${selected.symbol}`} request={request} security={selected}/> : <div className="investment-market-empty"><p>选择股票，查看参考收盘价与历史走势。</p></div>}
+    {selected&&onBuy&&<Button variant="primary" disabled={busy} onClick={()=>onBuy(selected)}>{busy?'正在核对股票…':`记录买入${selected.name}`}</Button>}
   </section>;
 }

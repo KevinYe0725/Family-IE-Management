@@ -27,7 +27,7 @@ export function LoanDebtOverviewPanel({ data }: { data: LoanDebtOverview }) {
           <dd>{money(data.paidRepayment)}</dd>
         </div>
         <div>
-          <dt>加权年利率</dt>
+          <dt title="按当前剩余本金加权">加权年利率</dt>
           <dd>{data.weightedAnnualRatePercent}%</dd>
         </div>
         <div>

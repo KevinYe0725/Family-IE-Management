@@ -9,6 +9,8 @@ import {PaginationControls,usePageRecovery} from '../../shared/pagination';
 import {AccountOptions,PaymentPreview,cents,sumMoney,useFundsRefresh} from '../accounting';
 import {DataPanel,Drawer,ConfirmDialog,FormError,QueryState,money,isManager,type RequestFn} from '../common';
 import {AccountingHistory} from './accounting-flows';
+import {dailyFxPair,estimateFxArrival,type DailyFxTable} from './daily-fx';
+import './fx-transfers.scss';
 interface FxRow{id:number;fromAccountId:number;toAccountId:number;fromCurrency:string;toCurrency:string;fromAmount:string;toAmount:string;fee:string;actualRate:string;occurredOn:string;revision:number;reversed:boolean}
 interface Draft{id?:number;fromAccountId:string;toAccountId:string;fromAmount:string;toAmount:string;fee:string;occurredOn:string;idempotencyKey:string;expectedRevision?:number}
 type Attempt={id?:number;body:Body;from?:Account;to?:Account};
@@ -22,6 +24,7 @@ function ratio(from:string,to:string){
 export function FxTransfersPanel({request,role,accounts,accountsReady=true,initialBankId,onInitialHandled}:{request:RequestFn;role:HouseholdRole;accounts:Account[];accountsReady?:boolean;initialBankId?:number|null;onInitialHandled?:()=>void}){
  const cache=useQueryClient(),fundsError=useFundsRefresh();
  const [page,setPage]=useState(0),[draft,setDraft]=useState<Draft|null>(null),[audit,setAudit]=useState<number|null>(null);
+ const [estimated,setEstimated]=useState(false);
  const [attempt,retainAttempt]=useState<Attempt|null>(()=>cache.getQueryData<Attempt>(pendingKey)??null);
  const setAttempt=(value:Attempt|null)=>{retainAttempt(value);if(value)cache.setQueryData(pendingKey,value);else cache.removeQueries({queryKey:pendingKey,exact:true});};
  const [reversing,setReversing]=useState<{row:FxRow;key:string}|null>(null);
@@ -34,9 +37,19 @@ export function FxTransfersPanel({request,role,accounts,accountsReady=true,initi
  const total=draft?sumMoney(draft.fromAmount,draft.fee||'0'):null;
  const ready=!!draft&&!!from&&!!to&&from.id!==to.id&&from.currency!==to.currency&&from.openingConfirmed&&to.openingConfirmed
   &&(cents(draft.fromAmount)??0n)>0n&&(cents(draft.toAmount)??0n)>0n&&(cents(draft.fee||'0')??-1n)>=0n;
- const reference=useQuery({queryKey:['exchange-rates',draft?.occurredOn],queryFn:()=>request<{rows:Array<{currency:string;cnyPerUnit?:string|null;effectiveOn?:string}>}>(`/api/exchange-rates?asOf=${draft!.occurredOn}`),enabled:!!draft?.occurredOn,retry:false});
- const fromRate=reference.data?.rows?.find(r=>r.currency===from?.currency),toRate=reference.data?.rows?.find(r=>r.currency===to?.currency);
- const update=(field:keyof Draft,value:string)=>{save.reset();setDraft(old=>old?{...old,[field]:value,idempotencyKey:newIdempotencyKey()}:old);};
+ const reference=useQuery({queryKey:['exchange-rates',draft?.occurredOn],queryFn:()=>request<DailyFxTable>(`/api/exchange-rates?asOf=${draft!.occurredOn}`),enabled:!!draft?.occurredOn&&!attempt,retry:false,staleTime:60000,refetchInterval:draft?.occurredOn===businessDate()&&!attempt?60000:false});
+ const refreshReference=useMutation({mutationFn:(day:string)=>request<DailyFxTable>(`/api/exchange-rates/refresh?asOf=${day}`,{method:'POST'}),onSuccess:(data,day)=>cache.setQueryData(['exchange-rates',day],data)});
+ const refreshError=refreshReference.variables===draft?.occurredOn?refreshReference.error:null;
+ const pair=dailyFxPair(reference.data,from?.currency,to?.currency,draft?.occurredOn);
+ const estimatedArrival=pair&&draft?estimateFxArrival(draft.fromAmount,pair.fromRate,pair.toRate):null;
+ const rateBusy=reference.isFetching||refreshReference.isPending;
+ const update=(field:keyof Draft,value:string)=>{
+  const contextChanged=['fromAccountId','toAccountId','fromAmount','occurredOn'].includes(field);
+  if(contextChanged&&refreshReference.error)refreshReference.reset();
+  save.reset();setDraft(old=>old?{...old,[field]:value,...(estimated&&contextChanged?{toAmount:''}:{}),idempotencyKey:newIdempotencyKey()}:old);
+  if(contextChanged||field==='toAmount')setEstimated(false);
+ };
+ useEffect(()=>{if(!draft){setEstimated(false);refreshReference.reset();}},[!!draft]);
  const blank=()=>({fromAccountId:'',toAccountId:'',fromAmount:'',toAmount:'',fee:'0',occurredOn:businessDate(),idempotencyKey:newIdempotencyKey()});
  useEffect(()=>{
   if(!initialBankId||!isManager(role))return;
@@ -61,12 +74,17 @@ export function FxTransfersPanel({request,role,accounts,accountsReady=true,initi
    <BankAccountPicker accountsReady={accountsReady} label="转出账户" name="fromAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.fromAccountId} onChange={id=>update("fromAccountId",id)}/>
    <BankAccountPicker accountsReady={accountsReady} label="转入账户" name="toAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.toAccountId} onChange={id=>update("toAccountId",id)}/>
    <label>实际转出本金<input required inputMode="decimal" value={draft.fromAmount} onChange={e=>update('fromAmount',e.target.value)}/></label>
+   {from&&to&&from.currency!==to.currency&&<section className="daily-fx-reference" aria-label="日度参考汇率">
+    <div>{pair?<><strong>1 {from.currency} = {ratio(pair.toRate,pair.fromRate)} {to.currency}</strong><span>日度参考 · {pair.effectiveOn}</span></>:<span>{rateBusy?'正在读取日度参考汇率…':'暂无可用的日度参考汇率，可手动填写实际到账。'}</span>}</div>
+    <div className="daily-fx-actions"><button type="button" className="text-action" disabled={rateBusy} onClick={()=>refreshReference.mutate(draft.occurredOn)}>刷新参考汇率</button><button type="button" className="secondary-action" disabled={!estimatedArrival||rateBusy||!!reference.error||!!refreshError} onClick={()=>{if(estimatedArrival){update('toAmount',estimatedArrival);setEstimated(true);}}}>使用日度参考汇率</button></div>
+    <FormError compact error={refreshError??reference.error}/>
+   </section>}
    <label>实际到账金额<input required inputMode="decimal" value={draft.toAmount} onChange={e=>update('toAmount',e.target.value)}/></label>
+   {estimated&&<p className="source-note" role="status">已填入参考估算，请核对银行实际到账金额。</p>}
    <label>手续费（{from?.currency??'CNY'}）<input inputMode="decimal" value={draft.fee} onChange={e=>update('fee',e.target.value)}/></label>
    <label>实际换汇日期<DateField required max={businessDate()} value={draft.occurredOn} onChange={e=>update('occurredOn',e.target.value)}/></label>
   </fieldset>
   {from&&to&&<p>实际汇率：1 {from.currency} = {ratio(draft.fromAmount,draft.toAmount)} {to.currency}（不含手续费）</p>}
-  {fromRate?.cnyPerUnit&&toRate?.cnyPerUnit?<p className="source-note">日参考汇率：1 {from?.currency} = {ratio(toRate.cnyPerUnit,fromRate.cnyPerUnit)} {to?.currency}，不替代实际到账金额。</p>:<p className="source-note">暂无对应日参考汇率，仍可按实际金额记录换汇。</p>}
   <PaymentPreview account={from} amount={total} adjustment={!!draft.id}/><PaymentPreview account={to} amount={draft.toAmount} incoming adjustment={!!draft.id}/>
   {attempt&&!save.isPending&&<p role="status">上次结果尚未确认，请用原请求核对，避免重复记录。</p>}
   <button type="submit" disabled={save.isPending||(!attempt&&!ready)}>{attempt?'核对本次换汇结果':draft.id?'确认更正换汇':'确认记录换汇'}</button>

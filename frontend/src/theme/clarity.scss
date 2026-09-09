@@ -117,6 +117,42 @@
 .progress-track { height: 5px; background: #edf0f5; }
 .progress-track i { background: #6c86c8; }
 .progress-track i.neutral { background: #b9c1cc; }
+.budget-total-bar { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; padding: 14px 16px; border: 1px solid #dde7f7; border-radius: 13px; background: linear-gradient(180deg, #f8faff, #eef3fb); }
+.budget-total-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.budget-total-head strong { font-size: 15px; color: #273749; }
+.budget-total-values { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: #55626e; }
+.budget-total-values strong { font-size: 21px; letter-spacing: -.02em; }
+.budget-total-bar .field-help { margin: 0; }
+.budget-track-stack { display: flex; flex-direction: column; gap: 7px; }
+.budget-track-stack .progress-track i { background: #2f5bd7; }
+.budget-track-stack .progress-track i.danger { background: #d64545; }
+.budget-track-stack .progress-track i.warning { background: #f0a020; }
+.month-jump { display: inline-flex; gap: 6px; }
+.month-jump button { border: 1px solid #dfe4ea; border-radius: 7px; min-height: 34px; padding: 0 12px; background: #fff; color: #364250; font-size: 13px; cursor: pointer; }
+.month-jump button:hover { border-color: #4b6bee; color: #4b6bee; }
+.budget-card header small { display: block; margin-top: 3px; color: #94a0ad; font-size: 11px; line-height: 1.5; }
+.budget-entry-list article { display: flex; justify-content: space-between; gap: 12px; padding: 12px 4px; border-width: 0 0 1px; border-radius: 0; }
+.budget-entry-list article div { display: flex; flex-direction: column; gap: 3px; }
+.budget-entry-list article b { font-size: 14px; }
+.budget-entry-list small { color: #94a0ad; font-size: 11px; }
+.budget-hit-note { margin: 10px 0; padding: 9px 12px; border: 1px solid #f0e2bd; border-radius: 9px; background: #fffaf0; font-size: 13px; }
+.budget-hit-note p { margin: 3px 0; color: #795b29; }
+.budget-hit-note p.budget-hit-over { color: #b04242; font-weight: 600; }
+.centered-sheet { position: relative; width: min(560px, calc(100vw - 28px)); max-height: min(86vh, 720px); display: flex; flex-direction: column; background: #fff; border: 1px solid #e4e9ee; border-radius: 14px; box-shadow: 0 14px 44px rgb(24 36 52 / 18%); }
+.centered-sheet > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 18px 6px; }
+.centered-sheet > header h2 { margin: 0; font-size: 17px; line-height: 1.4; }
+.centered-sheet > header p { margin: 4px 0 0; color: #8a97a3; font-size: 12px; line-height: 1.6; }
+.centered-sheet .sheet-body { padding: 10px 18px 20px; overflow: auto; }
+.centered-sheet .sheet-body .feature-form { display: grid; gap: 14px; }
+.toolbar-button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dfe4ea; border-radius: 7px; min-height: 34px; padding: 0 14px; background: #fff; color: #364250; font-size: 13px; cursor: pointer; text-decoration: none; white-space: nowrap; transition: border-color .12s, color .12s; }
+.toolbar-button:hover { border-color: #4b6bee; color: #4b6bee; text-decoration: none; }
+.budget-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.budget-toolbar-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.budget-segment-bar { position: relative; display: flex; width: 100%; height: 12px; border-radius: 4px; background: #edf0f5; }
+.budget-segment-bar i { position: relative; display: block; height: 100%; min-width: 2px; cursor: pointer; }
+.budget-segment-bar i + i { border-left: 1px solid rgb(255 255 255 / 55%); }
+.budget-segment-bar i::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 50%; z-index: 40; max-width: min(300px, 72vw); padding: 5px 9px; border-radius: 7px; background: rgb(30 41 55 / 94%); color: #fff; font-size: 12px; line-height: 1.5; text-align: center; white-space: nowrap; pointer-events: none; opacity: 0; visibility: hidden; transform: translateX(-50%) translateY(3px); box-shadow: 0 5px 14px rgb(18 28 40 / 20%); transition: opacity .12s ease, transform .12s ease, visibility .12s; }
+.budget-segment-bar i:hover::after, .budget-segment-bar i:focus-visible::after { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
 .inline-actions { margin-top: 16px; padding-top: 12px; }
 .rule-list footer { margin-top: 17px; padding-top: 12px; }
 .task-list article { padding: 16px 10px; border-width: 0 0 1px; border-radius: 0; }

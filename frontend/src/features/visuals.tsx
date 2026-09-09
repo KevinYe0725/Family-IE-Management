@@ -13,7 +13,7 @@ export function EmptyIllustration() {
 export const entityIcons = { cash: Wallet, bank: Landmark, record: ReceiptText, income: ArrowDownLeft, expense: ArrowUpRight, chart: ChartNoAxesCombined, warning: CircleAlert };
 
 export interface ChartPoint { label: string; income: string; expense: string }
-export function FlowChart({ points, label = '收入与支出趋势' }: { points: ChartPoint[]; label?: string }) {
+export function FlowChart({ points, label = '收入与支出趋势', compact = false }: { points: ChartPoint[]; label?: string; compact?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(660);
   useEffect(() => {
@@ -27,7 +27,7 @@ export function FlowChart({ points, label = '收入与支出趋势' }: { points:
   const max = Math.max(1, ...points.flatMap(p => [Number(p.income), Number(p.expense)]).filter(Number.isFinite));
   const plotHeight = 155, plotWidth = width - 60, gap = plotWidth / Math.max(points.length, 1);
   return <div className="flow-figure" ref={container}>
-    <div className="chart-legend"><span><i className="income-dot"/>收入</span><span><i className="expense-dot"/>支出</span><span className="chart-selection" aria-live="polite">{active ? `${active.label} · 收入 ${money(active.income)} · 支出 ${money(active.expense)}` : '点选柱形查看金额'}</span></div>
+    <div className="chart-legend"><span><i className="income-dot"/>收入</span><span><i className="expense-dot"/>支出</span><span className="chart-selection" aria-live="polite">{active ? `${active.label} · 收入 ${money(active.income)} · 支出 ${money(active.expense)}` : compact ? '' : '点选柱形查看金额'}</span></div>
     <svg viewBox={`0 0 ${width} 215`} role="group" aria-label={label} className="flow-svg">
       {[0, .5, 1].map(r => <g key={r}><line x1="48" x2={width-12} y1={177 - plotHeight*r} y2={177 - plotHeight*r} stroke="#E7EBF0" strokeDasharray={r ? '3 5' : undefined}/><text x="39" y={181-plotHeight*r} textAnchor="end" fill="#7B8590" fontSize="10">{shortAmount(max*r)}</text></g>)}
       {points.map((p, i) => { const x = 48 + gap*i, bar = Math.min(16, gap*.28); return <g key={p.label} role="button" tabIndex={0} aria-label={`${p.label} 收入 ${money(p.income)} 支出 ${money(p.expense)}`} onFocus={() => setSelected(i)} onMouseEnter={() => setSelected(i)} onClick={() => setSelected(i)} onKeyDown={e => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(i); } }}>

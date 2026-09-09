@@ -147,8 +147,8 @@ export function DateField({
 
   useLayoutEffect(() => {
     if (!open || !keyboardOpenRef.current) return;
-    // 弹层定位：modal 内随上游挂载到内容层，其余场景挂 document.body 避免被裁剪/遮挡。
-    const container = document.body;
+    // Keep centered dialogs' focus/keyboard scope; scrolling side drawers use body.
+    const container = rootRef.current?.closest<HTMLElement>('.action-dialog, .semi-modal-content') ?? document.body;
     const focusCalendar = () => {
       const selected = container.querySelector<HTMLElement>('.unified-date-calendar [role="gridcell"][aria-selected="true"]:not([aria-disabled="true"])');
       const firstEnabled = container.querySelector<HTMLElement>('.unified-date-calendar [role="gridcell"][aria-label]:not([aria-disabled="true"])');
@@ -198,7 +198,7 @@ export function DateField({
         position="bottomLeft"
         zIndex={1200}
         getPopupContainer={() =>
-          rootRef.current?.closest<HTMLElement>('.semi-modal-content') ??
+          rootRef.current?.closest<HTMLElement>('.action-dialog, .semi-modal-content') ??
           document.body
         }
         onOpenChange={nextOpen => {

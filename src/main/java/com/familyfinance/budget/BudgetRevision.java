@@ -69,6 +69,12 @@ public class BudgetRevision {
     @Column(name = "new_active", nullable = false, updatable = false)
     private boolean newActive;
 
+    @Column(name = "old_note", length = 200, updatable = false)
+    private String oldNote;
+
+    @Column(name = "new_note", length = 200, updatable = false)
+    private String newNote;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "changed_by", nullable = false, updatable = false)
     private AppUser changedBy;
@@ -94,6 +100,8 @@ public class BudgetRevision {
         this.newAmountCents = newValue.amountCents();
         this.oldActive = oldValue.active();
         this.newActive = newValue.active();
+        this.oldNote = oldValue.note();
+        this.newNote = newValue.note();
         this.changedBy = actor;
         this.changedAt = changedAt;
     }
@@ -112,6 +120,8 @@ public class BudgetRevision {
     public Long getNewAmountCents() { return newAmountCents; }
     public boolean isOldActive() { return oldActive; }
     public boolean isNewActive() { return newActive; }
+    public String getOldNote() { return oldNote; }
+    public String getNewNote() { return newNote; }
     public AppUser getChangedBy() { return changedBy; }
     public Instant getChangedAt() { return changedAt; }
 }

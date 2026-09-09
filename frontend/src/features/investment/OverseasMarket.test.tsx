@@ -9,6 +9,13 @@ import type { RequestFn } from '../common';
 vi.mock('klinecharts', () => ({ init: () => null, dispose: () => {} }));
 const hk = { market: 'HK', symbol: '00700', name: '騰訊控股', currency: 'HKD', exchange: 'HKEX', timezone: 'Asia/Hong_Kong' };
 const us = { market: 'US', symbol: 'AAPL', name: 'Apple Inc.', currency: 'USD', exchange: 'NASDAQ', timezone: 'America/New_York' };
+it('places the chart before buy actions without the repeated prose',async()=>{
+ const request=(async()=>({items:[hk],state:'READY',stale:false,hasNext:true})) as RequestFn;
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><OverseasMarketPanel request={request} market="HK" initial={hk as any} tradingEnabled onBuy={()=>{}}/></QueryClientProvider>);
+ const buy=screen.getByRole('button',{name:'记录买入騰訊控股'});
+ expect(screen.getByRole('button',{name:'日 K'}).compareDocumentPosition(buy)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(screen.queryByText('行情不会自动修改持仓，请同步实际发生的交易。')).not.toBeInTheDocument();
+});
 it('does not select a quote result while the user is composing Chinese text', async () => {
   const paths:string[]=[];
   const request:RequestFn=async<T,>(path:string)=>{paths.push(path);return {items:[hk],state:'READY',stale:false,hasNext:false} as T;};

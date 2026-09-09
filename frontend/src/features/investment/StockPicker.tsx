@@ -48,7 +48,6 @@ export function StockPicker({ request, value, onChange, disabled = false }: {
           : waiting ? <span>正在查找股票…</span>
             : search.error ? <><span>股票搜索暂时不可用</span><button type="button" className="text-action" onClick={() => { void search.refetch(); }}>重试搜索</button></>
               : !search.data?.items.length ? <span>没有找到匹配股票，请检查代码或名称。</span>
-                : search.data.hasNext ? <span>显示前 20 条，请输入更完整的代码或名称。</span>
                   : null;
 
   return <div className="stock-picker" id={pickerId} style={{ position: 'relative' }} {...compositionProps}>

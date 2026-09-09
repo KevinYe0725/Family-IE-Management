@@ -68,6 +68,8 @@ it('opens chart immediately after selection and carries the stock into a buy dra
   await user.click(picker);
   await user.click(await screen.findByRole('option', { name: /000001.SZ · 平安银行/ }));
   expect(await screen.findByRole('button', { name: '日 K' })).toBeInTheDocument();
+  const buy=within(screen.getByRole('dialog',{name:'证券行情'})).getByRole('button',{name:'记录买入平安银行'});
+  expect(screen.getByRole('button',{name:'日 K'}).compareDocumentPosition(buy)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看 K 线' })).not.toBeInTheDocument();
   await user.click(within(screen.getByRole('dialog',{name:'证券行情'})).getByRole('button', { name: '记录买入平安银行' }));
   const dialog = screen.getByRole('dialog', { name: '记一笔投资' });

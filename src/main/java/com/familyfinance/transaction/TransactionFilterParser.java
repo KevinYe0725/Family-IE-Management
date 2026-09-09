@@ -56,7 +56,7 @@ class TransactionFilterParser {
         if (filter.bankAccountId() != null) {
             requireBankAccountExists(householdId, filter.bankAccountId(), fields);
         }
-        if (filter.memberId() != null) {
+        if (filter.memberId() != null && filter.memberId() != 0L) {
             requireMemberExists(householdId, filter.memberId(), fields);
         }
         if (filter.categoryId() != null) {
