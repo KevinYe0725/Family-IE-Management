@@ -118,7 +118,8 @@ it('leaves users already on the account setup page free to initialize', async ()
   const backend = api(async () => page([account(1)]));
   const { cache } = harness(backend.request, '/workspace/transactions?section=accounts');
   await settled(cache);
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(screen.getByRole('dialog', { name: '账户管理' })).toBeInTheDocument();
   expect(await screen.findByRole('heading', { name: '家庭账户' })).toBeInTheDocument();
   const duplicateKeys=errors.mock.calls.filter(args=>String(args[0]).includes('same key'));
   errors.mockRestore();

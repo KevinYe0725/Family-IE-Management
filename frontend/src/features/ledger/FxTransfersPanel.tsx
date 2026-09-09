@@ -7,7 +7,7 @@ import {businessDate,newIdempotencyKey} from '../../shared/runtime';
 import {DateField} from '../../shared/DateField';
 import {PaginationControls,usePageRecovery} from '../../shared/pagination';
 import {AccountOptions,PaymentPreview,cents,sumMoney,useFundsRefresh} from '../accounting';
-import {DataPanel,Drawer,ConfirmDialog,FormError,QueryState,money,isManager,type RequestFn} from '../common';
+import {DataPanel,ActionDialog,ConfirmDialog,FormError,QueryState,money,isManager,type RequestFn} from '../common';
 import {AccountingHistory} from './accounting-flows';
 import {dailyFxPair,estimateFxArrival,type DailyFxTable} from './daily-fx';
 import './fx-transfers.scss';
@@ -21,13 +21,15 @@ function ratio(from:string,to:string){
  const parse=(v:string)=>{if(!/^\d+(\.\d{1,12})?$/.test(v))return null;const [a,b='']=v.split('.');return BigInt(a)*1000000000000n+BigInt(b.padEnd(12,'0'));};
  const a=parse(from),b=parse(to);if(a==null||b==null||a<=0n)return '—';const value=(b*1000000n+a/2n)/a;return `${value/1000000n}.${String(value%1000000n).padStart(6,'0')}`;
 }
-export function FxTransfersPanel({request,role,accounts,accountsReady=true,initialBankId,onInitialHandled}:{request:RequestFn;role:HouseholdRole;accounts:Account[];accountsReady?:boolean;initialBankId?:number|null;onInitialHandled?:()=>void}){
+export function FxTransfersPanel({request,role,accounts,accountsReady=true,initialBankId,onInitialHandled,onOverlayChange}:{request:RequestFn;role:HouseholdRole;accounts:Account[];accountsReady?:boolean;initialBankId?:number|null;onInitialHandled?:()=>void;onOverlayChange?:(open:boolean)=>void}){
  const cache=useQueryClient(),fundsError=useFundsRefresh();
  const [page,setPage]=useState(0),[draft,setDraft]=useState<Draft|null>(null),[audit,setAudit]=useState<number|null>(null);
  const [estimated,setEstimated]=useState(false);
  const [attempt,retainAttempt]=useState<Attempt|null>(()=>cache.getQueryData<Attempt>(pendingKey)??null);
  const setAttempt=(value:Attempt|null)=>{retainAttempt(value);if(value)cache.setQueryData(pendingKey,value);else cache.removeQueries({queryKey:pendingKey,exact:true});};
  const [reversing,setReversing]=useState<{row:FxRow;key:string}|null>(null);
+ useEffect(()=>{onOverlayChange?.(draft!==null||audit!==null||reversing!==null);},[draft,audit,reversing,onOverlayChange]);
+ useEffect(()=>()=>onOverlayChange?.(false),[onOverlayChange]);
  const rows=useQuery({queryKey:['fx-transfers',page],queryFn:()=>request<Page<FxRow>>(`/api/fx-transfers?page=${page}&size=20`)});usePageRecovery(page,rows.data,setPage);
  const refresh=async()=>{await Promise.all(['fx-transfers','accounts','accounting-history','net-worth','dashboard','portfolio','budget-usage'].map(key=>cache.invalidateQueries({queryKey:[key]})));};
  const save=useMutation({mutationFn:(value:NonNullable<typeof attempt>)=>request<FxRow>(value.id?`/api/fx-transfers/${value.id}`:'/api/fx-transfers',{method:value.id?'PATCH':'POST',body:value.body}),
@@ -69,7 +71,7 @@ export function FxTransfersPanel({request,role,accounts,accountsReady=true,initi
     </td></tr>)}</tbody></table></div><PaginationControls page={page} totalPages={rows.data?.totalPages??0} hasNext={rows.data?.hasNext??false} onPageChange={setPage} label="换汇记录"/>
   </QueryState>
  </DataPanel>
- <Drawer open={draft!==null} title={draft?.id?'更正换汇':'记录换汇'} draft={{draft,attempt:attempt?.body}} busy={save.isPending} onClose={()=>setDraft(null)}>{draft&&<form className="feature-form" onSubmit={e=>{e.preventDefault();if(attempt){save.mutate(attempt);return;}if(!ready)return;const {id,...fields}=draft;const value={id,body:{...fields,fromAccountId:Number(draft.fromAccountId),toAccountId:Number(draft.toAccountId)},from:from&&{...from},to:to&&{...to}};setAttempt(value);save.mutate(value);}}>
+ <ActionDialog open={draft!==null} title={draft?.id?'更正换汇':'记录换汇'} draft={{draft,attempt:attempt?.body}} busy={save.isPending} onClose={()=>setDraft(null)}>{draft&&<form className="feature-form" onSubmit={e=>{e.preventDefault();if(attempt){save.mutate(attempt);return;}if(!ready)return;const {id,...fields}=draft;const value={id,body:{...fields,fromAccountId:Number(draft.fromAccountId),toAccountId:Number(draft.toAccountId)},from:from&&{...from},to:to&&{...to}};setAttempt(value);save.mutate(value);}}>
   <FormError error={save.error}/><fieldset className="feature-form" disabled={!!attempt||save.isPending}>
    <BankAccountPicker accountsReady={accountsReady} label="转出账户" name="fromAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.fromAccountId} onChange={id=>update("fromAccountId",id)}/>
    <BankAccountPicker accountsReady={accountsReady} label="转入账户" name="toAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.toAccountId} onChange={id=>update("toAccountId",id)}/>
@@ -88,8 +90,8 @@ export function FxTransfersPanel({request,role,accounts,accountsReady=true,initi
   <PaymentPreview account={from} amount={total} adjustment={!!draft.id}/><PaymentPreview account={to} amount={draft.toAmount} incoming adjustment={!!draft.id}/>
   {attempt&&!save.isPending&&<p role="status">上次结果尚未确认，请用原请求核对，避免重复记录。</p>}
   <button type="submit" disabled={save.isPending||(!attempt&&!ready)}>{attempt?'核对本次换汇结果':draft.id?'确认更正换汇':'确认记录换汇'}</button>
- </form>}</Drawer>
+ </form>}</ActionDialog>
  <ConfirmDialog open={!!reversing} title="冲销这笔换汇？" confirmLabel={undo.error?'核对冲销结果':'确认冲销'} loading={undo.isPending} danger detail={<><p>同时冲回两边本金和手续费。若到账资金已使用，会拒绝整笔冲销。</p><FormError error={undo.error}/></>} onClose={()=>setReversing(null)} onConfirm={()=>reversing&&undo.mutate(reversing)}/>
- <Drawer open={audit!==null} title="换汇账务历史" onClose={()=>setAudit(null)}>{audit!==null&&<AccountingHistory request={request} source={{sourceType:'FX_TRANSFER',sourceId:audit}}/>}</Drawer>
+ <ActionDialog open={audit!==null} title="换汇账务历史" onClose={()=>setAudit(null)}>{audit!==null&&<AccountingHistory request={request} source={{sourceType:'FX_TRANSFER',sourceId:audit}}/>}</ActionDialog>
  </>;
 }
