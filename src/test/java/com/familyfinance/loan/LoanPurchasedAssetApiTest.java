@@ -161,6 +161,101 @@ class LoanPurchasedAssetApiTest {
         assertThat(jdbc.queryForObject("select count(*) from vehicle_assets where asset_id=?",Long.class,asset)).isEqualTo(1);
         assertThat(count("ledger_journals")).isEqualTo(journals);
     }
+    @Test void principalMustEqualPurchaseValueAndDownPaymentIsRejectedBeforeAnyWrites() throws Exception {
+        long loans=count("loans"),assets=count("assets"),valuations=count("asset_valuations"),journals=count("ledger_journals");
+        String spec="\"createPurchasedAsset\":true,\"purchasedAsset\":{\"name\":\"车位\",\"purchaseValue\":\"%s\"}";
+        for(String bad:new String[]{"1000.01","999.99","abc","-1.00"})
+            create(body("OTHER").replace("\"createPurchasedAsset\":true",spec.formatted(bad)),UUID.randomUUID().toString())
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.fields.purchaseValue").exists());
+        // 即使 purchaseValue 与本金一致，携带首付资金账户也被拒绝（全额贷款，不存在差额）。
+        create(body("OTHER").replace("\"createPurchasedAsset\":true","\"createPurchasedAsset\":true,\"downPaymentAccountId\":"+account),UUID.randomUUID().toString())
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.fields.downPaymentAccountId").exists());
+        create(body("OTHER").replace("\"createPurchasedAsset\":true","\"createPurchasedAsset\":true,\"downPaymentAccountId\":"+account+",\"purchasedAsset\":{\"purchaseValue\":\"1500.00\"}"),UUID.randomUUID().toString())
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.fields.downPaymentAccountId").exists());
+        assertThat(count("loans")).isEqualTo(loans);assertThat(count("assets")).isEqualTo(assets);assertThat(count("asset_valuations")).isEqualTo(valuations);assertThat(count("ledger_journals")).isEqualTo(journals);
+        // 与本金一致的 spec 正常通过，资产按贷款全额登记且现金分文不动。
+        var loan=data(create(body("OTHER").replace("\"createPurchasedAsset\":true",spec.formatted("1000.00")),"equal-value").andExpect(status().isCreated()).andReturn());
+        long id=loan.path("id").asLong(),asset=loan.path("purchasedAssetId").asLong();
+        mvc.perform(get("/api/assets/"+asset).session(session)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value("车位")).andExpect(jsonPath("$.data.purchaseValue").value("1000.00"))
+            .andExpect(jsonPath("$.data.currentValue").value("1000.00"));
+        assertThat(count("ledger_journals")).isEqualTo(journals+1);
+        assertThat(ledger.balance(household,"ASSET:"+asset)).isEqualTo(100000);
+        assertThat(ledger.balance(household,"LOAN:"+id)).isEqualTo(100000);
+        assertThat(ledger.balance(household,"CASH:"+account)).isZero();
+        assertThat(ledger.balances(household)).isEqualTo(ledger.reconstructedBalances(household));
+    }
+
+    @Test void assetSideFullFinancedCarThenSalaryAndFirstInstallmentKeepEveryBoardConsistent() throws Exception {
+        long incomeCategory=incomeCategory();
+        // 资产侧“贷款购买”提交体：principal == 购入价值 == spec.purchaseValue，无首付账户。
+        var loan=data(create("{\"name\":\"我的新能源车\",\"type\":\"CAR\",\"paymentAccountId\":"+account+",\"paymentCategoryId\":"+category+",\"principal\":\"2000.00\",\"annualRate\":0.06,\"termMonths\":2,\"repaymentMethod\":\"EQUAL_PAYMENT\",\"startOn\":\"2026-01-01\",\"accountingOn\":\"2026-01-01\",\"fundingMode\":\"FINANCED_PURCHASE\",\"createPurchasedAsset\":true,\"purchasedAsset\":{\"name\":\"我的新能源车\",\"purchaseValue\":\"2000.00\"}}","car-full").andExpect(status().isCreated()).andReturn());
+        long id=loan.path("id").asLong(),asset=loan.path("purchasedAssetId").asLong();
+        assertThat(ledger.balance(household,"ASSET:"+asset)).isEqualTo(200000);
+        assertThat(ledger.balance(household,"LOAN:"+id)).isEqualTo(200000);
+        assertThat(ledger.balance(household,"CASH:"+account)).isZero();
+        assertThat(count("financial_transactions")).isZero();
+        // 工资入账后现金增加；资产购买与贷款期初不出现在收支列表。
+        mvc.perform(post("/api/transactions").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"kind\":\"INCOME\",\"amount\":\"5000.00\",\"occurredOn\":\"2026-01-02\",\"accountId\":"+account+",\"memberId\":"+jdbc.queryForObject("select min(id) from family_members where household_id=?",Long.class,household)+",\"categoryId\":"+incomeCategory+"}")).andExpect(status().isCreated());
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(500000);
+        assertThat(count("financial_transactions")).isEqualTo(1);
+        var list=mvc.perform(get("/api/transactions").session(session)).andExpect(status().isOk()).andReturn();
+        assertThat(list.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).contains("工资").doesNotContain("新能源车");
+        // 首期还款：金额按计划读取，付款后现金、本金与利息科目一致。
+        JsonNode schedule=json.readTree(mvc.perform(get("/api/loans/"+id+"/schedule").session(session)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).path("data");
+        JsonNode firstRow=schedule.get(0);long installment=firstRow.path("id").asLong();String due=firstRow.path("dueOn").asString();
+        long principalCents=com.familyfinance.shared.Money.parseCents(firstRow.path("principal").asString());
+        long interestCents=com.familyfinance.shared.Money.parseCents(firstRow.path("interest").asString());
+        mvc.perform(post("/api/loan-installments/"+installment+"/confirm").session(session).with(csrf()).header("Idempotency-Key","car-first-pay").contentType(MediaType.APPLICATION_JSON).content("{\"paidOn\":\""+due+"\"}")).andExpect(status().isOk());
+        assertThat(count("financial_transactions")).isEqualTo(2);
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(500000-principalCents-interestCents);
+        assertThat(ledger.balance(household,"LOAN:"+id)).isEqualTo(200000-principalCents);
+        assertThat(ledger.balance(household,"EXPENSE:"+category)).isEqualTo(interestCents);
+        assertThat(jdbc.queryForObject("select current_principal_cents from loans where id=?",Long.class,id)).isEqualTo(200000-principalCents);
+        assertThat(ledger.balances(household)).isEqualTo(ledger.reconstructedBalances(household));
+        var payments=mvc.perform(get("/api/transactions").session(session)).andExpect(status().isOk()).andReturn();
+        assertThat(payments.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).contains("工资").contains("贷款还款").doesNotContain("新能源车");
+    }
+
+    @Test void disbursedAutoLoanPaysCashCarThenIncomeAndFirstInstallmentStayConsistent() throws Exception {
+        long incomeCategory=incomeCategory();
+        long assignee=jdbc.queryForObject("select min(id) from app_users where household_id=?",Long.class,household);
+        // 银行放款到账（贷款现金入账）——现实中先用贷款资金再现金买车。
+        var loan=data(create("{\"name\":\"购车分期\",\"type\":\"CAR\",\"assignedUserId\":"+assignee+",\"paymentAccountId\":"+account+",\"paymentCategoryId\":"+category+",\"principal\":\"3000.00\",\"annualRate\":0.06,\"termMonths\":2,\"repaymentMethod\":\"EQUAL_PAYMENT\",\"startOn\":\"2026-01-01\",\"fundingMode\":\"DISBURSEMENT\",\"accountingOn\":\"2026-01-01\",\"disbursementAccountId\":"+account+"}","disburse-car").andExpect(status().isCreated()).andReturn());
+        long id=loan.path("id").asLong();
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(300000);
+        assertThat(ledger.balance(household,"LOAN:"+id)).isEqualTo(300000);
+        assertThat(count("financial_transactions")).isZero();
+        // 现金购买二手车：资产记账、现金减少，收支列表仍为空（真实购买不属于收支流水）。
+        long journals=count("ledger_journals");
+        var asset=data(mvc.perform(post("/api/assets").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"二手卡罗拉\",\"type\":\"VEHICLE\",\"accountingMode\":\"PURCHASE\",\"accountingOn\":\"2026-01-02\",\"acquiredOn\":\"2026-01-02\",\"purchaseValue\":\"2000.00\",\"currentValue\":\"2000.00\",\"fundingAccountId\":"+account+",\"vehicle\":{\"brandModel\":\"卡罗拉 2019\"}}")).andExpect(status().isCreated()).andReturn());
+        long assetId=asset.path("id").asLong();
+        assertThat(count("ledger_journals")).isEqualTo(journals+1);
+        assertThat(ledger.balance(household,"ASSET:"+assetId)).isEqualTo(200000);
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(100000);
+        assertThat(count("financial_transactions")).isZero();
+        assertThat(ledger.balances(household)).isEqualTo(ledger.reconstructedBalances(household));
+        // 工资入账后再还首期，现金与科目余额闭环。
+        mvc.perform(post("/api/transactions").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"kind\":\"INCOME\",\"amount\":\"3000.00\",\"occurredOn\":\"2026-01-05\",\"accountId\":"+account+",\"memberId\":"+jdbc.queryForObject("select min(id) from family_members where household_id=?",Long.class,household)+",\"categoryId\":"+incomeCategory+"}")).andExpect(status().isCreated());
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(400000);
+        JsonNode schedule=json.readTree(mvc.perform(get("/api/loans/"+id+"/schedule").session(session)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).path("data");
+        JsonNode firstRow=schedule.get(0);long installment=firstRow.path("id").asLong();String due=firstRow.path("dueOn").asString();
+        long principalCents=com.familyfinance.shared.Money.parseCents(firstRow.path("principal").asString());
+        long interestCents=com.familyfinance.shared.Money.parseCents(firstRow.path("interest").asString());
+        mvc.perform(post("/api/loan-installments/"+installment+"/confirm").session(session).with(csrf()).header("Idempotency-Key","car-loan-first-pay").contentType(MediaType.APPLICATION_JSON).content("{\"paidOn\":\""+due+"\"}")).andExpect(status().isOk());
+        assertThat(count("financial_transactions")).isEqualTo(2);
+        assertThat(ledger.balance(household,"CASH:"+account)).isEqualTo(400000-principalCents-interestCents);
+        assertThat(ledger.balance(household,"LOAN:"+id)).isEqualTo(300000-principalCents);
+        assertThat(jdbc.queryForObject("select current_principal_cents from loans where id=?",Long.class,id)).isEqualTo(300000-principalCents);
+        assertThat(ledger.balances(household)).isEqualTo(ledger.reconstructedBalances(household));
+        var list=mvc.perform(get("/api/transactions").session(session)).andExpect(status().isOk()).andReturn();
+        assertThat(list.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).contains("工资").contains("贷款还款").doesNotContain("二手卡罗拉");
+    }
+    private long incomeCategory()throws Exception{
+        Long id=jdbc.queryForObject("select min(id) from categories where household_id=? and kind='INCOME'",Long.class,household);
+        if(id!=null)return id;
+        return data(mvc.perform(post("/api/categories").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"kind\":\"INCOME\",\"name\":\"工资\",\"color\":\"#00B42A\"}")).andExpect(status().isCreated()).andReturn()).path("id").asLong();
+    }
     private void withEarlierSnapshot(Checked outside,Checked inside)throws Exception {
         var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
         var tx=new org.springframework.transaction.support.TransactionTemplate(transactionManager);

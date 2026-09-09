@@ -15,6 +15,7 @@ it('returns server validation to the earlier wizard step and preserves the whole
   };
   const user = userEvent.setup(); render(wrap(<LoansPage request={request} role="OWNER" />));
   await user.click(screen.getByRole('button', { name: '新建贷款' }));
+  await user.selectOptions(screen.getByLabelText('入账方式'), 'OPENING');
   await user.type(screen.getByLabelText('贷款名称'), '保留合同');
   await user.type(screen.getByLabelText('账务起始日剩余本金'), '1000');
   fireEvent.submit(screen.getByLabelText('账务起始日剩余本金').closest('form')!);

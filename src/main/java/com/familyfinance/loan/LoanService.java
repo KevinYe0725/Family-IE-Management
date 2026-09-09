@@ -24,9 +24,10 @@ public class LoanService {
     private final AmortizationCalculator calculator=new AmortizationCalculator();
     private final LoanAccountingService accounting; private final AccountingRequests requests; private final LoanPrepaymentRepository prepayments; private final LoanInstallmentRepository installments;
     private final LoanPurchasedAssetService purchasedAssets; private final LoanTotalsService totals;
-    LoanService(LoanRepository loans, AssetRepository assets, FamilyMemberRepository members, AppUserRepository users, FinancialAccountRepository accounts, CategoryRepository categories, CurrentMembership current, FamilyMutationAuthorization mutations, Clock clock, LoanAccountingService accounting, AccountingRequests requests,LoanPrepaymentRepository prepayments,LoanInstallmentRepository installments,LoanPurchasedAssetService purchasedAssets,LoanTotalsService totals) {
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    LoanService(LoanRepository loans, AssetRepository assets, FamilyMemberRepository members, AppUserRepository users, FinancialAccountRepository accounts, CategoryRepository categories, CurrentMembership current, FamilyMutationAuthorization mutations, Clock clock, LoanAccountingService accounting, AccountingRequests requests,LoanPrepaymentRepository prepayments,LoanInstallmentRepository installments,LoanPurchasedAssetService purchasedAssets,LoanTotalsService totals,org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.loans=loans;this.assets=assets;this.members=members;this.users=users;this.accounts=accounts;this.categories=categories;this.current=current;this.mutations=mutations;this.clock=clock;this.accounting=accounting;this.requests=requests;this.prepayments=prepayments;this.installments=installments;
-        this.purchasedAssets=purchasedAssets;this.totals=totals;
+        this.purchasedAssets=purchasedAssets;this.totals=totals;this.jdbc=jdbc;
     }
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public LoanPage list(Authentication a, LoanStatus status,int page,int size){long h=current.require(a).householdId(); int p=Math.max(0,page), s=Math.min(MAX_PAGE_SIZE,Math.max(1,size)); Page<Loan> r=loans.findByHouseholdIdAndStatus(h,status==null?LoanStatus.ACTIVE:status,PageRequest.of(p,s,Sort.by(Sort.Direction.DESC,"id"))); return new LoanPage(r.stream().map(l->response(l,false)).toList(),p,s,r.getTotalElements(),r.getTotalPages(),r.hasNext());}
@@ -50,15 +51,34 @@ public class LoanService {
         if(purchased&&r.linkedAssetId()!=null)throw new RequestValidationException(Map.of("linkedAssetId","本次贷款购买物不能同时关联已有资产"));
         FinancialAccount disbursement=disbursement(h,r.fundingMode(),r.disbursementAccountId());
         LocalDate day=accounting.accountingDate(r.accountingOn());
-        Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,v.user,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
+        // 贷款购买自动建立的贷款默认由创建人担任确认人（可在贷款板块另行修改）；否则从未分配确认人的贷款无法确认任何一期还款。
+        var assignee=v.user!=null?v.user:(purchased?access.membership().getUser():null);
+        Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,assignee,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
         loan.replaceSchedule(v.schedule);
+        var spec=r.purchasedAsset();
+        if(purchased){
+            var perrors=new LinkedHashMap<String,String>();
+            if(spec!=null&&spec.purchaseValue()!=null){
+                try{
+                    long provided=Money.parseCents(spec.purchaseValue());
+                    if(provided!=loan.getPrincipalCents())
+                        perrors.put("purchaseValue","贷款购买时贷款本金必须等于购入价值");
+                }catch(IllegalArgumentException e){perrors.put("purchaseValue",e.getMessage());}
+            }
+            if(r.downPaymentAccountId()!=null)
+                perrors.put("downPaymentAccountId","贷款购买不支持首付差额（贷款本金=购入价值，由贷款全额支付）");
+            if(!perrors.isEmpty())throw new RequestValidationException(perrors);
+        }
         if(purchased){
             // Persist the valid all-null accounting tuple to obtain the immutable origin ID.
             loans.saveAndFlush(loan);
-            loan.attachPurchasedAsset(purchasedAssets.create(loan,day));
+            String assetName=spec==null||spec.name()==null?null:spec.name().trim();
+            FamilyMember assetOwner=spec==null||spec.ownerMemberId()==null?null:resolveMember(h,spec.ownerMemberId(),new LinkedHashMap<>());
+            loan.attachPurchasedAsset(purchasedAssets.create(loan,day,assetName,assetOwner,loan.getPrincipalCents()));
         }
         loan.accounting(r.fundingMode(),day,disbursement);loans.saveAndFlush(loan);
-        accounting.originate(loan,access.context().userId(),key,false);requests.record(h,key,digest,loan.getId());return response(loan,true);
+        accounting.originate(loan,access.context().userId(),key,false);
+        requests.record(h,key,digest,loan.getId());return response(loan,true);
     }
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r){return update(a,id,r,AccountingRequests.key(null));}
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r,String key){
@@ -105,6 +125,37 @@ public class LoanService {
         if(loan.getCurrentPrincipalCents()!=0)throw new ResourceConflictException("LOAN_BALANCE_NOT_ZERO","贷款仍有未偿本金，不能归档");
         // Fully paid loans retain CLOSED and all payment history.
         loan.archive(clock.instant());requests.record(h,key,digest,id);
+    }
+    @Transactional public void cancel(Authentication a,long id){cancel(a,id,AccountingRequests.key(null));}
+    @Transactional public void cancel(Authentication a,long id,String key){
+        var access=mutations.requireAdmin(a);long h=access.context().householdId();
+        String digest=requests.digest("LOAN_CANCEL:"+id,access.context().userId(),id);
+        if(requests.replay(h,key,digest)!=null)return;
+        Loan loan=locked(h,id);
+        if(loan.isArchived())throw new ResourceConflictException("LOAN_CLOSED","贷款已归档或结清，无需取消");
+        if(loan.getFundingMode()==null)throw new ResourceConflictException("ACCOUNTING_NOT_INITIALIZED","旧贷款尚未确认账务期初，不能取消");
+        accounting.requireBalance(loan);
+        // 已有任何还款/提前还款即禁止取消：红字冲销放款会破坏现金流与剩余本金的一致性。
+        if(loan.getLastPaymentOn()!=null
+            || installments.findAllLockedByLoanIdAndHouseholdIdOrderByInstallmentNo(id,h).stream().anyMatch(i->i.getStatus()==LoanInstallmentStatus.PAID)
+            || !prepayments.findAllLockedByLoanIdAndHouseholdId(id,h).isEmpty())
+            throw new ResourceConflictException("LOAN_HAS_PAYMENTS","已有还款或提前还款记录，不能取消；请先撤销相关还款后再取消贷款");
+        Long assetId=loan.getPurchasedAssetId();
+        accounting.cancel(loan,access.context().userId(),key);
+        if(assetId!=null){
+            // 贷款购买物：先解除 assets.purchase_loan_id → loans 的循环外键并降级为无账务旧资产（满足 ck_asset_accounting），再删除贷款与资产。
+            jdbc.update("update assets set purchase_loan_id=null, accounting_mode=null, accounting_on=null, initial_value_cents=null, funding_account_id=null, last_accounting_on=null where household_id=? and id=?",h,assetId);
+        }
+        jdbc.update("delete from loan_repayment_policy_history where household_id=? and loan_id=?",h,id);
+        jdbc.update("delete from loan_installments where household_id=? and loan_id=?",h,id);
+        jdbc.update("delete from loans where household_id=? and id=?",h,id);
+        if(assetId!=null){
+            jdbc.update("delete from asset_valuations where household_id=? and asset_id=?",h,assetId);
+            jdbc.update("delete from property_assets where household_id=? and asset_id=?",h,assetId);
+            jdbc.update("delete from vehicle_assets where household_id=? and asset_id=?",h,assetId);
+            jdbc.update("delete from assets where household_id=? and id=?",h,assetId);
+        }
+        requests.record(h,key,digest,id);
     }
     private FinancialAccount disbursement(long h,LoanFundingMode mode,Long id){
         if(mode==LoanFundingMode.FINANCED_PURCHASE){if(id!=null)throw new RequestValidationException(Map.of("disbursementAccountId","直接购买不经过家庭现金账户"));return null;}

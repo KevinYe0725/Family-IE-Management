@@ -36,6 +36,7 @@ import {
 } from "../accounting";
 import { AccountingHistory } from "../ledger/accounting-flows";
 import {
+  ConfirmDialog,
   DataPanel,
   Drawer,
   FormError,
@@ -168,6 +169,7 @@ export function LoansPage({
   const [useAiConsent, setUseAiConsent] = useState(false);
   const [prepayOpen, setPrepayOpen] = useState(false);
   const [loanPage, setLoanPage] = useState(0);
+  const [cancelId, setCancelId] = useState<number | null>(null);
   const [schedulePage, setSchedulePage] = useState(0);
   const [scheduleView, setScheduleView] = useState<"CURRENT" | "HISTORY">(
     "CURRENT",
@@ -384,9 +386,23 @@ export function LoansPage({
       void loans.refetch();
     },
   });
+  const cancel = useMutation({
+    mutationFn: (id: number) =>
+      request<void>(`/api/loans/${id}/cancel`, {
+        method: "POST",
+        headers: { "Idempotency-Key": newIdempotencyKey() },
+      }),
+    onError: fundsError,
+    onSuccess: () => {
+      setCancelId(null);
+      void debtOverview.refetch();
+      void loans.refetch();
+    },
+  });
   const blank = (): LoanDraft => ({
     key: newIdempotencyKey(),
-    fundingMode: "OPENING",
+    fundingMode: "FINANCED_PURCHASE",
+    createPurchasedAsset: true,
     accountingOn: businessDate(),
     disbursementAccountId: "",
     name: "",
@@ -525,6 +541,14 @@ export function LoansPage({
                         >
                           一次结清
                         </Button>
+                        {!item.lastPaymentOn && (
+                          <button
+                            className="text-action danger"
+                            onClick={() => setCancelId(item.id)}
+                          >
+                            取消
+                          </button>
+                        )}
                         <button
                           className="text-action danger"
                           onClick={() => archive.mutate(item.id)}
@@ -915,7 +939,7 @@ export function LoansPage({
                     关联资产
                     <select
                       name="linkedAssetId"
-                      disabled={Boolean(draft.purchasedAssetId)}
+                      disabled={Boolean(draft.purchasedAssetId) || draft.createPurchasedAsset === true}
                       value={
                         draft.createPurchasedAsset
                           ? "PURCHASED"
@@ -939,25 +963,31 @@ export function LoansPage({
                         })
                       }
                     >
-                      <option value="">不关联</option>
-                      {!draft.id && (
+                      {draft.createPurchasedAsset === true ? (
                         <option value="PURCHASED">本次贷款购买物</option>
+                      ) : (
+                        <>
+                          <option value="">不关联</option>
+                          {!draft.id && (
+                            <option value="PURCHASED">本次贷款购买物</option>
+                          )}
+                          {assets.data
+                            ?.filter(
+                              (item) =>
+                                item.type ===
+                                (draft.type === "MORTGAGE"
+                                  ? "PROPERTY"
+                                  : draft.type === "CAR"
+                                    ? "VEHICLE"
+                                    : "OTHER"),
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                        </>
                       )}
-                      {assets.data
-                        ?.filter(
-                          (item) =>
-                            item.type ===
-                            (draft.type === "MORTGAGE"
-                              ? "PROPERTY"
-                              : draft.type === "CAR"
-                                ? "VEHICLE"
-                                : "OTHER"),
-                        )
-                        .map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
                     </select>
                   </label>
                   {draft.fundingMode === "FINANCED_PURCHASE" && (
@@ -1554,6 +1584,26 @@ export function LoansPage({
           />
         )}
       </Drawer>
+      <ConfirmDialog
+        open={cancelId !== null}
+        loading={cancel.isPending}
+        title="取消这笔贷款？"
+        detail={
+          <>
+            <p>
+              将红字冲销该贷款的期初/放款账务并删除贷款计划；若为贷款购买物，将一并撤销关联资产。已有还款记录的贷款不能取消。此操作不可撤销。
+            </p>
+            <FormError error={cancel.error} />
+          </>
+        }
+        danger
+        confirmLabel="取消贷款"
+        onClose={() => {
+          setCancelId(null);
+          cancel.reset();
+        }}
+        onConfirm={() => cancelId !== null && cancel.mutate(cancelId)}
+      />
     </PageScaffold>
   );
 }

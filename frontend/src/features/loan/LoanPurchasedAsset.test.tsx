@@ -25,6 +25,7 @@ function setup(financed = false) {
 it('creates a purchased asset from the association selector with a direct-purchase payload and clear cash explanation', async () => {
   const { user, request } = setup();
   await user.click(screen.getByRole('button', { name: '新建贷款' }));
+  await user.selectOptions(screen.getByLabelText('入账方式'), 'OPENING');
   await user.type(screen.getByLabelText('贷款名称'), '购房贷款');
   await user.type(screen.getByLabelText('账务起始日剩余本金'), '1000.00');
   await user.click(screen.getByRole('button', { name: '下一步' }));

@@ -69,6 +69,14 @@ public class AssetController {
         executor.execute(()->{assets.archive(authentication, id,key);return null;});
     }
 
+    @PostMapping("/{id}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void cancel(Authentication authentication, @PathVariable long id,
+            @org.springframework.web.bind.annotation.RequestHeader(value="Idempotency-Key",required=false) String supplied) {
+        String key=com.familyfinance.accounting.AccountingRequests.key(supplied);
+        executor.execute(()->{assets.cancel(authentication, id,key);return null;});
+    }
+
     @GetMapping("/{id}/valuations")
     ResponseEntity<ApiEnvelope<AssetValuationPage>> valuations(
             Authentication authentication,

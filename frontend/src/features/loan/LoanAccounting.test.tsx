@@ -43,7 +43,9 @@ it('offers closed loan history and explicit opening versus disbursement creation
   const { user } = setup();
   expect(screen.getByLabelText('贷款状态')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: '新建贷款' }));
-  expect(screen.getByLabelText('入账方式')).toHaveValue('OPENING');
+  expect(screen.getByLabelText('入账方式')).toHaveValue('FINANCED_PURCHASE');
+  expect(screen.getByLabelText('贷款购买本金')).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText('入账方式'), 'OPENING');
   expect(screen.getByLabelText('账务起始日剩余本金')).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText('入账方式'), 'DISBURSEMENT');
   expect(screen.getByLabelText('放款到账账户')).toBeRequired();
@@ -68,4 +70,11 @@ it.each([
   await screen.findByRole('button', { name: '贷款起始账务历史' });
   expect(screen.queryByRole('button', { name: '未来还款设置' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: '贷款起始账务历史' })).toBeInTheDocument();
+});
+it('cancels a pristine active loan through a confirmation dialog', async () => {
+  const { user, request } = setup();
+  await user.click(await screen.findByRole('button', { name: '取消' }));
+  expect(screen.getByText(/红字冲销该贷款的期初\/放款账务/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: '取消贷款' }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith('/api/loans/4/cancel', expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': expect.any(String) } })));
 });
