@@ -17,7 +17,7 @@ class LoanRepaymentBatchMigrationTest {
   before.executeUpdate("insert into accounting_commands(household_id,request_key,request_digest,source_id) values(1,'old-extra-key','"+"a".repeat(64)+"',1)");
   var queries=List.of("select * from loans order by id","select * from loan_installments order by id","select id,loan_id,request_key,amount,interest_amount,paid_on,transaction_id,operation_kind,strategy from loan_prepayments order by id","select * from financial_transactions order by id","select * from ledger_accounts order by household_id,account_code","select * from ledger_journals order by id","select * from ledger_entries order by id","select * from ledger_sources order by household_id,source_type,source_id","select * from accounting_commands order by household_id,request_key");
   var snapshot=new ArrayList<List<List<String>>>();for(var q:queries)snapshot.add(rows(before.databaseUrl(),q));
-  var after=MigrationTestSupport.migrateExistingDatabase(file);assertThat(after.version()).isEqualTo("40");
+  var after=MigrationTestSupport.migrateExistingDatabase(file);assertThat(after.version()).isEqualTo("41");
   for(int i=0;i<queries.size();i++)assertThat(rows(after.databaseUrl(),queries.get(i))).as(queries.get(i)).isEqualTo(snapshot.get(i));
   assertThat(after.queryLong("select count(*) from loan_repayment_batches")).isZero();assertThat(after.queryLong("select count(*) from loan_repayment_batch_children")).isZero();
   assertThat(after.queryLong("select count(*) from loan_prepayments where repayment_batch_id is null")).isEqualTo(1);

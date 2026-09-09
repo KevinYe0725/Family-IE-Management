@@ -12,6 +12,7 @@ import com.familyfinance.accounting.AccountingRequests;
 import com.familyfinance.accounting.CashAccountingService;
 import com.familyfinance.accounting.LedgerReadService;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -35,18 +36,24 @@ public class AccountService {
     private final LedgerReadService ledger;
     private final AccountingRequests requests;
     private final com.familyfinance.accounting.MultiCurrencyPolicy currencyPolicy;
+    private final BankAccountRepository bankAccounts;
+    private final FinancialAccountReferenceGuard references;
 
     public AccountService(
             FinancialAccountRepository accounts,
             CurrentMembership currentMembership,
             FamilyMutationAuthorization mutationAuthorization,
-            Clock clock, CashAccountingService cash, LedgerReadService ledger, AccountingRequests requests,com.familyfinance.accounting.MultiCurrencyPolicy currencyPolicy) {
+            Clock clock, CashAccountingService cash, LedgerReadService ledger, AccountingRequests requests,
+            com.familyfinance.accounting.MultiCurrencyPolicy currencyPolicy, BankAccountRepository bankAccounts,
+            FinancialAccountReferenceGuard references) {
         this.accounts = accounts;
         this.currentMembership = currentMembership;
         this.mutationAuthorization = mutationAuthorization;
         this.clock = clock;
         this.cash=cash; this.ledger=ledger; this.requests=requests;
         this.currencyPolicy=currencyPolicy;
+        this.bankAccounts=bankAccounts;
+        this.references=references;
     }
 
     public AccountPage list(Authentication authentication, int page, int size) {
@@ -78,6 +85,24 @@ public class AccountService {
     @Transactional
     public AccountResponse create(Authentication authentication, AccountCreateRequest request, String key) {
         FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireAdmin(authentication);
+        return create(access, request, key, null);
+    }
+
+    /** Parent bank creation calls this method to reuse the cash-opening transaction. */
+    @Transactional
+    AccountResponse createForBank(
+            FamilyMutationAuthorization.LockedFamilyAccess access,
+            AccountCreateRequest request,
+            BankAccount bankAccount,
+            String key) {
+        return create(access, request, key, bankAccount);
+    }
+
+    private AccountResponse create(
+            FamilyMutationAuthorization.LockedFamilyAccess access,
+            AccountCreateRequest request,
+            String key,
+            BankAccount suppliedBankAccount) {
         key=AccountingRequests.key(key);
         String digest=requests.digest("ACCOUNT_CREATE",access.context().userId(),request);
         Long previous=requests.replay(access.context().householdId(),key,digest);
@@ -95,8 +120,19 @@ public class AccountService {
         LocalDate openingOn=cash.date(request.openingOn(),"openingOn");
         validateUnique(access.context().householdId(), name, null);
         try {
+            BankAccount bankAccount = suppliedBankAccount;
+            if (type == AccountType.BANK && bankAccount == null) {
+                bankAccount = bankAccounts.saveAndFlush(new BankAccount(
+                        access.household(), name, details.bankName(), details.cardLastFour()));
+            }
+            if (type != AccountType.BANK && suppliedBankAccount != null) {
+                throw new RequestValidationException(Map.of("type", "银行卡主账户只能关联银行卡子账户"));
+            }
             FinancialAccount account = accounts.saveAndFlush(new FinancialAccount(
                     access.household(), name, type, currency, openingBalance));
+            if (bankAccount != null) {
+                account.attachBankAccount(bankAccount);
+            }
             account.updateDetails(details.walletProvider(), details.bankName(), details.cardLastFour());
             cash.opening(account,openingBalance,openingOn,access.context().userId(),key);
             accounts.flush();
@@ -152,8 +188,45 @@ public class AccountService {
             :account.getOpeningOn();
         validateUnique(householdId, name, accountId);
         try {
+            BankAccount bankAccount = account.getBankAccount();
+            boolean groupedNameChange = bankAccount != null && type == AccountType.BANK
+                    && request != null && request.name() != null;
+            if (type == AccountType.BANK && bankAccount == null) {
+                bankAccount = bankAccounts.saveAndFlush(new BankAccount(
+                        access.household(), name, details.bankName(), details.cardLastFour()));
+                account.attachBankAccount(bankAccount);
+            }
+            if (type != AccountType.BANK && bankAccount != null) {
+                account.detachBankAccount();
+                bankAccount = null;
+            }
+            if (bankAccount != null && type == AccountType.BANK) {
+                String parentName = groupedNameChange ? name : bankAccount.getName();
+                List<FinancialAccount> children = accounts.findLockedByBankAccountIdAndHouseholdId(
+                        bankAccount.getId(), householdId);
+                boolean legacySingleChild = children.size() == 1
+                        && children.get(0).getName().equals(bankAccount.getName());
+                if (groupedNameChange && !legacySingleChild) {
+                    validateGroupedNames(householdId, children, parentName);
+                }
+                bankAccount.update(parentName, details.bankName(), details.cardLastFour());
+                for (FinancialAccount child : children) {
+                    if (groupedNameChange) {
+                        child.rename(legacySingleChild
+                                ? parentName : BankAccountService.childName(parentName, child.getCurrency()));
+                    }
+                    child.updateBankMetadata(details.bankName(), details.cardLastFour());
+                }
+                name = groupedNameChange
+                        ? (legacySingleChild ? parentName : BankAccountService.childName(parentName, account.getCurrency()))
+                        : account.getName();
+            }
             account.update(name, type, currency, openingBalance);
-            account.updateDetails(details.walletProvider(), details.bankName(), details.cardLastFour());
+            if (type == AccountType.BANK && account.getBankAccount() != null) {
+                account.updateBankMetadata(details.bankName(), details.cardLastFour());
+            } else {
+                account.updateDetails(details.walletProvider(), details.bankName(), details.cardLastFour());
+            }
             if(openingChange) cash.opening(account,openingBalance,openingOn,access.context().userId(),key);
             accounts.flush();
             requests.record(householdId,key,digest,accountId);
@@ -177,8 +250,8 @@ public class AccountService {
         // Authorization holds the household write lock before this fresh balance read.
         if(cash.currentBalance(householdId,accountId)!=0)
             throw new ResourceConflictException("ACCOUNT_BALANCE_NOT_ZERO", "账户余额不为零，无法归档");
-        if (accounts.countActiveRecurringReferences(householdId, accountId) > 0) {
-            throw new ResourceConflictException("RESOURCE_IN_USE", "账户仍被有效周期规则使用，无法归档");
+        if (references.hasBlockingReferences(householdId, accountId)) {
+            throw new ResourceConflictException("RESOURCE_IN_USE", "账户仍被有效业务使用，无法归档");
         }
         account.archive(clock.instant());
         accounts.flush();
@@ -202,6 +275,21 @@ public class AccountService {
                 : accounts.existsByHouseholdIdAndNameAndIdNot(householdId, name, accountId);
         if (duplicate) {
             throw duplicateName();
+        }
+    }
+
+    private void validateGroupedNames(long householdId, java.util.List<FinancialAccount> children, String parentName) {
+        for (FinancialAccount child : children) {
+            String desired = BankAccountService.childName(parentName, child.getCurrency());
+            if (desired.length() > 100) {
+                throw new RequestValidationException(Map.of("name", "银行卡名称加币种后不能超过 100 个字符"));
+            }
+            boolean siblingConflict = children.stream()
+                    .anyMatch(other -> other != child && desired.equals(other.getName()));
+            boolean outsideConflict = accounts.findLockedByHouseholdIdAndName(householdId, desired)
+                    .filter(existing -> children.stream().noneMatch(other -> existing.getId().equals(other.getId())))
+                    .isPresent();
+            if (siblingConflict || outsideConflict) throw duplicateName();
         }
     }
 

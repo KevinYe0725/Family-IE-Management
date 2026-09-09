@@ -30,6 +30,10 @@ final class TransactionSpecifications {
             if (criteria.accountId() != null) {
                 predicates.add(builder.equal(root.get("account").get("id"), criteria.accountId()));
             }
+            if (criteria.bankAccountId() != null) {
+                predicates.add(builder.equal(
+                        root.get("account").get("bankAccount").get("id"), criteria.bankAccountId()));
+            }
             if (criteria.memberId() != null) {
                 predicates.add(builder.equal(root.get("member").get("id"), criteria.memberId()));
             }

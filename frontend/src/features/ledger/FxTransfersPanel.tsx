@@ -1,4 +1,5 @@
-import {useState} from 'react';
+import {BankAccountPicker} from './BankAccountPicker';
+import {useEffect,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import type {Account,HouseholdRole,Page} from '../../api/contracts';
 import {ApiError} from '../../api/client';
@@ -18,7 +19,7 @@ function ratio(from:string,to:string){
  const parse=(v:string)=>{if(!/^\d+(\.\d{1,12})?$/.test(v))return null;const [a,b='']=v.split('.');return BigInt(a)*1000000000000n+BigInt(b.padEnd(12,'0'));};
  const a=parse(from),b=parse(to);if(a==null||b==null||a<=0n)return '—';const value=(b*1000000n+a/2n)/a;return `${value/1000000n}.${String(value%1000000n).padStart(6,'0')}`;
 }
-export function FxTransfersPanel({request,role,accounts}:{request:RequestFn;role:HouseholdRole;accounts:Account[]}){
+export function FxTransfersPanel({request,role,accounts,accountsReady=true,initialBankId,onInitialHandled}:{request:RequestFn;role:HouseholdRole;accounts:Account[];accountsReady?:boolean;initialBankId?:number|null;onInitialHandled?:()=>void}){
  const cache=useQueryClient(),fundsError=useFundsRefresh();
  const [page,setPage]=useState(0),[draft,setDraft]=useState<Draft|null>(null),[audit,setAudit]=useState<number|null>(null);
  const [attempt,retainAttempt]=useState<Attempt|null>(()=>cache.getQueryData<Attempt>(pendingKey)??null);
@@ -37,6 +38,15 @@ export function FxTransfersPanel({request,role,accounts}:{request:RequestFn;role
  const fromRate=reference.data?.rows?.find(r=>r.currency===from?.currency),toRate=reference.data?.rows?.find(r=>r.currency===to?.currency);
  const update=(field:keyof Draft,value:string)=>{save.reset();setDraft(old=>old?{...old,[field]:value,idempotencyKey:newIdempotencyKey()}:old);};
  const blank=()=>({fromAccountId:'',toAccountId:'',fromAmount:'',toAmount:'',fee:'0',occurredOn:businessDate(),idempotencyKey:newIdempotencyKey()});
+ useEffect(()=>{
+  if(!initialBankId||!isManager(role))return;
+  const children=accounts.filter(a=>a.bankAccountId===initialBankId&&!a.archivedAt&&a.openingConfirmed);
+  if(children.length<2)return;
+  // A lost response remains the priority; never replace a frozen financial request.
+  if(attempt)setDraft({...attempt.body,id:attempt.id,fromAccountId:String(attempt.body.fromAccountId),toAccountId:String(attempt.body.toAccountId)});
+  else setDraft({...blank(),fromAccountId:String(children[0].id),toAccountId:String(children[1].id)});
+  onInitialHandled?.();
+ },[initialBankId,accounts,role]);
  return <><DataPanel title="换汇记录" meta="记录实际到账，不执行银行或券商兑换。" action={isManager(role)&&<button type="button" className="secondary-action" onClick={()=>{save.reset();setDraft(attempt?{...attempt.body,id:attempt.id,fromAccountId:String(attempt.body.fromAccountId),toAccountId:String(attempt.body.toAccountId)}:blank());}}>{attempt?'继续核对上次换汇':'记录换汇'}</button>}>
   <QueryState loading={rows.isLoading} error={rows.error} empty={!rows.data?.items.length} emptyTitle="还没有换汇记录" emptyDetail="不同币种之间的资金移动，在这里同时记录转出本金、手续费和到账金额。">
    <div className="responsive-data"><table><thead><tr><th>日期</th><th>转出本金</th><th>到账金额</th><th>手续费</th><th>状态 / 操作</th></tr></thead><tbody>{rows.data?.items.map(row=><tr key={row.id}>
@@ -48,8 +58,8 @@ export function FxTransfersPanel({request,role,accounts}:{request:RequestFn;role
  </DataPanel>
  <Drawer open={draft!==null} title={draft?.id?'更正换汇':'记录换汇'} draft={{draft,attempt:attempt?.body}} busy={save.isPending} onClose={()=>setDraft(null)}>{draft&&<form className="feature-form" onSubmit={e=>{e.preventDefault();if(attempt){save.mutate(attempt);return;}if(!ready)return;const {id,...fields}=draft;const value={id,body:{...fields,fromAccountId:Number(draft.fromAccountId),toAccountId:Number(draft.toAccountId)},from:from&&{...from},to:to&&{...to}};setAttempt(value);save.mutate(value);}}>
   <FormError error={save.error}/><fieldset className="feature-form" disabled={!!attempt||save.isPending}>
-   <label>转出账户<select required value={draft.fromAccountId} onChange={e=>update('fromAccountId',e.target.value)}><option value="">请选择</option><AccountOptions accounts={accounts}/></select></label>
-   <label>转入账户<select required value={draft.toAccountId} onChange={e=>update('toAccountId',e.target.value)}><option value="">请选择</option><AccountOptions accounts={accounts.filter(a=>a.id!==from?.id&&(!from||a.currency!==from.currency))}/></select></label>
+   <BankAccountPicker accountsReady={accountsReady} label="转出账户" name="fromAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.fromAccountId} onChange={id=>update("fromAccountId",id)}/>
+   <BankAccountPicker accountsReady={accountsReady} label="转入账户" name="toAccountId" accounts={accounts} request={request} disabled={!!attempt} value={draft.toAccountId} onChange={id=>update("toAccountId",id)}/>
    <label>实际转出本金<input required inputMode="decimal" value={draft.fromAmount} onChange={e=>update('fromAmount',e.target.value)}/></label>
    <label>实际到账金额<input required inputMode="decimal" value={draft.toAmount} onChange={e=>update('toAmount',e.target.value)}/></label>
    <label>手续费（{from?.currency??'CNY'}）<input inputMode="decimal" value={draft.fee} onChange={e=>update('fee',e.target.value)}/></label>

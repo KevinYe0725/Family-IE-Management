@@ -13,7 +13,7 @@ class InvestmentPlanMigrationTest {
         MigrationResult before=MigrationTestSupport.migrateFreshDatabaseTo(database,"38");
         long journals=before.queryLong("select count(*) from ledger_journals");
         MigrationResult after=MigrationTestSupport.migrateExistingDatabase(database);
-        assertThat(after.version()).isEqualTo("40");
+        assertThat(after.version()).isEqualTo("41");
         assertThat(after.tables()).contains("INVESTMENT_PLANS","INVESTMENT_PLAN_OCCURRENCES");
         assertThat(after.queryLong("select count(*) from ledger_journals")).isEqualTo(journals);
         assertThat(after.queryLong("select count(*) from investment_plan_occurrences")).isZero();
@@ -37,7 +37,7 @@ class InvestmentPlanMigrationTest {
         before.executeUpdate(columns+"(903"+common+"'2026-03-01',1,'CONFIRMED',current_timestamp,987,101.00,1,current_timestamp)");
         long journals=before.queryLong("select count(*) from ledger_journals");
         MigrationResult after=MigrationTestSupport.migrateExistingDatabase(database);
-        assertThat(after.version()).isEqualTo("40");
+        assertThat(after.version()).isEqualTo("41");
         assertThat(after.queryLong("select count(*) from investment_plans where state='PAUSED' and quantity is null and amount=123.45")).isEqualTo(2);
         assertThat(after.queryString("select state from investment_plans where id=903")).isEqualTo("ENDED");
         assertThat(after.queryLong("select count(*) from investment_plan_occurrences where quantity is null and amount=123.45")).isEqualTo(3);

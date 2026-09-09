@@ -16,7 +16,27 @@ public record AccountResponse(
         String availableBalance,
         WalletProvider walletProvider,
         String bankName,
-        String cardLastFour) {
+        String cardLastFour,
+        Long bankAccountId,
+        String bankAccountName) {
+
+    public AccountResponse(
+            Long id,
+            String name,
+            AccountType type,
+            String currency,
+            String openingBalance,
+            Instant archivedAt,
+            boolean openingConfirmed,
+            java.time.LocalDate openingOn,
+            String balance,
+            String availableBalance,
+            WalletProvider walletProvider,
+            String bankName,
+            String cardLastFour) {
+        this(id, name, type, currency, openingBalance, archivedAt, openingConfirmed, openingOn,
+                balance, availableBalance, walletProvider, bankName, cardLastFour, null, null);
+    }
 
     static AccountResponse from(FinancialAccount account, long balance) {
         return new AccountResponse(
@@ -30,6 +50,7 @@ public record AccountResponse(
                 account.getOpeningOn(),
                 account.isOpeningConfirmed()?Money.formatCents(balance):null,
                 account.isOpeningConfirmed()?Money.formatCents(balance):null,
-                account.getWalletProvider(), account.getBankName(), account.getCardLastFour());
+                account.getWalletProvider(), account.getBankName(), account.getCardLastFour(),
+                account.getBankAccountId(), account.getBankAccountName());
     }
 }

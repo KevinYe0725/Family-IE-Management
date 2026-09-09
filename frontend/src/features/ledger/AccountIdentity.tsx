@@ -14,6 +14,6 @@ export function AccountIcon({account}:{account:Identity}){
       account.type==='BANK'?<Landmark size={22}/>:account.type==='CASH'?<Banknote size={22}/>:<WalletCards size={22}/>}
   </span>;
 }
-export function AccountIdentity({account}:{account:Identity & Pick<Account,'name'|'currency'>}){
-  return <span className="account-identity"><AccountIcon account={account}/><span><span>{account.name}</span><small>{accountDescription(account)} · {account.currency}</small></span></span>;
+export function AccountIdentity({account}:{account:Identity & Pick<Account,'name'|'currency'|'bankAccountName'>}){
+  return <span className="account-identity"><AccountIcon account={account}/><span><span>{account.bankAccountName??account.name}</span><small>{accountDescription(account)} · {account.currency}</small></span></span>;
 }

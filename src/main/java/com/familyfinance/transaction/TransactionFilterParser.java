@@ -4,6 +4,7 @@ import com.familyfinance.category.CategoryRepository;
 import com.familyfinance.category.TransactionKind;
 import com.familyfinance.household.FamilyMemberRepository;
 import com.familyfinance.ledger.FinancialAccountRepository;
+import com.familyfinance.ledger.BankAccountRepository;
 import com.familyfinance.shared.RequestValidationException;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -18,14 +19,17 @@ class TransactionFilterParser {
     private final FamilyMemberRepository memberRepository;
     private final CategoryRepository categoryRepository;
     private final FinancialAccountRepository accountRepository;
+    private final BankAccountRepository bankAccountRepository;
 
     TransactionFilterParser(
             FamilyMemberRepository memberRepository,
             CategoryRepository categoryRepository,
-            FinancialAccountRepository accountRepository) {
+            FinancialAccountRepository accountRepository,
+            BankAccountRepository bankAccountRepository) {
         this.memberRepository = memberRepository;
         this.categoryRepository = categoryRepository;
         this.accountRepository = accountRepository;
+        this.bankAccountRepository = bankAccountRepository;
     }
 
     TransactionCriteria parse(long householdId, TransactionFilter filter) {
@@ -49,6 +53,9 @@ class TransactionFilterParser {
         if (filter.accountId() != null) {
             requireAccountExists(householdId, filter.accountId(), fields);
         }
+        if (filter.bankAccountId() != null) {
+            requireBankAccountExists(householdId, filter.bankAccountId(), fields);
+        }
         if (filter.memberId() != null) {
             requireMemberExists(householdId, filter.memberId(), fields);
         }
@@ -68,12 +75,19 @@ class TransactionFilterParser {
                 filter.accountId(),
                 filter.memberId(),
                 filter.categoryId(),
-                keyword);
+                keyword,
+                filter.bankAccountId());
     }
 
     private void requireAccountExists(long householdId, long accountId, Map<String, String> fields) {
         if (accountRepository.findByIdAndHouseholdId(accountId, householdId).isEmpty()) {
             fields.put("accountId", "账户不存在");
+        }
+    }
+
+    private void requireBankAccountExists(long householdId, long bankAccountId, Map<String, String> fields) {
+        if (bankAccountRepository.findByIdAndHouseholdId(bankAccountId, householdId).isEmpty()) {
+            fields.put("bankAccountId", "银行卡主账户不存在");
         }
     }
 

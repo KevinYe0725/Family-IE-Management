@@ -11,5 +11,18 @@ record TransactionCriteria(
         Long accountId,
         Long memberId,
         Long categoryId,
-        String keyword) {
+        String keyword,
+        Long bankAccountId) {
+
+    TransactionCriteria(
+            long householdId,
+            LocalDate from,
+            LocalDate to,
+            TransactionKind kind,
+            Long accountId,
+            Long memberId,
+            Long categoryId,
+            String keyword) {
+        this(householdId, from, to, kind, accountId, memberId, categoryId, keyword, null);
+    }
 }

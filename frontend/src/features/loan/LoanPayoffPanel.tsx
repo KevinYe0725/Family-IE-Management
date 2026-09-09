@@ -1,3 +1,4 @@
+import {BankAccountPicker} from '../ledger/BankAccountPicker';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@douyinfe/semi-ui/lib/es/button';
@@ -13,7 +14,7 @@ type PayoffAttempt = { body: PayoffBody; quote: LoanPayoffQuote };
 const rejectedBeforePosting = new Set(['LOAN_PLAN_CHANGED', 'INSUFFICIENT_FUNDS', 'ACCOUNT_ARCHIVED', 'ACCOUNTING_NOT_INITIALIZED', 'ACCOUNTING_BALANCE_MISMATCH', 'LOAN_CLOSED', 'VALIDATION_ERROR', 'ACCOUNT_ACTIVITY_BEFORE_OPENING', 'LOAN_PAYMENT_BEFORE_OPENING', 'LOAN_PAYMENT_CHRONOLOGY', 'STALE_REFERENCE']);
 
 /** One explicit bank-payment confirmation, with a quote tied to the visible inputs. */
-export function LoanPayoffPanel({ loan, accounts, request, onClose, onPaid }: { loan: Loan; accounts: Account[]; request: RequestFn; onClose: () => void; onPaid: () => Promise<void> }) {
+export function LoanPayoffPanel({ loan, accounts, accountsReady=true, request, onClose, onPaid }: { loan: Loan; accounts: Account[]; accountsReady?:boolean; request: RequestFn; onClose: () => void; onPaid: () => Promise<void> }) {
  const [draft, setDraft] = useState(() => ({ paidOn: businessDate(), paymentAccountId: String(loan.paymentAccountId), interestAmount: '', idempotencyKey: newIdempotencyKey() }));
  const [sessionKey] = useState(newIdempotencyKey);
  const [attempt, setAttempt] = useState<PayoffAttempt | null>(null);
@@ -46,7 +47,7 @@ export function LoanPayoffPanel({ loan, accounts, request, onClose, onPaid }: { 
    <FormError error={submit.error ?? quote.error} />
    <fieldset disabled={submit.isPending || attempt !== null} className="feature-form">
     <label>实际还款日期<DateField required name="paidOn" min={loan.lastPaymentOn ?? loan.accountingOn ?? undefined} max={businessDate()} value={draft.paidOn} onChange={e => update('paidOn', e.target.value)} /></label>
-    <label>本次付款账户<select required name="paymentAccountId" value={draft.paymentAccountId} onChange={e => update('paymentAccountId', e.target.value)}><option value="">请选择</option><AccountOptions accounts={(accounts).filter(a=>(a.currency??'CNY')==='CNY')} /></select></label>
+    <BankAccountPicker accountsReady={accountsReady} label="本次付款账户" name="paymentAccountId" required currency="CNY" request={request} accounts={accounts} value={draft.paymentAccountId} onChange={id => update('paymentAccountId', id)}/>
     <label>本次实际利息（选填）<input name="interestAmount" inputMode="decimal" placeholder="留空使用到期未付利息" value={draft.interestAmount} onChange={e => update('interestAmount', e.target.value)} /></label>
    </fieldset>
    {quote.isFetching && <p role="status">正在核对结清金额…</p>}

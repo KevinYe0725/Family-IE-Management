@@ -46,6 +46,12 @@ export function AccountInitializationGuide({ session, request, onDecisionChange 
   }, [decision, onAccountPage, accounts.isError, accounts.isFetching, accounts.data, pending.length]);
 
   const manager = isManager(session.role);
+  const pendingGroups = [...pending.reduce((groups,account)=>{
+    const key=account.bankAccountId?`bank:${account.bankAccountId}`:`account:${account.id}`;
+    const existing=groups.get(key);
+    groups.set(key,existing?{...existing,currency:`${existing.currency} / ${account.currency}`} : account);
+    return groups;
+  },new Map<string,Account>()).values()];
   const close = () => setDecision('dismissed');
   useEffect(() => { onDecisionChange?.(decision); }, [decision, onDecisionChange]);
   return <ConfirmDialog
@@ -53,8 +59,8 @@ export function AccountInitializationGuide({ session, request, onDecisionChange 
     title="先确认账户期初余额"
     detail={<div className="account-setup-guide">
       <p>当前家庭还有 <strong>{pending.length}</strong> 个现金账户未完成初始化。</p>
-      <ul aria-label="待初始化账户">{pending.slice(0, 3).map(account => <li key={account.id}><AccountIdentity account={account}/></li>)}</ul>
-      {pending.length > 3 && <p>其余 {pending.length - 3} 个账户可在账户页查看。</p>}
+      <ul aria-label="待初始化账户">{pendingGroups.slice(0, 3).map(account => <li key={account.id}><AccountIdentity account={account}/></li>)}</ul>
+      {pendingGroups.length > 3 && <p>其余 {pendingGroups.length - 3} 个账户可在账户页查看。</p>}
       <p>确认期初余额和账务起始日期后，才能准确记账和还款。零余额也需要确认，不会自动填写或扣款。</p>
       {!manager && <p>请联系家庭所有者或管理员完成初始化，你可以先查看家庭成员。</p>}
     </div>}

@@ -105,9 +105,9 @@ class LoanAccountingApiTest {
  }
  @Test void futurePaymentAccountCanChangeWithoutResettingPaidHistory() throws Exception {
   fund("1100.00");long loan=create("OPENING");pay(first(loan),"pay","2026-01-03").andExpect(status().isOk());
-  mvc.perform(delete("/api/accounts/"+account).session(session).with(csrf())).andExpect(status().isNoContent());
   long next=data(mvc.perform(post("/api/accounts").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"next\",\"type\":\"BANK\",\"currency\":\"CNY\",\"openingBalance\":\"1000.00\",\"openingOn\":\"2026-01-01\"}")).andExpect(status().isCreated()).andReturn()).path("id").asLong();
   mvc.perform(patch("/api/loans/"+loan).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"paymentAccountId\":"+next+"}")).andExpect(status().isOk());
+  mvc.perform(delete("/api/accounts/"+account).session(session).with(csrf())).andExpect(status().isNoContent());
   prepay(loan,"1000.00","2026-01-04","close").andExpect(status().isOk());assertThat(ledger.balance(household,"CASH:"+next)).isZero();
   assertThat(jdbc.queryForObject("select count(*) from loan_installments where loan_id=? and status='PAID'",Long.class,loan)).isEqualTo(1);
  }
@@ -118,11 +118,8 @@ class LoanAccountingApiTest {
   mvc.perform(patch("/api/loans/"+loan).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"principal\":\"1000.00\",\"termMonths\":1,\"customSchedule\":[{\"dueOn\":\"2026-01-02\",\"principal\":\"1000.00\",\"interest\":\"10.00\"}]}"))
    .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("INSUFFICIENT_FUNDS"));
   assertThat(principal(loan)).isEqualTo(200000);assertThat(first(loan)).isEqualTo(first);assertThat(count("ledger_journals")).isEqualTo(journals);
-  mvc.perform(delete("/api/accounts/"+account).session(session).with(csrf())).andExpect(status().isNoContent());
-  long replacement=data(mvc.perform(post("/api/accounts").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"replacement\",\"type\":\"BANK\",\"currency\":\"CNY\",\"openingBalance\":\"0.00\",\"openingOn\":\"2026-01-01\"}")).andExpect(status().isCreated()).andReturn()).path("id").asLong();
-  mvc.perform(patch("/api/loans/"+loan).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"paymentAccountId\":"+replacement+"}")).andExpect(status().isOk());
-  mvc.perform(patch("/api/loans/"+loan).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"annualRate\":0.05}"))
-   .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("ACCOUNT_ARCHIVED"));
+  mvc.perform(delete("/api/accounts/"+account).session(session).with(csrf()))
+   .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("RESOURCE_IN_USE"));
  }
  @Test void futureDueOrderLoanOpeningAndOverpaymentBoundariesHaveNoWrites() throws Exception {
   fund("5000.00");long loan=create("OPENING");long second=jdbc.queryForObject("select max(id) from loan_installments where loan_id=?",Long.class,loan);

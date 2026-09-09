@@ -10,6 +10,7 @@ const dependencies: Record<string, string[]> = {
   'fx-transfers': ['fx-transfers',...investments],
   'exchange-rates': ['exchange-rates','exchange-rate-history',...investments],
   accounts: ['recurring-rules', ...ledger],
+  'bank-accounts': ['recurring-rules', 'investment-accounts', 'investment-plans', ...ledger],
   categories: ['categories', 'budget-revisions', 'recurring-rules', ...ledger],
   budgets: ['budgets', 'budget-revisions', ...ledger],
   assets: ['assets', 'asset-valuations', 'loans', ...ledger],

@@ -1,3 +1,4 @@
+import {BankAccountPicker} from '../ledger/BankAccountPicker';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@douyinfe/semi-ui/lib/es/button';
@@ -14,7 +15,7 @@ type Attempt = { body: LoanRepaymentRequest; preview: LoanRepaymentPreview };
 const rejectedBeforePosting = new Set(['LOAN_PLAN_CHANGED', 'INSUFFICIENT_FUNDS', 'ACCOUNT_ARCHIVED', 'ACCOUNTING_NOT_INITIALIZED', 'ACCOUNTING_BALANCE_MISMATCH', 'LOAN_CLOSED', 'VALIDATION_ERROR', 'ACCOUNT_ACTIVITY_BEFORE_OPENING', 'LOAN_PAYMENT_BEFORE_OPENING', 'LOAN_PAYMENT_CHRONOLOGY', 'STALE_REFERENCE', 'LOAN_FIXED_TERM_INFEASIBLE', 'LOAN_PLAN_INVALID', 'LOAN_PAYOFF_REQUIRED', 'LOAN_CONTRACT_MINIMUM', 'INSTALLMENT_UNASSIGNED', 'LOAN_POLICY_CHANGED', 'LOAN_PLAN_SEARCH_LIMIT']);
 const optionReason = (reason: string | null) => reason === 'LOAN_PLAN_SEARCH_LIMIT' ? '计算尚未确定，请调整输入后重试' : reason === 'BELOW_CONTRACT_MINIMUM' || reason === 'LOAN_CONTRACT_MINIMUM' ? '低于合同最低常规还款额' : '无法形成有效的分币还款计划';
 
-export function LoanPrepaymentPanel({ loan, accounts, request, onClose, onPaid, onPayoff }: { loan: Loan; accounts: Account[]; request: RequestFn; onClose: () => void; onPaid: () => Promise<void>; onPayoff: () => void }) {
+export function LoanPrepaymentPanel({ loan, accounts, accountsReady=true, request, onClose, onPaid, onPayoff }: { loan: Loan; accounts: Account[]; accountsReady?:boolean; request: RequestFn; onClose: () => void; onPaid: () => Promise<void>; onPayoff: () => void }) {
  const [draft, setDraft] = useState(() => ({ additionalPrincipal: '', paidOn: businessDate(), paymentAccountId: String(loan.paymentAccountId), strategy: 'REDUCE_PAYMENT' as PrepaymentStrategy, targetPeriods: '', idempotencyKey: newIdempotencyKey() }));
  const [sessionKey] = useState(newIdempotencyKey);
  const [attempt, setAttempt] = useState<Attempt | null>(null);
@@ -80,7 +81,7 @@ export function LoanPrepaymentPanel({ loan, accounts, request, onClose, onPaid, 
     {context && <div className="source-note"><p>按所选日期，先处理到期本金 {money(context.duePrincipal)} 和到期利息 {money(context.dueInterest)}，再偿还额外本金。</p>{(cents(context.remainingPrincipal) ?? 0n) > 0n && <Button size="small" onClick={() => update('additionalPrincipal', context.remainingPrincipal)}>填入全部剩余本金 {money(context.remainingPrincipal)}</Button>}</div>}
     {draft.strategy === 'ADJUST_TERM' && validExtra && projected && inputCents === cents(projected.remainingPrincipal) && <Button onClick={() => update('strategy', 'REDUCE_PAYMENT')}>预览结清（不再设置后续期数）</Button>}
     <label>实际还款日期<DateField required name="paidOn" min={loan.lastPaymentOn ?? loan.accountingOn ?? undefined} max={businessDate()} value={draft.paidOn} onChange={event => update('paidOn', event.target.value)} /></label>
-    <label>本次付款账户<select required name="paymentAccountId" value={draft.paymentAccountId} onChange={event => update('paymentAccountId', event.target.value)}><option value="">请选择</option><AccountOptions accounts={(accounts).filter(a=>(a.currency??'CNY')==='CNY')} /></select></label>
+    <BankAccountPicker accountsReady={accountsReady} label="本次付款账户" name="paymentAccountId" required currency="CNY" request={request} accounts={accounts} value={draft.paymentAccountId} onChange={id => update('paymentAccountId', id)}/>
    </fieldset>
    {enabled && preview.isFetching && <p role="status">正在核对到期款、额外本金与后续计划…</p>}
    {displayed && <section className="loan-repayment-bill" aria-label="本次还款明细">

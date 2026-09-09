@@ -15,7 +15,7 @@ class FlywayFreshDatabaseTest {
     void freshDatabaseRunsThroughLatestMigration() {
         MigrationResult result = MigrationTestSupport.migrateFreshDatabase(tempDir.resolve("fresh"));
 
-        assertThat(result.version()).isEqualTo("40");
+        assertThat(result.version()).isEqualTo("41");
         assertThat(result.tables()).contains(
                 "APP_USERS",
                 "HOUSEHOLD_MEMBERSHIPS",

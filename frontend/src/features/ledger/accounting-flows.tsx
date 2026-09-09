@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import {BankAccountPicker} from './BankAccountPicker';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Button from '@douyinfe/semi-ui/lib/es/button';
 import type { Account, AccountingJournal, CashTransfer, HouseholdRole, Page } from '../../api/contracts';
@@ -22,8 +23,8 @@ export function TransfersPanel({ request, role, accounts, onHistory }: { request
     </QueryState>
     <Drawer open={draft !== null} draft={draft} sessionKey={draft?.idempotencyKey} busy={save.isPending} onSessionStart={save.reset} title="记录账户互转" onClose={() => setDraft(null)}>{draft && <form className="feature-form" onSubmit={e => { e.preventDefault(); save.mutate(draft); }}>
       <FormError error={save.error} />
-      <label>转出账户<select required name="fromAccountId" value={draft.fromAccountId} onChange={e => setDraft({ ...draft, fromAccountId: e.target.value })}><option value="">请选择</option><AccountOptions accounts={accounts} /></select></label>
-      <label>转入账户<select required name="toAccountId" value={draft.toAccountId} onChange={e => setDraft({ ...draft, toAccountId: e.target.value })}><option value="">请选择</option><AccountOptions accounts={accounts.filter(a => String(a.id) !== draft.fromAccountId && (a.currency??'CNY') === (accounts.find(a=>String(a.id)===draft.fromAccountId)?.currency??'CNY'))} /></select></label>
+      <BankAccountPicker label="转出账户" name="fromAccountId" request={request} accounts={accounts} value={draft.fromAccountId} onChange={id => setDraft({ ...draft, fromAccountId:id,toAccountId:'' })}/>
+      <BankAccountPicker label="转入账户" name="toAccountId" request={request} accounts={accounts} currency={accounts.find(a=>String(a.id)===draft.fromAccountId)?.currency??'CNY'} excludeId={Number(draft.fromAccountId)} value={draft.toAccountId} onChange={id => setDraft({ ...draft, toAccountId:id })}/>
       <label>互转金额<input required name="amount" inputMode="decimal" value={draft.amount} onChange={e => setDraft({ ...draft, amount: e.target.value })} /></label>
       <label>实际转账日期<DateField required name="occurredOn" max={businessDate()} value={draft.occurredOn} onChange={e => setDraft({ ...draft, occurredOn: e.target.value })} /></label>
       <PaymentPreview account={accounts.find(a => String(a.id) === draft.fromAccountId)} amount={draft.amount} />

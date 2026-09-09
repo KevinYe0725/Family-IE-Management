@@ -17,6 +17,7 @@ function page(items: Account[], index = 0, total = items.length): Page<Account> 
 function api(load: (index: number) => Promise<Page<Account>>) {
   const writes: string[] = [];
   const request: ApiRequest = async <T,>(path: string, options?: Parameters<ApiRequest>[1]): Promise<T> => {
+    if(path==='/api/bank-accounts')return [] as T;
     if (options?.method && options.method !== 'GET') writes.push(path);
     if (path.startsWith('/api/accounts?')) return await load(Number(new URL(path, 'http://test.local').searchParams.get('page'))) as T;
     return new Promise<T>(() => undefined);
@@ -113,11 +114,15 @@ it('does not interrupt an existing dialog with a late initialization check', asy
 });
 
 it('leaves users already on the account setup page free to initialize', async () => {
+  const errors=vi.spyOn(console,'error').mockImplementation(()=>{});
   const backend = api(async () => page([account(1)]));
   const { cache } = harness(backend.request, '/workspace/transactions?section=accounts');
   await settled(cache);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(await screen.findByRole('heading', { name: '家庭账户' })).toBeInTheDocument();
+  const duplicateKeys=errors.mock.calls.filter(args=>String(args[0]).includes('same key'));
+  errors.mockRestore();
+  expect(duplicateKeys).toHaveLength(0);
 });
 
 it('checks again after a real same-user logout/login and stops prompting once the server confirms initialization', async () => {

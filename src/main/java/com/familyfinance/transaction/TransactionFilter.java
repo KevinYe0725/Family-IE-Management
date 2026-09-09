@@ -8,5 +8,18 @@ public record TransactionFilter(
         Long accountId,
         Long memberId,
         Long categoryId,
-        String q) {
+        String q,
+        Long bankAccountId) {
+
+    public TransactionFilter(
+            String month,
+            String from,
+            String to,
+            String kind,
+            Long accountId,
+            Long memberId,
+            Long categoryId,
+            String q) {
+        this(month, from, to, kind, accountId, memberId, categoryId, q, null);
+    }
 }

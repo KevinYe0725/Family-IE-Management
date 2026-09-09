@@ -1,0 +1,20 @@
+import {useState} from 'react';
+import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
+import type {Account,BankAccount} from '../../api/contracts';
+import {ActionDialog,ConfirmDialog,FormError,QueryState,money,type RequestFn} from '../common';
+import {AccountIcon} from './AccountIdentity';
+import {BankAccountEditor} from './BankAccountEditor';
+import './bank-accounts.scss';
+
+export function BankAccountsPanel({request,manager,currencies,onOpening,onHistory,onExchange}:{request:RequestFn;manager:boolean;currencies:string[];onOpening:(account:Account)=>void;onHistory:(bankId:number)=>void;onExchange:(bankId:number)=>void}){
+ const query=useQuery({queryKey:['accounts','bank-accounts'],queryFn:()=>request<BankAccount[]>('/api/bank-accounts')});const cache=useQueryClient();
+ const [selected,setSelected]=useState<number|null>(null),[editor,setEditor]=useState<{mode:'create'|'edit'|'balance';bank?:BankAccount;currency?:string}|null>(null),[archiving,setArchiving]=useState<BankAccount|null>(null);
+ const bank=query.data?.find(b=>b.id===selected);
+ const archive=useMutation({mutationFn:(id:number)=>request(`/api/bank-accounts/${id}`,{method:'DELETE'}),onSuccess:async()=>{setArchiving(null);setSelected(null);await cache.invalidateQueries({queryKey:['accounts']});}});
+ return <section className="bank-management" aria-label="银行卡账户"><div className="panel-heading"><h2>银行卡</h2>{manager&&<button type="button" className="primary-action" onClick={()=>setEditor({mode:'create'})}>新建银行卡</button>}</div>
+ <>{query.error&&<button type="button" className="text-action" onClick={()=>void query.refetch()}>重试银行卡数据</button>}</><QueryState loading={query.isLoading} error={query.error} empty={!query.data?.length} emptyTitle="还没有银行卡"><div className="bank-cards">{query.data?.filter(b=>!b.archivedAt).map(b=><article className="bank-card" key={b.id}><header><AccountIcon account={{type:'BANK',bankName:b.bankName,cardLastFour:b.cardLastFour}}/><div><h3>{b.name}</h3><p>{b.bankName}{b.cardLastFour?` · 尾号 ${b.cardLastFour}`:''}</p></div></header><div className="bank-card-balances">{b.accounts.filter(a=>!a.archivedAt).map(a=><div key={a.id}><span>{a.currency}</span><strong>{a.openingConfirmed?money(a.availableBalance,a.currency):'待初始化'}</strong></div>)}</div><footer><button type="button" className="text-action" onClick={()=>setSelected(b.id)}>管理余额</button><button type="button" className="text-action" onClick={()=>onHistory(b.id)}>查看流水</button></footer></article>)}</div></QueryState>
+ {bank&&<ActionDialog open title={bank.name} onClose={()=>setSelected(null)}><div className="bank-card-balances">{bank.accounts.filter(a=>!a.archivedAt).map(a=><div key={a.id}><span>{a.currency}</span><strong>{a.openingConfirmed?money(a.availableBalance,a.currency):'待初始化'}</strong>{manager&&<button type="button" className="text-action" onClick={()=>{setSelected(null);onOpening(a);}}>{a.openingConfirmed?'更正期初':'确认期初'}</button>}</div>)}</div><div className="card-actions">{manager&&<>{currencies.filter(c=>!bank.accounts.some(a=>a.currency===c)).map(c=><button type="button" className="text-action" key={c} onClick={()=>{setSelected(null);setEditor({mode:'balance',bank,currency:c});}}>添加 {c} 余额</button>)}<button type="button" onClick={()=>{setSelected(null);setEditor({mode:'edit',bank});}}>编辑银行卡</button>{currencies.length>1&&bank.accounts.filter(a=>!a.archivedAt&&a.openingConfirmed).length>1&&<button type="button" onClick={()=>{setSelected(null);onExchange(bank.id);}}>卡内换汇</button>}<button type="button" onClick={()=>{archive.reset();setArchiving(bank);}}>归档银行卡</button></>}</div></ActionDialog>}
+ {editor&&<BankAccountEditor {...editor} request={request} currencies={currencies} onClose={()=>setEditor(null)} onSaved={()=>setEditor(null)}/>}
+ <ConfirmDialog open={!!archiving} title="归档银行卡？" detail={<><p>所有币种余额需为零，并先解除进行中的资金绑定。历史流水保留。</p><FormError compact error={archive.error}/></>} loading={archive.isPending} confirmLabel="归档银行卡" onClose={()=>{if(!archive.isPending)setArchiving(null);}} onConfirm={()=>archiving&&archive.mutate(archiving.id)}/>
+ </section>;
+}

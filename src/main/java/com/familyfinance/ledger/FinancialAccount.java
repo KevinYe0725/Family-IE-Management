@@ -36,6 +36,10 @@ public class FinancialAccount {
     @JoinColumn(name = "household_id", nullable = false)
     private Household household;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bank_account_id")
+    private BankAccount bankAccount;
+
     @Column(nullable = false, length = 100)
     private String name;
 
@@ -111,8 +115,38 @@ public class FinancialAccount {
         this.cardLastFour = cardLastFour;
     }
 
+    void updateBankMetadata(String bankName, String cardLastFour) {
+        this.walletProvider = null;
+        this.bankName = bankName;
+        this.cardLastFour = cardLastFour;
+    }
+
+    void rename(String name) {
+        this.name = Objects.requireNonNull(name, "name must not be null");
+    }
+
     public String getCurrency() {
         return currency;
+    }
+
+    public BankAccount getBankAccount() {
+        return bankAccount;
+    }
+
+    public Long getBankAccountId() {
+        return bankAccount == null ? null : bankAccount.getId();
+    }
+
+    public String getBankAccountName() {
+        return bankAccount == null ? null : bankAccount.getName();
+    }
+
+    void attachBankAccount(BankAccount bankAccount) {
+        this.bankAccount = bankAccount;
+    }
+
+    void detachBankAccount() {
+        this.bankAccount = null;
     }
 
     public Long getOpeningBalanceCents() {

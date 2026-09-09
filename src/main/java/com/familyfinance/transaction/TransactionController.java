@@ -43,12 +43,13 @@ public class TransactionController {
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q);
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId);
         TransactionPage result = transactionService.list(currentHousehold.id(authentication), filter, page, size);
         return ResponseEntity.ok()
                 .header("X-Page", Integer.toString(result.page()))

@@ -20,10 +20,11 @@ describe('account specialization', () => {
 
   it('edits only metadata and clears bank details when selecting a wallet', async () => {
     const request = vi.fn(async (path: string, options?: { method?: string; body?: unknown }) => {
+      if(path==='/api/bank-accounts')return [];
       if (options?.method === 'PATCH') return {};
       if (path === '/api/members') return [];
       const items = path.startsWith('/api/accounts') ? [{ id: 2, name: '日常', type: 'BANK', bankName: '招商银行', cardLastFour: '0123', currency: 'CNY', openingBalance: '100.00', openingConfirmed: true, openingOn: '2026-01-01', balance: '100.00', availableBalance: '100.00', archivedAt: null }] : [];
-      return { items, page: 0, totalPages: 1, totalElements: items.length, hasNext: false };
+      return { items, page: 0, size:50, totalPages: items.length?1:0, totalElements: items.length, hasNext: false };
     });
     render(<QueryClientProvider client={new QueryClient()}><TransactionsPage request={request as RequestFn} role="OWNER" userId={1} requestedSection="accounts" /></QueryClientProvider>);
     await userEvent.click(await screen.findByRole('button', { name: '编辑' }));

@@ -24,20 +24,23 @@ public interface FinancialAccountRepository extends JpaRepository<FinancialAccou
 
     Page<FinancialAccount> findByHouseholdIdAndArchivedAtIsNull(Long householdId, Pageable pageable);
 
+    @Query("select a from FinancialAccount a where a.household.id=:householdId and a.bankAccount.id=:bankAccountId order by a.currency, a.id")
+    List<FinancialAccount> findByBankAccountIdAndHouseholdIdOrderByCurrency(
+            @Param("bankAccountId") Long bankAccountId, @Param("householdId") Long householdId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from FinancialAccount a where a.household.id=:householdId and a.bankAccount.id=:bankAccountId order by a.currency, a.id")
+    List<FinancialAccount> findLockedByBankAccountIdAndHouseholdId(
+            @Param("bankAccountId") Long bankAccountId, @Param("householdId") Long householdId);
+
     boolean existsByHouseholdIdAndName(Long householdId, String name);
 
-    boolean existsByHouseholdIdAndNameAndIdNot(Long householdId, String name, Long id);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from FinancialAccount a where a.household.id=:householdId and a.name=:name")
+    Optional<FinancialAccount> findLockedByHouseholdIdAndName(
+            @Param("householdId") Long householdId, @Param("name") String name);
 
-    @Query(value = """
-            select count(*)
-            from recurring_rules
-            where household_id = :householdId
-              and account_id = :accountId
-              and active = true
-            """, nativeQuery = true)
-    long countActiveRecurringReferences(
-            @Param("householdId") Long householdId,
-            @Param("accountId") Long accountId);
+    boolean existsByHouseholdIdAndNameAndIdNot(Long householdId, String name, Long id);
 
     @Query(value = """
             select account_row.id as accountId,

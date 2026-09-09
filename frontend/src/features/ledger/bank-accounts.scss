@@ -1,0 +1,12 @@
+.bank-account-picker {display:grid;gap:10px;min-width:0;}
+.bank-account-picker label {display:grid;gap:8px;}
+.bank-picker-missing {display:flex;flex-wrap:wrap;align-items:center;gap:12px;color:#6c7787;font-size:14px;}
+.bank-editor-grid {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.bank-balance-rows {display:grid;gap:12px;}
+.bank-balance-row {display:grid;grid-template-columns:90px 1fr 1fr;gap:12px;align-items:end;padding:16px;border:1px solid #e3e7ed;border-radius:12px;}
+.bank-cards {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;}
+.bank-card {background:#fff;border:1px solid #e3e7ed;border-radius:14px;padding:22px;display:grid;gap:20px;}
+.bank-card header {display:flex;gap:12px;align-items:center;}.bank-card h3 {margin:0;font-size:18px;}.bank-card header p {margin:4px 0 0;color:#6c7787;font-size:13px;}
+.bank-card-balances {display:grid;gap:12px;}.bank-card-balances>div {display:flex;align-items:center;justify-content:space-between;gap:12px;}.bank-card-balances strong {font-variant-numeric:tabular-nums;font-size:18px;font-weight:600;}
+.bank-card footer {display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid #edf0f4;padding-top:16px;}
+@media(max-width:600px){.bank-editor-grid,.bank-balance-row {grid-template-columns:1fr;}}

@@ -80,12 +80,12 @@ export function WorkspaceLayout({ session, onLogout }: { session: Session; onLog
       <MobileModuleDrawer open={mobileOpen} onClose={closeMobile} />
       {auth?.status === 'authenticated' && <>
         <AccountInitializationGuide
-          key={`${session.userId}:${session.householdId}`}
+          key={`account-init:${session.userId}:${session.householdId}`}
           session={session}
           request={auth.request}
           onDecisionChange={setAccountGuideDecision}
         />
-        {accountGuideDecision === 'dismissed' && <RecurringBillingGuide key={`${session.userId}:${session.householdId}`} session={session} request={auth.request} />}
+        {accountGuideDecision === 'dismissed' && <RecurringBillingGuide key={`recurring-guide:${session.userId}:${session.householdId}`} session={session} request={auth.request} />}
       </>}
     </div>
   );

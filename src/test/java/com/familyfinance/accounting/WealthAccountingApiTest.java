@@ -95,10 +95,10 @@ class WealthAccountingApiTest {
  String asset(String mode,String price,String value){return "{\"name\":\"Asset\",\"type\":\"OTHER\",\"currentValue\":\""+value+"\",\"accountingMode\":\""+mode+"\",\"accountingOn\":\"2026-01-02\""+(price==null?"":",\"purchaseValue\":\""+price+"\",\"acquiredOn\":\"2026-01-02\",\"fundingAccountId\":"+cash)+"}";}
  @Test void originalCashAndInvestmentArchiveGuardsPreventRestoringHiddenHoldings()throws Exception {
   long t=idTrade(trade("BUY","5000","100.00","0.00","2026-01-02","buy-all").andExpect(status().isCreated()));
-  mvc.perform(delete("/api/accounts/"+cash).session(session).with(csrf())).andExpect(status().isNoContent());
-  mvc.perform(delete("/api/investment-trades/"+t).session(session).with(csrf())).andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("ACCOUNT_ARCHIVED"));
   long next=id(send("/api/accounts","{\"name\":\"Next\",\"type\":\"CASH\",\"currency\":\"CNY\",\"openingBalance\":\"0.00\",\"openingOn\":\"2026-01-01\"}","next").andExpect(status().isCreated()));
   change("/api/investment-accounts/"+investment,"{\"fundingAccountId\":"+next+"}","fund-next").andExpect(status().isOk());
+  mvc.perform(delete("/api/accounts/"+cash).session(session).with(csrf())).andExpect(status().isNoContent());
+  mvc.perform(delete("/api/investment-trades/"+t).session(session).with(csrf())).andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("ACCOUNT_ARCHIVED"));
   change("/api/investment-trades/"+t,"{\"price\":\"99.00\"}","refund-old").andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("ACCOUNT_ARCHIVED"));
   long sell=idTrade(trade("SELL","5000","100.00","0.00","2026-01-03","sell-all").andExpect(status().isCreated()));
   assertThat(ledger.balance(household,"CASH:"+next)).isEqualTo(50000000);
