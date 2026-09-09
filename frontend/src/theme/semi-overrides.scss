@@ -398,6 +398,17 @@ a:hover { text-decoration: underline; }
 .loan-card .loan-facts-more .loan-facts { margin-top: 12px; }
 .loan-contract-import .ai-consent { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; font-weight: 400; color: var(--ledger-muted); cursor: pointer; }
 .loan-contract-import .ai-consent input { display: inline-block; width: 15px; height: 15px; min-width: 0; min-height: 0; padding: 0; margin: 0 0 0 6px; vertical-align: -3px; accent-color: var(--ledger-primary); cursor: pointer; }
+.debt-overview { padding: 16px 18px; border: 1px solid var(--ledger-border); border-radius: 12px; background: #fff; margin-bottom: 14px; }
+.debt-overview > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.debt-overview h2 { margin: 0; font-size: 15px; color: var(--ledger-text); }
+.debt-overview > header span { color: var(--ledger-muted); font-size: 12px; }
+.debt-overview__hero { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 12px; }
+.debt-overview__hero span { color: var(--ledger-muted); font-size: 12px; }
+.debt-overview__hero b { font-size: 26px; font-weight: 600; letter-spacing: -.02em; color: var(--ledger-primary); font-variant-numeric: tabular-nums; }
+.debt-overview__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin: 0; }
+.debt-overview__stats > div { display: grid; gap: 3px; min-width: 0; border: 1px solid color-mix(in srgb, var(--ledger-primary) 16%, var(--ledger-border)); border-radius: 7px; padding: 9px 11px; background: color-mix(in srgb, var(--ledger-primary) 4%, #fff); }
+.debt-overview__stats dt { color: color-mix(in srgb, var(--ledger-primary) 52%, var(--ledger-muted)); font-size: 10px; }
+.debt-overview__stats dd { margin: 0; color: var(--ledger-text); font-size: 13px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .loan-card footer { display: flex; align-items: center; gap: 6px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--ledger-border); }
 .loan-card footer .semi-button { background: color-mix(in srgb, var(--ledger-primary) 9%, #fff); color: var(--ledger-primary); border: 1px solid color-mix(in srgb, var(--ledger-primary) 24%, var(--ledger-border)); font-weight: 500; }
 .loan-card footer .semi-button:hover:not(:disabled) { background: color-mix(in srgb, var(--ledger-primary) 15%, #fff); }

@@ -8,6 +8,7 @@ import type {
   HouseholdRole,
   Loan,
   LoanContractExtraction,
+  LoanDebtOverview,
   LoanRepayment,
   LoanPrepayment,
   LoanInstallment,
@@ -17,6 +18,7 @@ import type {
 } from "../../api/contracts";
 import { LoanPrepaymentPanel } from "./LoanPrepaymentPanel";
 import { LoanPayoffPanel } from "./LoanPayoffPanel";
+import { LoanDebtOverviewPanel } from "./LoanDebtOverview";
 import { ApiError } from "../../api/client";
 import { businessDate, newIdempotencyKey } from "../../shared/runtime";
 import { DateField } from "../../shared/DateField";
@@ -176,6 +178,12 @@ export function LoansPage({
         `/api/loans?status=${loanStatus}&page=${loanPage}&size=50`,
         { responseType: "page" },
       ),
+  });
+  const debtOverview = useQuery({
+    queryKey: ["loans", "debt-overview", loanStatus],
+    queryFn: () =>
+      request<LoanDebtOverview>("/api/loans/debt-overview"),
+    enabled: loanStatus === "ACTIVE",
   });
   const selectedDetail = useQuery({
     queryKey: ["loans", "detail", selectedId],
@@ -341,6 +349,7 @@ export function LoansPage({
     onSuccess: () => {
       setDraft(null);
       setStep(0);
+      void debtOverview.refetch();
     },
   });
   const confirm = useMutation({
@@ -360,12 +369,16 @@ export function LoansPage({
     onSuccess: async () => {
       setPayment(null);
       await selectedDetail.refetch();
+      void debtOverview.refetch();
     },
   });
 
   const archive = useMutation({
     mutationFn: (id: number) =>
       request<void>(`/api/loans/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void debtOverview.refetch();
+    },
   });
   const blank = (): LoanDraft => ({
     key: newIdempotencyKey(),
@@ -422,6 +435,16 @@ export function LoansPage({
         </label>
       </div>
       <FormError error={archive.error} />
+      {loanStatus === "ACTIVE" &&
+        loans.data &&
+        loans.data.totalElements > 0 &&
+        (debtOverview.isLoading ? (
+          <p className="source-note" role="status">
+            正在计算债务总览…
+          </p>
+        ) : debtOverview.error ? null : debtOverview.data ? (
+          <LoanDebtOverviewPanel data={debtOverview.data} />
+        ) : null)}
       <QueryState
         loading={loans.isLoading}
         error={loans.error}
@@ -1325,6 +1348,7 @@ export function LoansPage({
             );
             setSchedulePage(0);
             setPrepayOpen(false);
+            void debtOverview.refetch();
           }}
           onPayoff={() => {
             setPrepayOpen(false);
@@ -1522,6 +1546,7 @@ export function LoansPage({
           onPaid={async () => {
             setPayoffOpen(false);
             await selectedDetail.refetch();
+            void debtOverview.refetch();
           }}
         />
       )}

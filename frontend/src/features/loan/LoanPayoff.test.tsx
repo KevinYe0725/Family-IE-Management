@@ -48,12 +48,13 @@ it('shows server whole-loan totals and confirms a quoted selected-account payoff
    return { id: 9, operationKind: 'PAYOFF', cashAmount: '2100.00' } as T;
   }
   if (path.includes('/payoff-quote?')) { quotes.push(path); const account = Number(new URLSearchParams(path.split('?')[1]).get('paymentAccountId')); return { principalAmount: '2000.00', dueInterestAmount: '100.00', interestAmount: '100.00', futureScheduledInterest: '50.00', cashAmount: '2100.00', paymentAccountId: account, availableBalance: account === 2 ? '2200.00' : '0.00', planToken: `token-${account}` } as T; }
+  if (path === '/api/loans/debt-overview') return { count: 1, remainingPrincipal: '2000.00', remainingRepayment: '2150.00', thirtyDayDue: '2100.00', paidRepayment: '0.00', weightedAnnualRatePercent: '10.00', nextDueOn: null } as T;
   return (path === '/api/loans/4' ? loan : path.startsWith('/api/loans?') ? page([loan]) : path.startsWith('/api/accounts?') ? page(accounts) : path === '/api/members' ? [] : path.endsWith('/prepayments') ? [] : page([])) as T;
  };
  const user = userEvent.setup(); render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LoansPage request={request} role="OWNER" /></QueryClientProvider>);
  expect(await screen.findByText('年利率')).toBeInTheDocument();
- await user.click(screen.getByText('更多贷款信息'));
- expect(screen.getByText('计划剩余本息')).toBeInTheDocument(); expect(screen.getByText('累计已还现金')).toBeInTheDocument();
+ await user.click(screen.getAllByText('更多贷款信息')[0]);
+ expect(screen.getAllByText('计划剩余本息').length).toBeGreaterThan(0); expect(screen.getAllByText('累计已还现金').length).toBeGreaterThan(0);
  await user.click(await screen.findByRole('button', { name: '一次结清' }));
  const drawer = await screen.findByRole('dialog', { name: '结清测试 · 一次结清' });
  await user.selectOptions(within(drawer).getByLabelText('本次付款账户'), '2');
