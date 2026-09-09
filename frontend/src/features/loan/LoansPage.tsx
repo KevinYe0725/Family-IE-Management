@@ -520,6 +520,14 @@ export function LoansPage({
                         </button>
                       </>
                     )}
+                  {manager && item.status === "CLOSED" && (
+                    <button
+                      className="text-action danger"
+                      onClick={() => archive.mutate(item.id)}
+                    >
+                      移入归档历史
+                    </button>
+                  )}
                 </footer>
               </article>
             ))}

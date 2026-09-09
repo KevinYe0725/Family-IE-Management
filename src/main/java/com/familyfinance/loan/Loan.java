@@ -83,7 +83,7 @@ public class Loan {
         this.name=name; this.member=member; this.assignedUser=assignedUser; this.linkedAsset=linkedAsset; this.paymentAccount=account; this.paymentCategory=category;
         this.principalAmount=DecimalMoney.fromCents(principal); this.currentPrincipalAmount=principalAmount; this.annualRate=rate; this.termMonths=term; this.repaymentMethod=method; this.startOn=start;
     }
-    void archive(Instant at) { if (status == LoanStatus.ACTIVE) { status=LoanStatus.ARCHIVED; archivedAt=at; } }
+    void archive(Instant at) { if (status == LoanStatus.ACTIVE || status == LoanStatus.CLOSED) { status=LoanStatus.ARCHIVED; archivedAt=at; } }
     void applyPrincipalPayment(long amount, Instant at) {
         applyPrincipalPayment(DecimalMoney.fromCents(amount),at);
     }
