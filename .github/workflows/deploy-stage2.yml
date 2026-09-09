@@ -67,7 +67,7 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/codex/family-finance-stage-2'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     environment: development
     concurrency:
       group: family-finance-development-deploy
@@ -115,6 +115,7 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$keydir/known_hosts"
           unset DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS
           checksum=$(cut -d ' ' -f 1 release/release.zip.sha256)
+          echo "Uploading release: $(stat -c %s release/release.zip.gz) compressed bytes; receiver limit 30 minutes."
           ssh -T -i "$keydir/key" -p "$DEPLOY_PORT" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$keydir/known_hosts" -o ConnectTimeout=20 \

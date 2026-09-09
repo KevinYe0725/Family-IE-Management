@@ -73,7 +73,7 @@ sudo systemctl show family-finance-market -p User -p ExecStart -p MemoryDenyWrit
 
 核对应用已有 `MARKET_DATA_URL=http://127.0.0.1:8091`。不得放宽 MemoryDenyWriteExecute、改变 jitless 解码策略、扩大入站/出站规则或把适配器暴露到公网。首次 legacy 健康接口可能 404；这只是保存旧基线，海外功能仍待整包发布验证。
 
-5. 保留 authorized_keys 的 restrict、forced-command、600 秒 timeout 与 210 秒 kill grace，以及 GitHub host-key 严格校验。只有这些步骤和 legacy 恢复路径审核完成后，才允许新版工作流合入部署分支。
+5. 保留 authorized_keys 的 restrict、forced-command、1800 秒 timeout 与 210 秒 kill grace，以及 GitHub host-key 严格校验。Actions 部署任务时限为 40 分钟，给恢复留下余量。只有这些步骤和 legacy 恢复路径审核完成后，才允许新版工作流合入部署分支。
 
 ## 发布与验收
 

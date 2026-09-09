@@ -1,5 +1,6 @@
 """Deployment safety tests: real archives/files; only service operations are faked."""
 import gzip
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -52,6 +53,29 @@ class DeployTest(unittest.TestCase):
         self.assertEqual(self.jar.read_bytes(), raw)
         self.assertEqual(next((self.root / "state/backups").glob("*.jar")).read_bytes(), b"old jar")
         self.assertEqual(json.loads((self.root / "state/current.json").read_text())["commit"], SHA)
+
+    def test_reports_receive_and_switch_stages_without_changing_stdout_contract(self):
+        logs, output = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stderr(logs), contextlib.redirect_stdout(output), patch.object(self.runner, 'restart'), patch.object(self.runner, 'wait_ready'):
+            self.run_deploy()
+        events = [json.loads(line.removeprefix('[deploy] ')) for line in logs.getvalue().splitlines()]
+        stages = [event['stage'] for event in events]
+        self.assertLess(stages.index('receiving'), stages.index('received'))
+        self.assertLess(stages.index('checksum_verified'), stages.index('stopping_services'))
+        self.assertLess(stages.index('health_check'), stages.index('complete'))
+        self.assertGreater(next(e['bundle_bytes'] for e in events if e['stage']=='received'), 0)
+        self.assertEqual(json.loads(output.getvalue())['commit'], SHA)
+
+    def test_broken_progress_sink_does_not_prevent_recovery(self):
+        with patch.object(deploy.sys.stderr, 'write', side_effect=OSError('closed log')), patch.object(self.runner, 'restart'), patch.object(self.runner, 'wait_ready', side_effect=[RuntimeError('unhealthy'), None]):
+            with self.assertRaisesRegex(RuntimeError, 'rolled back'):
+                self.run_deploy()
+        self.assertEqual(self.jar.read_bytes(), b'old jar')
+
+    def test_progress_does_not_swallow_timeout_recovery_signal(self):
+        with patch.object(deploy.sys.stderr, 'write', side_effect=TimeoutError('interrupted')):
+            with self.assertRaises(TimeoutError):
+                deploy.report_progress('receiving', 0)
 
     def test_exact_bytes_check_survives_zip_timestamp_change(self):
         # A deploy can cross ZIP's two-second timestamp boundary. Compare the

@@ -22,6 +22,19 @@ ADAPTER_FILES = ('server.py', 'overseas.py', 'overseas_sources.py', 'requirement
 RELEASE_FILES = {'app.jar', *(f'market/{name}' for name in ADAPTER_FILES)}
 
 
+def report_progress(stage, started, **details):
+    """Best-effort diagnostics must never interrupt installation or rollback."""
+    try:
+        print('[deploy] ' + json.dumps({'stage': stage,
+              'elapsed_seconds': round(time.monotonic() - started, 1), **details}),
+              file=sys.stderr, flush=True)
+    except TimeoutError:
+        # SIGTERM uses TimeoutError: never swallow the recovery control signal.
+        raise
+    except OSError:
+        pass
+
+
 def unpack_release(bundle, directory, commit):
     """Never trust archive paths, links, duplicate entries or inflated sizes."""
     with zipfile.ZipFile(bundle) as archive:
@@ -162,6 +175,7 @@ class Deployer:
         raise RuntimeError("Service readiness check timed out")
 
     def deploy(self, commit, digest, run_id, stream):
+        started = time.monotonic()
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (self.state / "deploy.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -185,18 +199,27 @@ class Deployer:
                 bundle = Path(directory) / "release.zip"
                 checksum = hashlib.sha256()
                 count = 0
+                last_report = started
+                report_progress('receiving', started, commit=commit, run_id=run_id)
                 with gzip.GzipFile(fileobj=stream, mode="rb") as source, bundle.open("wb") as dest:
-                    while chunk := source.read(1024 * 1024):
+                    while chunk := source.read(64 * 1024):
                         count += len(chunk)
                         if count > MAX_JAR_BYTES:
                             raise ValueError("Artifact exceeds size limit")
                         checksum.update(chunk)
                         dest.write(chunk)
+                        now = time.monotonic()
+                        if now - last_report >= 15:
+                            report_progress('receiving', started, bundle_bytes=count)
+                            last_report = now
                     dest.flush()
                     os.fsync(dest.fileno())
+                report_progress('received', started, bundle_bytes=count)
                 if checksum.hexdigest() != digest:
                     raise ValueError("Artifact checksum mismatch")
+                report_progress('checksum_verified', started)
                 manifest = unpack_release(bundle, Path(directory), commit)
+                report_progress('release_validated', started)
                 candidate = Path(directory) / 'app.jar'
                 requirements = manifest['files']['market/requirements.txt']
                 runtime = self.market_root / 'runtimes' / requirements
@@ -216,6 +239,7 @@ class Deployer:
                 backups.mkdir(exist_ok=True, mode=0o700)
                 backup = backups / f"{run_id}-{time.time_ns()}.jar"
                 shutil.copy2(self.jar, backup)
+                report_progress('backup_created', started)
                 try:
                     old_commit = jar_commit(backup)
                 except (KeyError, ValueError, zipfile.BadZipFile):
@@ -228,10 +252,13 @@ class Deployer:
                 swapped = False
                 try:
                     swapped = True
+                    report_progress('stopping_services', started)
                     self.stop()
                     self.switch_adapter(release)
                     os.replace(candidate, self.jar)
+                    report_progress('starting_services', started)
                     self.restart()
+                    report_progress('health_check', started)
                     self.wait_ready(commit)
                     write_state(current_path, {"commit": commit, "sha256": digest,
                                                     "run_id": run_id, "backup": str(backup),
@@ -239,6 +266,7 @@ class Deployer:
                     pending_path.unlink()
                 except BaseException as error:
                     if swapped:
+                        report_progress('rollback_started', started)
                         # Stop both before restoring either, including partial switch failures.
                         try:
                             self.stop()
@@ -258,8 +286,10 @@ class Deployer:
                         else:
                             current_path.unlink(missing_ok=True)
                         pending_path.unlink()
+                        report_progress('rollback_complete', started)
                         raise RuntimeError("Deployment failed; rolled back to previous release pair") from error
                     raise
+                report_progress('complete', started, commit=commit)
                 print(json.dumps({"result": "deployed", "commit": commit, "sha256": digest}), flush=True)
 
 

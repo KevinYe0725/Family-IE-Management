@@ -63,10 +63,12 @@ GitHub **Settings → Environments → development** 只允许 `codex/family-fin
 专用公钥的 `authorized_keys` 记录采用：
 
 ```text
-restrict,command="/usr/bin/timeout --kill-after=210 600 /usr/local/sbin/family-finance-ci-deploy" ssh-ed25519 PUBLIC_KEY family-finance-github-actions
+restrict,command="/usr/bin/timeout --kill-after=210 1800 /usr/local/sbin/family-finance-ci-deploy" ssh-ed25519 PUBLIC_KEY family-finance-github-actions
 ```
 
 此密钥不能开 shell、PTY、端口转发或 SFTP，只接收格式严格的部署命令和压缩的完整发布包。旧 JAR-only 输入会被拒绝。脚本更新需要管理员通过正常管理连接审核安装，CI 不会自动更新服务器上的部署脚本。
+
+接收器总时限为 30 分钟，保留 210 秒强制结束前的恢复宽限；Actions 部署任务为 40 分钟，避免抢先中断恢复。stderr 输出 `[deploy]` 阶段和已接收的解压后发布包字节数，上传期间每约 15 秒报告一次（有数据到达时）。`receiving` 后未出现 `received` 表示接收未完成；只有校验及备份完成后才会停止服务。
 
 **信任边界：**获准推送部署分支的人可以部署程序代码，并获得应用进程本身的权限。现有应用以 root 运行，限制 SSH 命令并不等于隔离恶意应用代码。仅允许可信维护者写入该分支；生产化时应另行迁移至非 root 应用账户并配置分支审核保护。
 
