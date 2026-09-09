@@ -45,7 +45,8 @@ it('opens the real Chinese Semi calendar inside a drawer and selects a leap day'
   expect(screen.getByRole('button', { name: '2024年 2月' })).toBeInTheDocument();
   expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['日', '一', '二', '三', '四', '五', '六']);
   expect(leapDay.closest('.unified-date-calendar')).toBeInTheDocument();
-  expect(leapDay.closest('.side-sheet')).toBeInTheDocument();
+  // 日历挂在 body：不再被抽屉容器剪切/遮挡
+  expect(leapDay.closest('.side-sheet')).not.toBeInTheDocument();
   await user.click(leapDay);
   expect(screen.getByText('2024-02-29')).toBeInTheDocument();
 });

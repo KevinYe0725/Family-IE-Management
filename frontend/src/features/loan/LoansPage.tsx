@@ -9,6 +9,7 @@ import type {
   HouseholdRole,
   Loan,
   LoanContractExtraction,
+  LoanDebtOverview,
   LoanRepayment,
   LoanPrepayment,
   LoanInstallment,
@@ -18,6 +19,7 @@ import type {
 } from "../../api/contracts";
 import { LoanPrepaymentPanel } from "./LoanPrepaymentPanel";
 import { LoanPayoffPanel } from "./LoanPayoffPanel";
+import { LoanDebtOverviewPanel } from "./LoanDebtOverview";
 import { ApiError } from "../../api/client";
 import { businessDate, newIdempotencyKey } from "../../shared/runtime";
 import { DateField } from "../../shared/DateField";
@@ -177,6 +179,12 @@ export function LoansPage({
         `/api/loans?status=${loanStatus}&page=${loanPage}&size=50`,
         { responseType: "page" },
       ),
+  });
+  const debtOverview = useQuery({
+    queryKey: ["loans", "debt-overview"],
+    enabled: loanStatus === "ACTIVE",
+    queryFn: () =>
+      request<LoanDebtOverview>("/api/loans/debt-overview"),
   });
   const selectedDetail = useQuery({
     queryKey: ["loans", "detail", selectedId],
@@ -342,6 +350,8 @@ export function LoansPage({
     onSuccess: () => {
       setDraft(null);
       setStep(0);
+      void debtOverview.refetch();
+      void loans.refetch();
     },
   });
   const confirm = useMutation({
@@ -361,12 +371,18 @@ export function LoansPage({
     onSuccess: async () => {
       setPayment(null);
       await selectedDetail.refetch();
+      void debtOverview.refetch();
+      void loans.refetch();
     },
   });
 
   const archive = useMutation({
     mutationFn: (id: number) =>
       request<void>(`/api/loans/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void debtOverview.refetch();
+      void loans.refetch();
+    },
   });
   const blank = (): LoanDraft => ({
     key: newIdempotencyKey(),
@@ -406,6 +422,13 @@ export function LoansPage({
       }
       readonly={!manager}
     >
+      {loanStatus === "ACTIVE" && (debtOverview.isLoading ? (
+        <p className="source-note" role="status">
+          正在计算债务总览…
+        </p>
+      ) : debtOverview.error ? <div role="alert"><span>贷款总览暂时无法读取。</span><button type="button" className="text-action" onClick={()=>void debtOverview.refetch()}>重试总览</button></div> : debtOverview.data ? (
+        <LoanDebtOverviewPanel data={debtOverview.data} />
+      ) : null)}
       <div className="filter-bar">
         <label>
           贷款状态
@@ -452,90 +475,24 @@ export function LoansPage({
                         : "自定义"}
                   </span>
                 </header>
-                <div className="loan-principal">
-                  <span>剩余本金</span>
-                  <strong>{money(item.currentPrincipal)}</strong>
-                </div>
-                <dl className="loan-facts" aria-label="贷款信息">
-                  <div>
-                    <dt>年利率</dt>
-                    <dd>{formatAnnualRatePercent(item.annualRate)}%</dd>
+                {item.status !== "CLOSED" && item.status !== "ARCHIVED" && (
+                  <div className="loan-principal">
+                    <span>剩余本金</span>
+                    <strong>{money(item.currentPrincipal)}</strong>
                   </div>
-                  {item.remainingTerm !== undefined && (
-                    <div>
-                      <dt>剩余期数</dt>
-                      <dd>{item.remainingTerm} 期</dd>
-                    </div>
-                  )}
-                  {item.nextPaymentOn && (
-                    <>
-                      <div>
-                        <dt>下期还款日</dt>
-                        <dd>{dateText(item.nextPaymentOn)}</dd>
-                      </div>
-                      <div>
-                        <dt>下期应还</dt>
-                        <dd>{money(item.nextPaymentAmount)}</dd>
-                      </div>
-                    </>
-                  )}
-                </dl>
-                <details className="loan-facts-more">
-                  <summary>更多贷款信息</summary>
-                  <dl className="loan-facts">
-                    <div>
-                      <dt>
-                        {item.fundingMode === "OPENING"
-                          ? "期初剩余本金"
-                          : item.fundingMode === "FINANCED_PURCHASE"
-                            ? "贷款购买本金"
-                            : "放款本金"}
-                      </dt>
-                      <dd>{money(item.principal)}</dd>
-                    </div>
-                    <div>
-                      <dt>原合同期限</dt>
-                      <dd>
-                        {item.termMonths}{" "}
-                        {item.repaymentMethod === "CUSTOM" ? "期" : "个月"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>开始日</dt>
-                      <dd>{dateText(item.startOn)}</dd>
-                    </div>
-                    <div>
-                      <dt>当前有效计划总金额</dt>
-                      <dd>{money(item.scheduledRepaymentTotal)}</dd>
-                    </div>
-                    <div>
-                      <dt>计划剩余本息</dt>
-                      <dd>{money(item.remainingRepaymentTotal)}</dd>
-                    </div>
-                    <div>
-                      <dt>累计已还现金</dt>
-                      <dd>{money(item.paidRepaymentTotal)}</dd>
-                    </div>
-                    {item.remainingTerm !== undefined && (
-                      <div>
-                        <dt>计划到期</dt>
-                        <dd>{dateText(item.maturityOn)}</dd>
-                      </div>
-                    )}
-                    {item.latestStrategy && (
-                      <div className="loan-facts__wide">
-                        <dt>最近调整</dt>
-                        <dd>
-                          {item.latestStrategy === "REDUCE_TERM"
-                            ? "按原付款上限缩期"
-                            : item.latestStrategy === "ADJUST_TERM"
-                              ? "自选更短期数"
-                              : "保留期数"}
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                </details>
+                )}
+                {(item.overdueInstallments ?? 0) > 0 && (
+                  <div className="loan-overdue" role="status">
+                    <StatusTag tone="danger">
+                      逾期 {item.overdueDays ?? 0} 天
+                    </StatusTag>
+                    <span>
+                      待确认应还 {money(item.overdueAmount)} ·{" "}
+                      {item.overdueInstallments} 期未还
+                    </span>
+                  </div>
+                )}
+                {loanOverviewFacts(item)}
                 <footer>
                   <Button
                     size="small"
@@ -576,6 +533,14 @@ export function LoansPage({
                         </button>
                       </>
                     )}
+                  {manager && item.status === "CLOSED" && (
+                    <button
+                      className="text-action danger"
+                      onClick={() => archive.mutate(item.id)}
+                    >
+                      移入归档历史
+                    </button>
+                  )}
                 </footer>
               </article>
             ))}
@@ -1376,6 +1341,9 @@ export function LoansPage({
             );
             setSchedulePage(0);
             setPrepayOpen(false);
+            void debtOverview.refetch();
+            void loans.refetch();
+      void loans.refetch();
           }}
           onPayoff={() => {
             setPrepayOpen(false);
@@ -1548,6 +1516,9 @@ export function LoansPage({
           onPaid={async () => {
             setPayoffOpen(false);
             await selectedDetail.refetch();
+            void debtOverview.refetch();
+            void loans.refetch();
+      void loans.refetch();
           }}
         />
       )}
@@ -1584,6 +1555,119 @@ export function LoansPage({
         )}
       </Drawer>
     </PageScaffold>
+  );
+}
+
+function loanOverviewFacts(item: Loan) {
+  const settled = item.status === "CLOSED" || item.status === "ARCHIVED";
+  const principalLabel =
+    item.fundingMode === "OPENING"
+      ? "期初剩余本金"
+      : item.fundingMode === "FINANCED_PURCHASE"
+        ? "贷款购买本金"
+        : "放款本金";
+  const rate = `${formatAnnualRatePercent(item.annualRate)}%`;
+  const term = `${item.termMonths} ${item.repaymentMethod === "CUSTOM" ? "期" : "个月"}`;
+  const strategy =
+    item.latestStrategy === "REDUCE_TERM"
+      ? "按原付款上限缩期"
+      : item.latestStrategy === "ADJUST_TERM"
+        ? "自选更短期数"
+        : item.latestStrategy
+          ? "保留期数"
+          : null;
+  type Fact = { dt: string; dd: string; wide?: boolean };
+  const facts = (rows: Array<Fact | null>): Fact[] =>
+    rows.filter((row): row is Fact => row !== null);
+
+  const head: Fact[] = settled
+    ? facts([
+        { dt: "年利率", dd: rate },
+        { dt: principalLabel, dd: money(item.principal) },
+        { dt: "开始日", dd: dateText(item.startOn) },
+        { dt: "累计已还现金", dd: money(item.paidRepaymentTotal) },
+      ])
+    : facts([
+        { dt: "年利率", dd: rate },
+        item.remainingTerm !== undefined
+          ? { dt: "剩余期数", dd: `${item.remainingTerm} 期` }
+          : null,
+        item.nextPaymentOn
+          ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+          : null,
+        item.nextPaymentOn
+          ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+          : null,
+      ]);
+
+  const fold: Fact[] = settled
+    ? item.status === "ARCHIVED"
+      ? facts([
+          { dt: "原合同期限", dd: term },
+          item.nextPaymentOn
+            ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+            : null,
+          item.nextPaymentOn
+            ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+            : null,
+        ])
+      : facts([
+          { dt: "原合同期限", dd: term },
+          {
+            dt: "当前有效计划总金额",
+            dd: money(item.scheduledRepaymentTotal),
+          },
+          item.nextPaymentOn
+            ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+            : null,
+          item.nextPaymentOn
+            ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+            : null,
+          strategy ? { dt: "最近调整", dd: strategy } : null,
+        ])
+    : facts([
+        { dt: principalLabel, dd: money(item.principal) },
+        { dt: "原合同期限", dd: term },
+        { dt: "开始日", dd: dateText(item.startOn) },
+        {
+          dt: "当前有效计划总金额",
+          dd: money(item.scheduledRepaymentTotal),
+        },
+        { dt: "计划剩余本息", dd: money(item.remainingRepaymentTotal) },
+        { dt: "累计已还现金", dd: money(item.paidRepaymentTotal) },
+        item.remainingTerm !== undefined
+          ? { dt: "计划到期", dd: dateText(item.maturityOn) }
+          : null,
+        strategy ? { dt: "最近调整", dd: strategy, wide: true } : null,
+      ]);
+
+  return (
+    <>
+      <dl className="loan-facts" aria-label="贷款信息">
+        {head.map((fact) => (
+          <div key={fact.dt}>
+            <dt>{fact.dt}</dt>
+            <dd>{fact.dd}</dd>
+          </div>
+        ))}
+      </dl>
+      {fold.length > 0 && (
+        <details className="loan-facts-more">
+          <summary>更多贷款信息</summary>
+          <dl className="loan-facts">
+            {fold.map((fact) => (
+              <div
+                className={fact.wide ? "loan-facts__wide" : undefined}
+                key={fact.dt}
+              >
+                <dt>{fact.dt}</dt>
+                <dd>{fact.dd}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+    </>
   );
 }
 

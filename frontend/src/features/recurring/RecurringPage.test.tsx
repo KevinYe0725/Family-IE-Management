@@ -3,6 +3,20 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecurringPage } from './RecurringPage';
 import type { RequestFn } from '../common';
+it('keeps long category labels inside the chart while preserving their accessible names',async()=>{
+ const name='非常长的家庭教育支出分类名称';
+ const page=(items:unknown[])=>({items,page:0,size:50,totalElements:items.length,totalPages:items.length?1:0,hasNext:false});
+ const request=(async(path:string)=>path==='/api/members'?[]:page(path.startsWith('/api/recurring-rules')?[{id:1,categoryId:1,categoryName:name,kind:'expense',amount:'100.00',active:true,paused:false,scheduleType:'MONTHLY',intervalValue:1}]:[])) as RequestFn;
+ const {container}=render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RecurringPage request={request} role="OWNER" userId={7}/></QueryClientProvider>);
+ expect(await screen.findByRole('img',{name:`支出分类：${name} 100.0%`})).toBeInTheDocument();
+ const label=container.querySelector('.recurring-category-ring-label')!;
+ const first=label.querySelector('tspan')!;
+ expect(Array.from(first.textContent??'').length).toBeLessThanOrEqual(6);
+ const x=Number(first.getAttribute('x')),width=Number(first.getAttribute('textLength'));
+ expect(width).toBeGreaterThan(0);expect(width).toBeLessThanOrEqual(72);
+ expect(label.getAttribute('text-anchor')==='end'?x-width:x).toBeGreaterThanOrEqual(0);
+ expect(label.getAttribute('text-anchor')==='end'?x:x+width).toBeLessThanOrEqual(620);
+});
 
 it('previews the actual recurring cash payment before recording today without changing the due date', async () => {
   const page = (items: unknown[]) => ({ items, page: 0, size: 50, totalElements: items.length, totalPages: 1, hasNext: false });

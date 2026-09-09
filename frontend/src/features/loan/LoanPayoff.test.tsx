@@ -10,6 +10,19 @@ import type { RequestFn } from '../common';
 const loan = { id: 4, name: '结清测试', type: 'OTHER', fundingMode: 'FINANCED_PURCHASE', accountingOn: '2026-01-01', accountingInitialized: true, paymentAccountId: 1, currentPrincipal: '2000.00', principal: '2000.00', scheduledRepaymentTotal: '2150.00', remainingRepaymentTotal: '2150.00', paidRepaymentTotal: '0.00', annualRate: '0.1', termMonths: 2, repaymentMethod: 'CUSTOM', startOn: '2026-01-01', status: 'ACTIVE' };
 const page = <T,>(items: T[]) => ({ items, page: 0, size: 50, totalElements: items.length, totalPages: items.length ? 1 : 0, hasNext: false });
 const accounts = [{ id: 1, name: '日常账户', openingConfirmed: true, availableBalance: '0.00' }, { id: 2, name: '还款账户', openingConfirmed: true, availableBalance: '2200.00' }];
+it('does not mix active-debt totals into closed loan history',async()=>{
+ const request=(async(path:string)=>{
+  if(path==='/api/loans/debt-overview')return {count:1,remainingPrincipal:'2000.00',remainingRepayment:'2150.00',thirtyDayDue:'100.00',paidRepayment:'50.00',weightedAnnualRatePercent:'10.00',nextDueOn:null,overdueInstallments:0,overdueAmount:'0.00',overdueDays:0};
+  if(path.startsWith('/api/loans?'))return page(path.includes('status=CLOSED')?[{...loan,id:5,name:'已结清测试',status:'CLOSED',currentPrincipal:'0.00'}]:[loan]);
+  if(path.startsWith('/api/accounts'))return page(accounts);
+  return path==='/api/members'?[]:page([]);
+ }) as RequestFn;
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><LoansPage request={request} role="OWNER"/></QueryClientProvider>);
+ expect(await screen.findByRole('region',{name:'贷款债务总览'})).toBeInTheDocument();
+ await userEvent.selectOptions(screen.getByLabelText('贷款状态'),'CLOSED');
+ expect(await screen.findByRole('heading',{name:'已结清测试'})).toBeInTheDocument();
+ expect(screen.queryByRole('region',{name:'贷款债务总览'})).not.toBeInTheDocument();
+});
 
 it('replays the exact committed request after a lost response and a closed-loan quote refresh', async () => {
  const writes: Record<string, unknown>[] = []; let committed = false; let quoteReads = 0;
@@ -48,12 +61,13 @@ it('shows server whole-loan totals and confirms a quoted selected-account payoff
    return { id: 9, operationKind: 'PAYOFF', cashAmount: '2100.00' } as T;
   }
   if (path.includes('/payoff-quote?')) { quotes.push(path); const account = Number(new URLSearchParams(path.split('?')[1]).get('paymentAccountId')); return { principalAmount: '2000.00', dueInterestAmount: '100.00', interestAmount: '100.00', futureScheduledInterest: '50.00', cashAmount: '2100.00', paymentAccountId: account, availableBalance: account === 2 ? '2200.00' : '0.00', planToken: `token-${account}` } as T; }
+  if (path === '/api/loans/debt-overview') return { count: 1, remainingPrincipal: '2000.00', remainingRepayment: '2150.00', thirtyDayDue: '2100.00', paidRepayment: '0.00', weightedAnnualRatePercent: '10.00', nextDueOn: null } as T;
   return (path === '/api/loans/4' ? loan : path.startsWith('/api/loans?') ? page([loan]) : path.startsWith('/api/accounts?') ? page(accounts) : path === '/api/members' ? [] : path.endsWith('/prepayments') ? [] : page([])) as T;
  };
  const user = userEvent.setup(); render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LoansPage request={request} role="OWNER" /></QueryClientProvider>);
  expect(await screen.findByText('年利率')).toBeInTheDocument();
- await user.click(screen.getByText('更多贷款信息'));
- expect(screen.getByText('计划剩余本息')).toBeInTheDocument(); expect(screen.getByText('累计已还现金')).toBeInTheDocument();
+ await user.click(screen.getAllByText('更多贷款信息')[0]);
+ expect(screen.getAllByText('计划剩余本息').length).toBeGreaterThan(0); expect(screen.getAllByText('累计已还现金').length).toBeGreaterThan(0);
  await user.click(await screen.findByRole('button', { name: '一次结清' }));
  const drawer = await screen.findByRole('dialog', { name: '结清测试 · 一次结清' });
  await user.selectOptions(within(drawer).getByLabelText('本次付款账户'), '2');

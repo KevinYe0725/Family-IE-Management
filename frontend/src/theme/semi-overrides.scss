@@ -652,6 +652,17 @@ a:hover { text-decoration: underline; }
 .loan-card .loan-facts-more .loan-facts { margin-top: 12px; }
 .loan-contract-import .ai-consent { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; font-weight: 400; color: var(--ledger-muted); cursor: pointer; }
 .loan-contract-import .ai-consent input { display: inline-block; width: 15px; height: 15px; min-width: 0; min-height: 0; padding: 0; margin: 0 0 0 6px; vertical-align: -3px; accent-color: var(--ledger-primary); cursor: pointer; }
+.debt-overview { padding: 16px 18px; border: 1px solid var(--ledger-border); border-radius: 12px; background: #fff; margin-bottom: 14px; }
+.debt-overview > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.debt-overview h2 { margin: 0; font-size: 15px; color: var(--ledger-text); }
+.debt-overview > header span { color: var(--ledger-muted); font-size: 12px; }
+.debt-overview__hero { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 12px; }
+.debt-overview__hero span { color: var(--ledger-muted); font-size: 12px; }
+.debt-overview__hero b { font-size: 26px; font-weight: 600; letter-spacing: -.02em; color: var(--ledger-primary); font-variant-numeric: tabular-nums; }
+.debt-overview__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin: 0; }
+.debt-overview__stats > div { display: grid; gap: 3px; min-width: 0; border: 1px solid color-mix(in srgb, var(--ledger-primary) 16%, var(--ledger-border)); border-radius: 7px; padding: 9px 11px; background: color-mix(in srgb, var(--ledger-primary) 4%, #fff); }
+.debt-overview__stats dt { color: color-mix(in srgb, var(--ledger-primary) 52%, var(--ledger-muted)); font-size: 10px; }
+.debt-overview__stats dd { margin: 0; color: var(--ledger-text); font-size: 13px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .loan-card footer { display: flex; align-items: center; gap: 6px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--ledger-border); }
 .loan-card footer .semi-button { background: color-mix(in srgb, var(--ledger-primary) 9%, #fff); color: var(--ledger-primary); border: 1px solid color-mix(in srgb, var(--ledger-primary) 24%, var(--ledger-border)); font-weight: 500; }
 .loan-card footer .semi-button:hover:not(:disabled) { background: color-mix(in srgb, var(--ledger-primary) 15%, #fff); }
@@ -835,6 +846,16 @@ a:hover { text-decoration: underline; }
 .is-collapsed .sidebar-collapse .navigation-icon { transform: rotate(180deg); }
 .mobile-drawer { overflow-y: auto; }
 @media (max-width: 820px) { .unified-sidebar { display: none; } .mobile-drawer .grouped-nav { padding-inline: 8px; } }
+
+/* 逾期提示（贷款卡片 / 债务总览 / 首页近期提醒） */
+.loan-overdue { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 7px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); }
+.loan-overdue span { color: var(--ledger-text); font-size: 12px; font-weight: 500; }
+.debt-overview__overdue { display: block; margin-top: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 7px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); color: var(--ledger-danger, #d54941); font-size: 12px; font-weight: 600; text-decoration: none; }
+.debt-overview__overdue:hover { background: color-mix(in srgb, var(--ledger-danger, #d54941) 10%, #fff); }
+.overdue-reminder { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 8px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); text-decoration: none; }
+.overdue-reminder strong { display: block; color: var(--ledger-text); font-size: 13px; }
+.overdue-reminder small { color: var(--ledger-muted); font-size: 11px; }
+
 @media (max-width: 1280px) { .recurring-overview-charts { grid-template-columns: minmax(0, .9fr) minmax(0, 1.35fr); }.recurring-schedule-chart { grid-column: 1 / -1; } }
 @media (max-width: 820px) { .recurring-overview { padding: 0; }.recurring-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.recurring-summary-total { grid-column: span 2; }.recurring-overview-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }.recurring-category-chart { grid-column: span 2; } }
 @media (max-width: 560px) { .recurring-overview-top { align-items: flex-start; flex-direction: column; gap: 10px; }.recurring-overview-summary { grid-template-columns: 1fr 1fr; gap: 8px; }.recurring-overview-summary > div { padding: 12px; }.recurring-summary-total { grid-column: span 2; }.recurring-summary-stat strong { font-size: 16px; }.recurring-overview-charts { grid-template-columns: 1fr; }.recurring-category-chart { grid-column: auto; }.recurring-schedule-ring { height: 128px; }.recurring-guide-dialog { width: min(100%, 470px); padding: 16px 18px 19px; }.recurring-guide-banner { grid-column: 1; grid-row: 1; margin-bottom: 16px; }.recurring-guide-dialog > h2 { grid-column: 1; grid-row: 2; margin: 0; font-size: 19px; }.recurring-guide-dialog > .confirm-detail { grid-column: 1; grid-row: 3; }.recurring-guide-dialog > footer { grid-column: 1; grid-row: 4; margin-top: 14px; } }

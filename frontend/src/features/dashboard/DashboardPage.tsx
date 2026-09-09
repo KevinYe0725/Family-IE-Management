@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, ArrowRight, Wallet, Bell, TrendingUp } from 'lucide-react';
-import type { Analysis, Dashboard, DebtAnalysis, HouseholdRole, NetWorth, NotificationPage, Portfolio, Transaction } from '../../api/contracts';
+import type { Analysis, Dashboard, DebtAnalysis, HouseholdRole, LoanDebtOverview, NetWorth, NotificationPage, Portfolio, Transaction } from '../../api/contracts';
 import { localYearMonth } from '../../shared/runtime';
 import { DateField } from '../../shared/DateField';
 import { DataPanel, Drawer, PageScaffold, QueryState, StatusTag, dateText, money, type RequestFn } from '../common';
@@ -17,6 +17,7 @@ export function DashboardPage({ request, role }: { request: RequestFn; role: Hou
   const debt = useQuery({ queryKey: ['debt-analysis'], queryFn: () => request<DebtAnalysis>('/api/debt-analysis') });
   const portfolio = useQuery({ queryKey: ['portfolio'], queryFn: () => request<Portfolio>('/api/portfolio') });
   const notifications = useQuery({ queryKey: ['notifications'], queryFn: () => request<NotificationPage>('/api/notifications') });
+  const loanDebt = useQuery({ queryKey: ['loans', 'debt-overview'], queryFn: () => request<LoanDebtOverview>('/api/loans/debt-overview'), retry: false });
   const recent = useQuery({ queryKey: ['transactions', 'recent', month], queryFn: () => request<Transaction[]>(`/api/transactions?month=${month}&page=0&size=5`) });
   const analysis = useQuery({ queryKey: ['analysis', month], queryFn: () => request<Analysis>(`/api/analysis?month=${month}&rollupCategories=true`), enabled: detailsOpen });
   const needsInitialization = [dashboard.error, netWorth.error, portfolio.error].some(error => error instanceof ApiError && error.code === 'ACCOUNTING_NOT_INITIALIZED');
@@ -58,6 +59,12 @@ export function DashboardPage({ request, role }: { request: RequestFn; role: Hou
           </QueryState>
         </DataPanel>
         <DataPanel title="近期提醒" action={<a href="/workspace/notifications" className="panel-link"><Bell size={15} aria-hidden="true"/>全部</a>}>
+          {loanDebt.data && loanDebt.data.overdueInstallments > 0 && (
+            <a href="/workspace/loans" className="overdue-reminder">
+              <StatusTag tone="danger">逾期</StatusTag>
+              <div><strong>贷款逾期待还 {money(loanDebt.data.overdueAmount)}</strong><small>最长逾期 {loanDebt.data.overdueDays} 天 · {loanDebt.data.overdueInstallments} 期未还</small></div>
+            </a>
+          )}
           <QueryState loading={notifications.isLoading} error={notifications.error}><div className="calm-reminders"><span>{notifications.data?.unreadCount ?? 0} 条未读</span>{notifications.data?.items.slice(0,3).map(item=><a href="/workspace/notifications" key={item.id}><i/><div><strong>{item.title}</strong><small>{dateText(item.dueAt)}</small></div></a>)}{!notifications.data?.items.length && <p>暂无提醒，今天也井然有序。</p>}</div></QueryState>
         </DataPanel>
         <div className="investment-glance"><TrendingUp size={18} aria-hidden="true"/><span>投资累计收益<strong>{portfolio.error?'暂不可用':money(portfolio.data?.totals.totalProfit)}</strong></span><a href="/workspace/investments" aria-label="查看投资持仓"><ArrowUpRight size={20}/></a><div>{netWorth.data?.investment.stalePrice && <StatusTag tone="warning">行情已过期</StatusTag>}{netWorth.data?.investment.missingPrice && <StatusTag tone="danger">存在缺失价格</StatusTag>}{netWorth.data?.investment.manualPrice && <StatusTag tone="blue">含手工价格</StatusTag>}</div></div>
