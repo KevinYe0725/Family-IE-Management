@@ -152,7 +152,7 @@ it('shows creator, paginates transactions, and links a complete csv export', asy
   const user = userEvent.setup();
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TransactionsPage request={request as RequestFn} role="OWNER" userId={7} /></QueryClientProvider>);
   expect((await screen.findAllByText('演示用户')).length).toBeGreaterThan(0);
-  expect(screen.getByRole('link', { name: '导出 CSV' })).toHaveAttribute('href', '/api/export.csv?month=2026-09');
+  expect(screen.getByRole('link', { name: '导出 CSV' })).toHaveAttribute('href', '/api/export.csv?month=2026-09&kind=expense');
   await user.click(screen.getByRole('button', { name: '下一页' }));
   expect((await screen.findAllByText('-¥10.00')).length).toBeGreaterThan(0);
   expect(request).toHaveBeenCalledWith(expect.stringContaining('page=1'), { responseType: 'page' });

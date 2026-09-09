@@ -39,7 +39,8 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const [transferOverlay,setTransferOverlay]=useState(false);
   const [fxOverlay,setFxOverlay]=useState(false);
   useEffect(()=>{setSelectedDay(null);},[month]);
-  const [kind, setKind] = useState('');
+  const [kind, setKind] = useState<TransactionKind>('expense');
+  const selectKind = (value:TransactionKind) => {setKind(value);setCategoryId('');setSelectedDay(null);};
   const [q, setQ] = useState('');
   const [accountId, setAccountId] = useState('');
   const [bankAccountId,setBankAccountId]=useState('');
@@ -79,7 +80,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const flatCategories = categoryOptions.data ?? [];
   function newTransaction() {
     const eligible = (accountOptions.data ?? []).filter(account => account.openingConfirmed && account.openingOn && !account.archivedAt);
-    setDraft({ ...emptyDraft(), accountId: eligible.length === 1 ? String(eligible[0].id) : '', memberId: members.data?.length === 1 ? String(members.data[0].id) : '' });
+    setDraft({ ...emptyDraft(), kind, accountId: eligible.length === 1 ? String(eligible[0].id) : '', memberId: members.data?.length === 1 ? String(members.data[0].id) : '' });
   }
   const parentCategories = flatCategories.filter(item => item.parentId === null);
   const exportHref = `/api/export.csv${filters ? `?${filters}` : ''}`;
@@ -96,7 +97,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
       body: value.generated ? { merchant: value.merchant || null, location: value.location || null, note: value.note || null } : { kind: value.kind, amount: value.amount, occurredOn: value.occurredOn, accountId: Number(value.accountId), memberId: Number(value.memberId), categoryId: Number(value.categoryId), merchant: value.merchant || null, location: value.location || null, note: value.note || null }
     }),
     onError: fundsError,
-    onSuccess: () => { setDraft(null); setTransactionPage(0); }
+    onSuccess: (_saved, value) => { setDraft(null); setTransactionPage(0); if(value.kind!==kind)selectKind(value.kind); }
   });
   const remove = useMutation({ mutationFn: (id: number) => request<void>(`/api/transactions/${id}`, { method: 'DELETE', headers: { 'Idempotency-Key': deleting!.key } }), onError: fundsError, onSuccess: () => { setDeleteId(null); setTransactionPage(0); } });
   const saveAccount = useMutation({ mutationFn: (value: NonNullable<typeof accountDraft>) => request<Account>(value.id ? `/api/accounts/${value.id}` : '/api/accounts', { method: value.id ? 'PATCH' : 'POST', headers: { 'Idempotency-Key': value.key }, body: value.mode === 'opening' ? { openingBalance: value.openingBalance, openingOn: value.openingOn } : value.mode === 'metadata' ? { name: value.name, type: value.type, walletProvider: value.walletProvider || null, bankName: value.bankName, cardLastFour: value.cardLastFour } : { name: value.name, type: value.type, walletProvider: value.walletProvider || null, bankName: value.bankName, cardLastFour: value.cardLastFour, currency: value.currency, openingBalance: value.openingBalance, openingOn: value.openingOn } }), onError: fundsError, onSuccess: () => { setAccountDraft(null); } });
@@ -114,11 +115,11 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
     <nav className="ledger-tools" aria-label="账本模块"><Button onClick={()=>setSection('accounts')}>账户</Button><Button onClick={()=>setSection('categories')}>分类</Button></nav>
     <nav className="segmented-tabs" aria-label="流水视角"><button type="button" className={viewMode==='records'?'active':''} onClick={()=>setViewMode('records')}>收支记录</button><button type="button" className={viewMode==='cash'?'active':''} onClick={()=>setViewMode('cash')}>资金流水</button></nav>
     {viewMode==='cash'&&<CashMovementsPanel request={request} accounts={accountOptions.data??[]} month={month} onMonth={setMonth}/>}
-    {viewMode==='records'&&<><LedgerCharts categories={flatCategories} request={request} filters={filters} kind={kind==='income'?'income':'expense'} selectedDay={selectedDay} onKind={value=>{setKind(value);setCategoryId('');setSelectedDay(null);}} onCategory={id=>{setCategoryId(id?String(id):'');setSelectedDay(null);}} onDay={setSelectedDay}/>
+    {viewMode==='records'&&<><LedgerCharts categories={flatCategories} request={request} filters={filters} kind={kind} selectedDay={selectedDay} onKind={selectKind} onCategory={id=>{setCategoryId(id?String(id):'');setSelectedDay(null);}} onDay={setSelectedDay}/>
     <>
       <div className="filter-bar">
         <label>账期<DateField aria-label="账期" mode="month" allowClear={false} value={month} onChange={e => setMonth(e.target.value)} /></label>
-        <label>类型<select aria-label="收支类型筛选" value={kind} onChange={e => setKind(e.target.value)}><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option></select></label>
+        <label>类型<select aria-label="收支类型筛选" value={kind} onChange={e => selectKind(e.target.value as TransactionKind)}><option value="expense">支出</option><option value="income">收入</option></select></label>
 <label>银行卡<select aria-label="银行卡筛选" value={bankAccountId} onChange={e=>{setBankAccountId(e.target.value);setAccountId("");}}><option value="">全部</option>{[...new Map((accountOptions.data??[]).filter(a=>a.bankAccountId).map(a=>[a.bankAccountId!,a.bankAccountName??a.name])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
         <label>账户<select aria-label="账户筛选" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">全部</option>{accountOptions.data?.filter(a=>!bankAccountId||a.bankAccountId===Number(bankAccountId)).map(item => <option key={item.id} value={item.id}>{accountLabel(item)}</option>)}</select></label>
         <label>成员<select aria-label="成员筛选" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="">全部</option><option value="0">全体（家庭共同）</option>{members.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
