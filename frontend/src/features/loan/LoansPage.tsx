@@ -473,7 +473,7 @@ export function LoansPage({
                         : "自定义"}
                   </span>
                 </header>
-                {item.status !== "CLOSED" && (
+                {item.status !== "CLOSED" && item.status !== "ARCHIVED" && (
                   <div className="loan-principal">
                     <span>剩余本金</span>
                     <strong>{money(item.currentPrincipal)}</strong>
@@ -1600,7 +1600,7 @@ export function LoansPage({
 }
 
 function loanOverviewFacts(item: Loan) {
-  const closed = item.status === "CLOSED";
+  const settled = item.status === "CLOSED" || item.status === "ARCHIVED";
   const principalLabel =
     item.fundingMode === "OPENING"
       ? "期初剩余本金"
@@ -1621,7 +1621,7 @@ function loanOverviewFacts(item: Loan) {
   const facts = (rows: Array<Fact | null>): Fact[] =>
     rows.filter((row): row is Fact => row !== null);
 
-  const head: Fact[] = closed
+  const head: Fact[] = settled
     ? facts([
         { dt: "年利率", dd: rate },
         { dt: principalLabel, dd: money(item.principal) },
@@ -1641,21 +1641,31 @@ function loanOverviewFacts(item: Loan) {
           : null,
       ]);
 
-  const fold: Fact[] = closed
-    ? facts([
-        { dt: "原合同期限", dd: term },
-        {
-          dt: "当前有效计划总金额",
-          dd: money(item.scheduledRepaymentTotal),
-        },
-        item.nextPaymentOn
-          ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
-          : null,
-        item.nextPaymentOn
-          ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
-          : null,
-        strategy ? { dt: "最近调整", dd: strategy } : null,
-      ])
+  const fold: Fact[] = settled
+    ? item.status === "ARCHIVED"
+      ? facts([
+          { dt: "原合同期限", dd: term },
+          item.nextPaymentOn
+            ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+            : null,
+          item.nextPaymentOn
+            ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+            : null,
+        ])
+      : facts([
+          { dt: "原合同期限", dd: term },
+          {
+            dt: "当前有效计划总金额",
+            dd: money(item.scheduledRepaymentTotal),
+          },
+          item.nextPaymentOn
+            ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+            : null,
+          item.nextPaymentOn
+            ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+            : null,
+          strategy ? { dt: "最近调整", dd: strategy } : null,
+        ])
     : facts([
         { dt: principalLabel, dd: money(item.principal) },
         { dt: "原合同期限", dd: term },
