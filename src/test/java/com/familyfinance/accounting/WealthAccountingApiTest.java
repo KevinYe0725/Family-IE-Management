@@ -58,7 +58,10 @@ class WealthAccountingApiTest {
   assertThat(ledger.balance(household,"ASSET:"+a)).isZero();
   assertThat(ledger.balance(household,"CASH:"+cash)).isEqualTo(50100000);
   mvc.perform(get("/api/net-worth?asOf=2026-01-02").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.netWorth").value("501000.00"));
-  mvc.perform(get("/api/dashboard?month=2026-01").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("100.00"));
+  mvc.perform(get("/api/dashboard?month=2026-01").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("0.00"))
+   .andExpect(jsonPath("$.data.summary.cashIn").value("1000.00"));
+  mvc.perform(get("/api/budgets/expense-summary?periodMonth=2026-01").session(session)).andExpect(status().isOk())
+   .andExpect(jsonPath("$.data.expense").value("100.00"));
  }
  @Test void buySellAndFeesReconcileWeightedCostAndKeepSoldRealizedProfit() throws Exception {
   long buy=idTrade(trade("BUY","10","100.00","10.00","2026-01-02","buy").andExpect(status().isCreated()));
@@ -125,10 +128,10 @@ class WealthAccountingApiTest {
   send("/api/loan-installments/"+installment+"/confirm","{\"paidOn\":\"2026-01-03\"}","pay").andExpect(status().isOk());
   send("/api/budgets","{\"periodMonth\":\"2026-01\",\"scopeType\":\"CATEGORY\",\"categoryId\":"+category+",\"amount\":\"1000.00\"}","budget").andExpect(status().isCreated());
   mvc.perform(get("/api/dashboard?month=2026-01").session(session)).andExpect(status().isOk())
-   .andExpect(jsonPath("$.data.summary.expense").value("100.00")).andExpect(jsonPath("$.data.summary.income").value("0.00"))
+   .andExpect(jsonPath("$.data.summary.expense").value("1100.00")).andExpect(jsonPath("$.data.summary.income").value("0.00"))
    .andExpect(jsonPath("$.data.summary.cashIn").value("1000.00")).andExpect(jsonPath("$.data.summary.cashOut").value("1100.00")).andExpect(jsonPath("$.data.summary.principalPaid").value("1000.00"));
   mvc.perform(get("/api/budgets/usage?periodMonth=2026-01").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].spent").value("100.00"));
-  mvc.perform(get("/api/plugins/annual-stats?year=2026").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("100.00"));
+  mvc.perform(get("/api/plugins/annual-stats?year=2026").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("1100.00"));
   mvc.perform(get("/api/net-worth?asOf=2026-01-02").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.netWorth").value("500000.00")).andExpect(jsonPath("$.data.liability").value("1000.00"));
   mvc.perform(get("/api/net-worth?asOf=2026-01-03").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.netWorth").value("499900.00")).andExpect(jsonPath("$.data.liability").value("0.00"));
  }

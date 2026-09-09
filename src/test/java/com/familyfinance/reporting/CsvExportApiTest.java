@@ -148,7 +148,7 @@ class CsvExportApiTest {
                 LocalDate.parse("2026-09-23"),
                 "@HYPERLINK",
                 "\t制表符公式",
-                "普通备注",
+                "  =1+1",
                 TEST_TIME,
                 TEST_TIME));
 
@@ -166,7 +166,7 @@ class CsvExportApiTest {
 
         String csv = new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
         assertThat(csv).contains("2026-09-22,支出,12.30,Kevin,餐饮,'=2+2,\"'+SUM(1,1)\",'-危险公式");
-        assertThat(csv).contains("2026-09-23,支出,23.40,Kevin,餐饮,'@HYPERLINK,'\t制表符公式,普通备注");
+        assertThat(csv).contains("2026-09-23,支出,23.40,Kevin,餐饮,'@HYPERLINK,'\t制表符公式,'  =1+1");
     }
 
     @Test

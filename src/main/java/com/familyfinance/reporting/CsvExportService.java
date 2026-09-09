@@ -54,25 +54,6 @@ public class CsvExportService {
     }
 
     private static String escape(String value) {
-        if (value == null) {
-            return "";
-        }
-        String safeValue = neutralizeFormula(value);
-        boolean mustQuote = safeValue.indexOf(',') >= 0
-                || safeValue.indexOf('"') >= 0
-                || safeValue.indexOf('\n') >= 0
-                || safeValue.indexOf('\r') >= 0;
-        String escaped = safeValue.replace("\"", "\"\"");
-        return mustQuote ? "\"" + escaped + "\"" : escaped;
-    }
-
-    private static String neutralizeFormula(String value) {
-        if (value.isEmpty()) {
-            return value;
-        }
-        return switch (value.charAt(0)) {
-            case '=', '+', '-', '@', '\t' -> "'" + value;
-            default -> value;
-        };
+        return com.familyfinance.shared.CsvCell.escape(value);
     }
 }

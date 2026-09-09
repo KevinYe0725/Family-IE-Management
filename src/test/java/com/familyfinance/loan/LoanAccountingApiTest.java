@@ -61,6 +61,9 @@ class LoanAccountingApiTest {
    .andExpect(jsonPath("$.data.expenseByMember[0].amount").value("1100.00"));
   mvc.perform(get("/api/budgets/expense-summary").session(session).param("periodMonth","2026-01"))
    .andExpect(status().isOk()).andExpect(jsonPath("$.data.expense").value("100.00"));
+  mvc.perform(get("/api/plugins/annual-stats").session(session).param("year","2026"))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.data.months[0].expense").value("1100.00"))
+   .andExpect(jsonPath("$.data.summary.expense").value("1100.00"));
  }
  @Test void exactFundsSplitPrincipalInterestAndMetadataKeepsAllHistory() throws Exception {
   fund("1100.00");long loan=create("OPENING"),installment=first(loan);

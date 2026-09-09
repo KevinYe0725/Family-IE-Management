@@ -64,8 +64,10 @@ class LoanDisbursementAmountApiTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.netWorth").value("-200.00"))
             .andExpect(jsonPath("$.data.liability").value("10000.00"));
         mvc.perform(get("/api/dashboard").session(session).param("month","2026-01"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("200.00"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.summary.expense").value("0.00"))
             .andExpect(jsonPath("$.data.summary.income").value("0.00"));
+        mvc.perform(get("/api/budgets/expense-summary").session(session).param("periodMonth","2026-01"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.expense").value("200.00"));
         mvc.perform(get("/api/cash-position").session(session))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.availableCash").value("9800.00"));
         mvc.perform(get("/api/cash-movements").session(session).param("month","2026-01"))

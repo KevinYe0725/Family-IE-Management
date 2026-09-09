@@ -14,13 +14,13 @@ export default function AnnualStatsPage({ request }: { request: RequestFn }) {
   const [year, setYear] = useState(Number(businessDate().slice(0, 4)));
   const report = useQuery({ queryKey: ['plugin', 'annual-stats', year], queryFn: () => request<AnnualReport>(`/api/plugins/annual-stats?year=${year}`) });
   const summary = report.data?.summary;
-  return <PageScaffold title="年度统计" description="收入与费用按账务入账汇总；借入及偿还本金、期初、账户互转、资产购入与非现金估值不作为收入或费用。">
+  return <PageScaffold title="年度统计">
     <div className="toolbar"><label>统计年份<select aria-label="统计年份" value={year} onChange={e => setYear(Number(e.target.value))}>{Array.from({ length: 201 }, (_, index) => 2100 - index).map(value => <option key={value} value={value}>{value} 年</option>)}</select></label><span className="muted">年度统计扩展</span></div>
     <QueryState loading={report.isLoading} error={report.error}>
-      <div className="summary-strip"><div><span>全年收入</span><strong>{money(summary?.income)}</strong></div><div><span>全年费用</span><strong>{money(summary?.expense)}</strong></div><div><span>全年结余</span><strong>{money(summary?.balance)}</strong></div></div>
-      <DataPanel title="月度收入与费用" meta="全年 12 个月 · 零记录月份不绘制柱形"><FlowChart label="年度月度收入与支出" points={report.data?.months.map(row=>({label:row.month+'月',income:row.income,expense:row.expense})) ?? []}/></DataPanel>
-      <DataPanel title="月平均水平" meta="全年合计 ÷ 12；没有记录的月份按零计算，当前年份也采用此口径。"><div className="summary-strip"><div><span>月平均收入</span><strong>{money(summary?.averageIncome)}</strong></div><div><span>月平均费用</span><strong>{money(summary?.averageExpense)}</strong></div><div><span>月平均结余</span><strong>{money(summary?.averageBalance)}</strong></div></div></DataPanel>
-      <DataPanel title="逐月收支" meta={`${year} 年 · 结余 = 收入 − 费用`}><div className="annual-months"><table><thead><tr><th>月份</th><th>收入</th><th>费用</th><th>结余</th></tr></thead><tbody>{report.data?.months.map(row => <tr key={row.month}><th scope="row">{row.month} 月</th><td>{money(row.income)}</td><td>{money(row.expense)}</td><td>{money(row.balance)}</td></tr>)}</tbody></table></div></DataPanel>
+      <div className="summary-strip"><div><span>全年收入</span><strong>{money(summary?.income)}</strong></div><div><span>全年支出</span><strong>{money(summary?.expense)}</strong></div><div><span>全年结余</span><strong>{money(summary?.balance)}</strong></div></div>
+      <DataPanel title="月度收入与支出" meta="全年 12 个月 · 零记录月份不绘制柱形"><FlowChart label="年度月度收入与支出" points={report.data?.months.map(row=>({label:row.month+'月',income:row.income,expense:row.expense})) ?? []}/></DataPanel>
+      <DataPanel title="月平均水平" meta="全年合计 ÷ 12；没有记录的月份按零计算，当前年份也采用此口径。"><div className="summary-strip"><div><span>月平均收入</span><strong>{money(summary?.averageIncome)}</strong></div><div><span>月平均支出</span><strong>{money(summary?.averageExpense)}</strong></div><div><span>月平均结余</span><strong>{money(summary?.averageBalance)}</strong></div></div></DataPanel>
+      <DataPanel title="逐月收支" meta={`${year} 年 · 结余 = 收入 − 支出`}><div className="annual-months"><table><thead><tr><th>月份</th><th>收入</th><th>支出</th><th>结余</th></tr></thead><tbody>{report.data?.months.map(row => <tr key={row.month}><th scope="row">{row.month} 月</th><td>{money(row.income)}</td><td>{money(row.expense)}</td><td>{money(row.balance)}</td></tr>)}</tbody></table></div></DataPanel>
     </QueryState>
   </PageScaffold>;
 }

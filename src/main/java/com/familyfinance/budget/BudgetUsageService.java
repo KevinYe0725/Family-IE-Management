@@ -80,7 +80,7 @@ public class BudgetUsageService {
 
     /** Drill-down of the effective expense entries that make up one budget's spent. */
     public BudgetUsageEntryPage usageEntries(
-            Authentication authentication, long budgetId, int page, int size) {
+            Authentication authentication, long budgetId, int page, int size, boolean rollupCategories) {
         long householdId = currentMembership.require(authentication).householdId();
         Budget budget = budgets.findByIdAndHouseholdId(budgetId, householdId)
                 .orElseThrow(() -> new ResourceNotFoundException("预算不存在"));
@@ -89,7 +89,7 @@ public class BudgetUsageService {
         List<LedgerActivity> entries = transactions.budgetEntries(
                 householdId, from, to, budget.getScopeType().name(),
                 budget.getCategory() == null ? null : budget.getCategory().getId(),
-                budget.getMember() == null ? null : budget.getMember().getId(), true);
+                budget.getMember() == null ? null : budget.getMember().getId(), rollupCategories);
         int safePage = Math.max(0, page);
         int safeSize = BudgetService.safeSize(size);
         int total = entries.size();
@@ -199,10 +199,10 @@ public class BudgetUsageService {
                 .append(csv(scopeLabel(budget.getScopeType()))).append(',')
                 .append(csv(budget.getCategory() == null ? "" : budget.getCategory().getName())).append(',')
                 .append(csv(budget.getMember() == null ? "" : budget.getMember().getName())).append(',')
-                .append(csv(com.familyfinance.shared.Money.formatCents(budget.getAmountCents()))).append(',')
-                .append(csv(com.familyfinance.shared.Money.formatCents(usage.spentCents()))).append(',')
-                .append(csv(com.familyfinance.shared.Money.formatCents(usage.remainingCents()))).append(',')
-                .append(csv(usage.percent().toPlainString())).append(',')
+                .append(com.familyfinance.shared.Money.formatCents(budget.getAmountCents())).append(',')
+                .append(com.familyfinance.shared.Money.formatCents(usage.spentCents())).append(',')
+                .append(com.familyfinance.shared.Money.formatCents(usage.remainingCents())).append(',')
+                .append(usage.percent().toPlainString()).append(',')
                 .append(csv(statusLabel(usage.status()))).append(',')
                 .append(budget.isActive() ? "是" : "否").append(',')
                 .append(csv(budget.getNote())).append("\r\n");
@@ -229,12 +229,7 @@ public class BudgetUsageService {
     }
 
     private static String csv(String value) {
-        if (value == null) return "";
-        if (value.indexOf(',') >= 0 || value.indexOf('"') >= 0
-                || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
-            return '"' + value.replace("\"", "\"\"") + '"';
-        }
-        return value;
+        return com.familyfinance.shared.CsvCell.escape(value);
     }
 
     static BudgetUsageStatus status(long spentCents, long amountCents) {

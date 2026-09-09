@@ -56,6 +56,7 @@ class BudgetUsageServiceTest {
     @Autowired FinancialAccountRepository accounts;
     @Autowired FinancialTransactionRepository transactions;
     @Autowired JdbcTemplate jdbc;
+    @Autowired jakarta.persistence.EntityManager entityManager;
     private String currentEmail;
 
     @Test
@@ -284,6 +285,14 @@ class BudgetUsageServiceTest {
         transaction(household, first, child, TransactionKind.EXPENSE, 2500L, "2025-09-03");
         transaction(household, second, other, TransactionKind.EXPENSE, 900_00L, "2025-09-04");
 
+        mvc.perform(get("/api/budgets/usage").session(session).param("periodMonth", "2025-09"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.budget.id == " + categoryBudget + ")].spent").value(org.hamcrest.Matchers.contains("35.00")));
+        mvc.perform(get("/api/budgets/{id}/usage-entries", categoryBudget).session(session)
+                        .param("rollupCategories", "false"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].amount").value("10.00"));
+
         mvc.perform(get("/api/budgets/{id}/usage-entries", categoryBudget).session(session)
                         .param("page", "0").param("size", "50"))
                 .andExpect(status().isOk())
@@ -367,6 +376,21 @@ class BudgetUsageServiceTest {
     }
 
     @Autowired BudgetRepository budgetRepository;
+
+    @Test
+    void budgetCsvTreatsFormulaLikeCategoryAndNoteAsText() throws Exception {
+        MockHttpSession session = login();
+        Category category = category(currentHousehold(), TransactionKind.EXPENSE, "=1+1", null);
+        long id = createBudget(session, categoryBudgetBody(category.getId(), "50.00"));
+        transaction(currentHousehold(), members.findByHouseholdOrderById(currentHousehold()).get(0),
+                category, TransactionKind.EXPENSE, 6000L, "2025-09-02");
+        jdbc.update("update budgets set note=? where id=?", "  @SUM(1,1)", id);
+        entityManager.clear();
+        String csv = mvc.perform(get("/api/budgets/export.csv").session(session).param("periodMonth", "2025-09"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).contains(",'=1+1").contains("\"'  @SUM(1,1)\"");
+        assertThat(csv).contains(",50.00,60.00,-10.00,120.00,");
+    }
 
     private JsonNode usage(MockHttpSession session, boolean rollup) throws Exception {
         com.familyfinance.accounting.AccountingTestFixtures.postFixtureTransactions(context,currentHousehold().getId());

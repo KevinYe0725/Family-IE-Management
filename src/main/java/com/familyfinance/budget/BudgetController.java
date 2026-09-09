@@ -75,7 +75,7 @@ public class BudgetController {
     ResponseEntity<ApiEnvelope<List<BudgetUsageResponse>>> usage(
             Authentication authentication,
             @RequestParam String periodMonth,
-            @RequestParam(defaultValue = "false") boolean rollupCategories,
+            @RequestParam(defaultValue = "true") boolean rollupCategories,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
@@ -107,9 +107,10 @@ public class BudgetController {
     ResponseEntity<ApiEnvelope<List<BudgetUsageEntryResponse>>> usageEntries(
             Authentication authentication,
             @PathVariable long id,
+            @RequestParam(defaultValue = "true") boolean rollupCategories,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        BudgetUsageEntryPage result = usage.usageEntries(authentication, id, page, size);
+        BudgetUsageEntryPage result = usage.usageEntries(authentication, id, page, size, rollupCategories);
         return paged(result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext(),
                 ApiEnvelope.data(result.items()));
     }
