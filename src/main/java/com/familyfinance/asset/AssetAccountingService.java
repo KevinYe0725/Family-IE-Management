@@ -69,6 +69,20 @@ public class AssetAccountingService {
         long actual=values.isEmpty()?0:values.get(0);
         if(actual!=asset.getCurrentValueCents())throw new ResourceConflictException("ACCOUNTING_BALANCE_MISMATCH","资产当前价值与账务余额不一致，请先核对账务");
     }
+    public void sell(Asset asset,LocalDate day,java.math.BigDecimal saleNet,java.math.BigDecimal repayment,
+            Long cashId,boolean direct,long actor,String key){
+        requireBalance(asset);requireChronology(asset,day);
+        if(cashId!=null)requireCash(asset.getHousehold().getId(),cashId,day);
+        var cashChange=direct?saleNet.subtract(repayment):saleNet;
+        if(cashChange.signum()!=0&&cashId==null)throw new ResourceConflictException("DISPOSAL_CASH_REQUIRED","请选择收款或补款账户");
+        var entries=new ArrayList<LedgerEntryInput>();
+        add(entries,"ASSET:"+asset.getId(),ASSET,-asset.getCurrentValueCents());
+        if(direct)add(entries,"ASSET_SALE_CLEARING:"+asset.getId(),ASSET,com.familyfinance.shared.DecimalMoney.toCents(repayment));
+        if(cashId!=null)add(entries,"CASH:"+cashId,CASH,com.familyfinance.shared.DecimalMoney.toCents(cashChange));
+        long profit=com.familyfinance.shared.DecimalMoney.toCents(saleNet.subtract(com.familyfinance.shared.DecimalMoney.fromCents(asset.getCurrentValueCents())));
+        add(entries,profit>=0?"INCOME:INVESTMENT_GAIN":"EXPENSE:INVESTMENT_LOSS",profit>=0?INCOME:EXPENSE,-profit);
+        post(asset,"ASSET_DISPOSAL",asset.getId(),key,day,actor,entries);
+    }
     public void requireChronology(Asset asset,LocalDate day) {
         if(day.isBefore(asset.getLastAccountingOn()))throw new ResourceConflictException("ASSET_ACCOUNTING_CHRONOLOGY","日期不能早于资产最近的入账或估值日期；历史估值保留只读");
     }

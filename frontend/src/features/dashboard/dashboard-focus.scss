@@ -7,6 +7,11 @@
   .feature-content { gap: 24px; }
   .home-surface { background: #fff; border: 1px solid var(--home-line); border-radius: 20px; padding: 28px; min-width: 0; }
   .home-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 24px; }
+  .home-position-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .home-available-cash { background:linear-gradient(150deg,#fff 50%,#f1f7f5); }
+  .home-cash-definition { margin-top:24px;font-size:13px;color:var(--home-muted); }
+  .home-cash-definition summary { cursor:pointer; }
+  .home-cash-definition p { line-height:1.7; }
   .home-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 28px; }
   .home-section-heading h2 { display: flex; gap: 9px; align-items: center; font-size: 18px; font-weight: 600; margin: 0; }
   .home-icon-button { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--home-line); border-radius: 50%; background: transparent; color: var(--home-ink); cursor: pointer; }

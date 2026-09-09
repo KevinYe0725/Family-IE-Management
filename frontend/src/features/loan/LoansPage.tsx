@@ -1,3 +1,6 @@
+import {LoanPurchaseSummary,ownContribution} from './LoanPurchaseSummary';
+import {AssetDetailsDialog} from '../asset/AssetDetailsDialog';
+import {LoanReceiptSummary} from './LoanReceiptSummary';
 import {BankAccountPicker} from '../ledger/BankAccountPicker';
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -37,7 +40,7 @@ import {
 import { AccountingHistory } from "../ledger/accounting-flows";
 import {
   DataPanel,
-  Drawer,
+  ActionDialog as Drawer,
   FormError,
   PageScaffold,
   QueryState,
@@ -56,6 +59,11 @@ export type LoanDraft = {
   fundingMode?: "OPENING" | "DISBURSEMENT" | "FINANCED_PURCHASE";
   accountingOn?: string;
   disbursementAccountId?: string;
+  disbursementAmount?: string | null;
+  withheldFee?: string;
+  purchaseValue?: string | null;
+  ownContributionAccountId?: string;
+  assetRelation?: 'FINANCING' | 'COLLATERAL' | null;
   name: string;
   type: "MORTGAGE" | "CAR" | "OTHER";
   linkedAssetId: string;
@@ -70,6 +78,12 @@ export type LoanDraft = {
   startOn: string;
   customSchedule: Array<{ dueOn: string; principal: string; interest: string }>;
 };
+
+function effectiveReceipt(draft: LoanDraft): string {
+  return draft.id && Number(draft.withheldFee ?? 0) === 0
+    ? draft.principal
+    : draft.disbursementAmount ?? draft.principal;
+}
 
 const ANNUAL_RATE_ERROR =
   "年利率请输入 0 到 100 之间的百分比，最多保留 4 位小数";
@@ -98,6 +112,10 @@ export function loanCreatePayload(value: LoanDraft) {
     createPurchasedAsset: value.createPurchasedAsset === true,
     fundingMode: value.fundingMode,
     accountingOn: value.accountingOn,
+    purchaseValue: value.fundingMode === "FINANCED_PURCHASE" ? value.purchaseValue ?? undefined : undefined,
+    ownContributionAccountId: value.fundingMode === "FINANCED_PURCHASE" && Number(ownContribution(value.purchaseValue ?? value.principal,value.principal))>0 ? Number(value.ownContributionAccountId) : undefined,
+    assetRelation: value.createPurchasedAsset ? "FINANCING" : value.linkedAssetId ? value.assetRelation ?? "FINANCING" : null,
+    disbursementAmount: value.fundingMode === "DISBURSEMENT" ? value.disbursementAmount ?? value.principal : undefined,
     disbursementAccountId:
       value.fundingMode === "DISBURSEMENT"
         ? Number(value.disbursementAccountId)
@@ -136,7 +154,8 @@ export function LoansPage({
 }) {
   const [repaymentAudit, setRepaymentAudit] = useState<number | null>(null);
   const [payoffOpen, setPayoffOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [assetDetailsId,setAssetDetailsId]=useState<number|null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(()=>{const value=new URLSearchParams(window.location.search).get("loanId");return value&&/^[1-9]\d*$/.test(value)&&Number.isSafeInteger(Number(value))?Number(value):null;});
   const setSelected = (loan: Loan | null) => {
     setSelectedId(loan?.id ?? null);
     setSchedulePage(0);
@@ -336,6 +355,9 @@ export function LoansPage({
           "fundingMode",
           "accountingOn",
           "disbursementAccountId",
+          "disbursementAmount",
+          "purchaseValue",
+          "ownContributionAccountId",
           "createPurchasedAsset",
         ].includes(field)
       )
@@ -675,6 +697,10 @@ export function LoansPage({
                               ? "PURCHASED"
                               : "",
                           disbursementAccountId: "",
+                          disbursementAmount: undefined,
+                          purchaseValue: undefined,
+                          ownContributionAccountId: "",
+                          assetRelation: "FINANCING",
                         })
                       }
                     >
@@ -695,7 +721,7 @@ export function LoansPage({
                         : "实际放款本金"}
                     <input
                       name="principal"
-                      disabled={Boolean(draft.purchasedAssetId)}
+                      disabled={Boolean(draft.purchasedAssetId) || Number(draft.withheldFee ?? 0)>0}
                       required
                       inputMode="decimal"
                       value={draft.principal}
@@ -712,7 +738,7 @@ export function LoansPage({
                         : "实际放款日期"}
                     <DateField
                       name="accountingOn"
-                      disabled={Boolean(draft.purchasedAssetId)}
+                      disabled={Boolean(draft.purchasedAssetId) || Number(draft.withheldFee ?? 0)>0}
                       required
                       max={businessDate()}
                       value={draft.accountingOn}
@@ -721,15 +747,18 @@ export function LoansPage({
                       }
                     />
                   </label>
+                  {draft.fundingMode === "FINANCED_PURCHASE" && <><label>完整购置金额<input name="purchaseValue" required inputMode="decimal" disabled={Boolean(draft.id)} value={draft.purchaseValue ?? ""} onChange={e=>setDraft({...draft,purchaseValue:e.target.value})}/></label><LoanPurchaseSummary purchase={draft.purchaseValue??""} principal={draft.principal}/>{Number(ownContribution(draft.purchaseValue,draft.principal))>0&&<><BankAccountPicker label="首付款账户" name="ownContributionAccountId" required disabled={Boolean(draft.id)} accountsReady={accounts.data!==undefined} request={request} accounts={accounts.data??[]} currency="CNY" value={draft.ownContributionAccountId} onChange={id=>setDraft({...draft,ownContributionAccountId:id})}/>{!draft.id&&<PaymentPreview account={accounts.data?.find(a=>String(a.id)===draft.ownContributionAccountId)} amount={ownContribution(draft.purchaseValue,draft.principal)}/>}</>}</>}
                   {draft.fundingMode === "DISBURSEMENT" && (
                     <>
-                      <BankAccountPicker accountsReady={accounts.data!==undefined} label="放款到账账户" name="disbursementAccountId" required currency="CNY" request={request} accounts={accounts.data ?? []} value={draft.disbursementAccountId} onChange={id => setDraft({ ...draft, disbursementAccountId: id })}/>
+                      <label>实际到账金额<input name="disbursementAmount" required inputMode="decimal" disabled={Boolean(draft.id)} value={effectiveReceipt(draft)} onChange={e=>setDraft({...draft,disbursementAmount:e.target.value})}/></label>
+                      <LoanReceiptSummary principal={draft.principal} receipt={effectiveReceipt(draft)}/>
+                      <BankAccountPicker disabled={Boolean(draft.id)&&Number(draft.withheldFee ?? 0)>0} accountsReady={accounts.data!==undefined} label="放款到账账户" name="disbursementAccountId" required currency="CNY" request={request} accounts={accounts.data ?? []} value={draft.disbursementAccountId} onChange={id => setDraft({ ...draft, disbursementAccountId: id })}/>
                       <PaymentPreview
                         incoming
                         account={accounts.data?.find(
                           (a) => String(a.id) === draft.disbursementAccountId,
                         )}
-                        amount={draft.principal}
+                        amount={effectiveReceipt(draft)}
                         adjustment={Boolean(draft.id)}
                       />
                     </>
@@ -921,32 +950,19 @@ export function LoansPage({
                           ? "PURCHASED"
                           : draft.linkedAssetId
                       }
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          linkedAssetId: e.target.value,
-                          createPurchasedAsset: e.target.value === "PURCHASED",
-                          fundingMode:
-                            e.target.value === "PURCHASED"
-                              ? "FINANCED_PURCHASE"
-                              : draft.fundingMode === "FINANCED_PURCHASE"
-                                ? "OPENING"
-                                : draft.fundingMode,
-                          disbursementAccountId:
-                            e.target.value === "PURCHASED"
-                              ? ""
-                              : draft.disbursementAccountId,
-                        })
-                      }
+                      onChange={(e) => {
+                        setDraft({ ...draft, linkedAssetId:e.target.value,createPurchasedAsset:e.target.value==="PURCHASED",assetRelation:e.target.value==="PURCHASED"?"FINANCING":draft.assetRelation,fundingMode:e.target.value==="PURCHASED"?"FINANCED_PURCHASE":draft.fundingMode==="FINANCED_PURCHASE"?"OPENING":draft.fundingMode,disbursementAccountId:e.target.value==="PURCHASED"?"":draft.disbursementAccountId});
+                        if(e.target.value==="PURCHASED"&&!draft.id)setStep(0);
+                      }}
                     >
-                      <option value="">不关联</option>
+                      <option value="">不关联实物资产</option>
                       {!draft.id && (
                         <option value="PURCHASED">本次贷款购买物</option>
                       )}
                       {assets.data
                         ?.filter(
                           (item) =>
-                            item.type ===
+                            draft.assetRelation === "COLLATERAL" || item.type ===
                             (draft.type === "MORTGAGE"
                               ? "PROPERTY"
                               : draft.type === "CAR"
@@ -968,10 +984,11 @@ export function LoansPage({
                         : draft.type === "CAR"
                           ? "车辆"
                           : "其他资产"}
-                      ，购入价值与初始估值均为 {money(draft.principal)}
+                      ，购入价值与初始估值为 {money(draft.purchaseValue ?? draft.principal)}
                       ；可之后在资产页面补齐真实资料。扣款账户只用于今后的还款。
                     </p>
                   )}
+                  {!draft.createPurchasedAsset && <label>关联用途<select disabled={Boolean(draft.id)} value={draft.assetRelation??"FINANCING"} onChange={e=>setDraft({...draft,assetRelation:e.target.value as "FINANCING"|"COLLATERAL",linkedAssetId:""})}><option value="FINANCING">用于购置</option><option value="COLLATERAL">作为抵押</option></select></label>}
                   <label>
                     归属成员
                     <select
@@ -1066,7 +1083,7 @@ export function LoansPage({
           payment === null &&
           settings === null &&
           !auditOpen &&
-          draft === null
+          draft === null && assetDetailsId === null
         }
         title={`${selected?.name ?? ""} · 还款计划`}
         description="到期后可确认本期还款；如需提前偿还本金，请使用贷款卡片上的「提前还款」。"
@@ -1085,6 +1102,8 @@ export function LoansPage({
           <>
             <LoanTotals loan={selected} />
             <LoanCurrentPlan loan={selected} />
+            {selected.linkedAssetId!=null&&<Button theme="borderless" onClick={()=>setAssetDetailsId(selected.linkedAssetId!)}>{selected.assetRelation==="COLLATERAL"?"抵押资产":"购置资产"}：{selected.linkedAssetName??"查看关联资产"}</Button>}
+            {selected.fundingMode === "DISBURSEMENT" && <details><summary>放款记录</summary><LoanReceiptSummary principal={selected.principal} receipt={selected.disbursementAmount ?? selected.principal}/></details>}
             <p>
               当前剩余本金 {money(selected.currentPrincipal)} · 扣款账户{" "}
               {paymentAccount?.name ?? "账户不可用"}
@@ -1123,6 +1142,8 @@ export function LoansPage({
                         disbursementAccountId: String(
                           selected.disbursementAccountId ?? "",
                         ),
+                        purchaseValue: selected.purchaseValue ?? (selected.purchasedAssetId ? selected.principal : null),
+                        ownContributionAccountId: String(selected.ownContributionAccountId ?? ""),
                         annualRate: formatAnnualRatePercent(
                           selected.annualRate,
                         ),
@@ -1247,7 +1268,7 @@ export function LoansPage({
               repayments.data.map((batch) => (
                 <article key={`batch-${batch.batchId}`} className="source-note">
                   <p>
-                    到期款与额外还本 · {dateText(batch.paidOn)} · 本次总付款{" "}
+                    {batch.cashImpact===false?'出售款代偿':'到期款与额外还本'} · {dateText(batch.paidOn)} · {batch.cashImpact===false?'结算金额':'本次总付款'}{" "}
                     {money(batch.totalCashAmount)}
                   </p>
                   <p>
@@ -1256,13 +1277,13 @@ export function LoansPage({
                     {money(batch.additionalPrincipal)}
                   </p>
                   <p>
-                    当时付款后余额 {money(batch.balanceAfter)} · 当时剩余本金{" "}
+                    {batch.cashImpact===false?'买方代偿，无单独账户扣款':`当时付款后余额 ${money(batch.balanceAfter)}`} · 当时剩余本金{" "}
                     {money(batch.remainingPrincipal)}
                   </p>
                   <details>
                     <summary>查看本次还款凭证与子记录</summary>
                     <p>
-                      还款批次 #{batch.batchId} · 账户 #{batch.paymentAccountId}{" "}
+                      还款批次 #{batch.batchId} · {batch.cashImpact===false?`出售资产 #${batch.settlementAssetId}`:`账户 #${batch.paymentAccountId}`}{" "}
                       · 记录时间 {batch.recordedAt}
                     </p>
                     {batch.children.map((child) => (
@@ -1308,7 +1329,7 @@ export function LoansPage({
                     </p>
                     <p>
                       本金 {money(event.principalAmount)} · 利息{" "}
-                      {money(event.interestAmount)} · 实付{" "}
+                      {money(event.interestAmount)} · {event.cashImpact===false?'买方代偿':'实付'}{" "}
                       {money(event.cashAmount)}
                     </p>
                     <Button
@@ -1554,6 +1575,7 @@ export function LoansPage({
           />
         )}
       </Drawer>
+      {assetDetailsId!==null&&<AssetDetailsDialog request={request} assetId={assetDetailsId} role={role} onClose={()=>setAssetDetailsId(null)}/>}
     </PageScaffold>
   );
 }
@@ -1719,6 +1741,10 @@ function loanCorrectionPayload(value: LoanDraft) {
   const {
     fundingMode: _fundingMode,
     createPurchasedAsset: _createPurchasedAsset,
+    disbursementAmount: _disbursementAmount,
+    purchaseValue: _purchaseValue,
+    ownContributionAccountId: _ownContributionAccountId,
+    assetRelation: _assetRelation,
     ...created
   } = loanCreatePayload(value);
   const {
@@ -1729,7 +1755,8 @@ function loanCorrectionPayload(value: LoanDraft) {
     disbursementAccountId: _disbursementAccountId,
     ...safeCorrection
   } = created;
-  const payload = value.purchasedAssetId ? safeCorrection : created;
+  const {principal:_feePrincipal,accountingOn:_feeDay,disbursementAccountId:_feeAccount,...feeCorrection}=created;
+  const payload = value.purchasedAssetId ? safeCorrection : Number(value.withheldFee ?? 0)>0 ? feeCorrection : created;
   if (value.repaymentMethod === "CUSTOM" && value.customSchedule.length === 0) {
     const { customSchedule: _schedule, ...retained } = payload;
     return retained;

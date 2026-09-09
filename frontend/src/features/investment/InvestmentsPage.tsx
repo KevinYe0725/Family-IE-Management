@@ -1,3 +1,4 @@
+import {PinnedStockCard} from './PinnedStockCard';
 import {useTransientNotice} from '../../shared/useTransientNotice';
 import {BankAccountPicker} from '../ledger/BankAccountPicker';
 import { useState, type FormEvent } from 'react';
@@ -56,7 +57,7 @@ export function InvestmentsPage({ request, role }: { request: RequestFn; role: H
   const [deleteTrade, setDeleteTrade] = useState<{ id: number; accountId: number; securityId: number; key: string } | null>(null);
   const [tradePage, setTradePage] = useState(0);
   const [accountPage, setAccountPage] = useState(0);
-  const dailyPortfolio = useQuery({ queryKey: ['portfolio'], queryFn: () => request<Portfolio>('/api/portfolio') });
+  const dailyPortfolio = useQuery({ queryKey: ['portfolio'], queryFn: () => request<Portfolio>('/api/portfolio'),refetchInterval:tab==='positions'&&!trade?60000:false,refetchIntervalInBackground:false });
   const livePortfolio = useLivePortfolio(request, tab === 'positions' && !trade && !accountDraft && !deleteTrade && Boolean(dailyPortfolio.data?.positions.some(p=>Number(p.quantity)>0)));
   const usingLiveProjection=sameRecordedPositions(dailyPortfolio.data,livePortfolio.data?.portfolio);
   const portfolio = {...dailyPortfolio, data:usingLiveProjection?livePortfolio.data!.portfolio:dailyPortfolio.data, isFetching:dailyPortfolio.isFetching||livePortfolio.isFetching};
@@ -136,6 +137,7 @@ export function InvestmentsPage({ request, role }: { request: RequestFn; role: H
       }}
       onOpening={accountId => setTrade({ ...blankTrade(), accountId, type: 'OPENING' })}/>}
     {!marketOnly && <PortfolioSummary portfolio={portfolio.data} onViewQuotes={openDomesticQuotes} onManageRates={()=>setManagement('rates')}/>}
+    {tab==='positions'&&<PinnedStockCard request={request} page="investments"/>}
     {tab==='positions'&&<InvestmentValuationStatus failed={Boolean(livePortfolio.error)} busy={livePortfolio.isFetching} onRefresh={()=>void livePortfolio.refetch()}/>}
 
     {tab!=='plans'&&(investmentPlans.data?.pendingCount??0)>0&&<button className="investment-plan-notice" onClick={()=>setTab('plans')}>你有 {investmentPlans.data!.pendingCount} 期定投待确认 <span>前往处理 →</span></button>}

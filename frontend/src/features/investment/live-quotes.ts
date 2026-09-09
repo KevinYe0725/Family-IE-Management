@@ -8,7 +8,7 @@ interface LivePortfolio {portfolio:Portfolio;quotes:LiveQuote[];nextRefreshSecon
 interface LivePrices {quotes:LiveQuote[];nextRefreshSeconds:number}
 /** Reference prices may change; recorded quantities/costs must match the latest ledger response. */
 export function sameRecordedPositions(current:Portfolio|undefined,live:Portfolio|undefined){
- if(!current||!live||current.positions.length!==live.positions.length)return false;
+ if(!current||!live||!Array.isArray(current.positions)||!Array.isArray(live.positions)||current.positions.length!==live.positions.length)return false;
  return current.positions.every(position=>{
   const other=live.positions.find(p=>p.accountId===position.accountId&&p.securityId===position.securityId);
   return other&&String(other.quantity)===String(position.quantity)&&other.cost===position.cost&&other.realizedProfit===position.realizedProfit

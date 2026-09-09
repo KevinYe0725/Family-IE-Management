@@ -32,6 +32,9 @@ it('creates a purchased asset from the association selector with a direct-purcha
   await user.clear(screen.getByLabelText('剩余计划期限（月）'));await user.type(screen.getByLabelText('剩余计划期限（月）'), '2');
   await user.click(screen.getByRole('button', { name: '下一步' }));
   await user.selectOptions(screen.getByLabelText('关联资产'), 'PURCHASED');
+  await user.type(screen.getByLabelText('完整购置金额'), '1000.00');
+  await user.click(screen.getByRole('button', { name: '下一步' }));
+  await user.click(screen.getByRole('button', { name: '下一步' }));
   expect(screen.getByText(/贷款人直接支付购买款，不经过家庭现金/)).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: '旧车' })).not.toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText('确认还款人'), '7');
@@ -40,7 +43,7 @@ it('creates a purchased asset from the association selector with a direct-purcha
   await user.click(screen.getByRole('button', { name: '创建并生成计划' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('/api/loans', expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': expect.any(String) }, body: {
     name: '购房贷款', type: 'MORTGAGE', principal: '1000.00', repaymentMethod: 'EQUAL_PAYMENT', startOn: expect.any(String), accountingOn: expect.any(String),
-    fundingMode: 'FINANCED_PURCHASE', createPurchasedAsset: true, disbursementAccountId: null, linkedAssetId: null, memberId: null, assignedUserId: 7, paymentAccountId: 1, paymentCategoryId: 2, annualRate: 0.06, termMonths: 2, customSchedule: null
+    fundingMode: 'FINANCED_PURCHASE', createPurchasedAsset: true, purchaseValue: '1000.00', assetRelation: 'FINANCING', disbursementAccountId: null, linkedAssetId: null, memberId: null, assignedUserId: 7, paymentAccountId: 1, paymentCategoryId: 2, annualRate: 0.06, termMonths: 2, customSchedule: null
   } })));
 });
 it('keeps financed origination fields disabled and omits them from a rate correction', async () => {

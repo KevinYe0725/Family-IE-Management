@@ -32,6 +32,11 @@ public class LoanInstallmentSettlement {
     @Transactional(propagation=Propagation.MANDATORY)
     public FinancialTransaction settleAuthorized(LockedFamilyAccess access,Loan loan,LoanInstallment installment,
             FinancialAccount account,LocalDate paidOn,String childKey) {
+        return settleAuthorized(access,loan,installment,account,paidOn,childKey,LoanSettlementFunding.cash());
+    }
+    @Transactional(propagation=Propagation.MANDATORY)
+    public FinancialTransaction settleAuthorized(LockedFamilyAccess access,Loan loan,LoanInstallment installment,
+            FinancialAccount account,LocalDate paidOn,String childKey,LoanSettlementFunding funding) {
         long h=access.context().householdId();
         if(loan.getHousehold().getId()!=h||installment.getLoan().getId().longValue()!=loan.getId()
                 ||account.getHousehold().getId()!=h||installment.getStatus()!=LoanInstallmentStatus.PENDING)
@@ -39,7 +44,7 @@ public class LoanInstallmentSettlement {
         var principal=installment.getPrincipalAmount();var interest=installment.getInterestAmount();
         var tx=FinancialTransaction.loanPayment(access.household(),account,access.membership().getUser(),
                 member(loan,true),category(loan),DecimalMoney.toCents(principal.add(interest)),paidOn,installment.getId(),clock.instant());
-        tx.loanSplit(DecimalMoney.toCents(principal),DecimalMoney.toCents(interest));transactions.saveAndFlush(tx);
+        tx.loanSplit(DecimalMoney.toCents(principal),DecimalMoney.toCents(interest));funding.mark(tx);transactions.saveAndFlush(tx);
         accounting.pay(loan,tx,principal,interest,childKey);
         installment.confirm(tx);loan.applyPrincipalPayment(principal,clock.instant());accounting.requireBalance(loan);
         notifications.resolveReference(h,"LOAN_INSTALLMENT",installment.getId());installments.flush();

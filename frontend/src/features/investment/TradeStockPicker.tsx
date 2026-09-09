@@ -15,14 +15,14 @@ type Choice={key:string;name:string;code:string;exchange:string;accessibleLabel?
 const selectionMarket=(value:SecuritySelection):Market=>value.market==='HK'||value.market==='US'?value.market:'CN';
 const domesticChoice=(value:SecuritySelection):Choice=>({key:'CN:'+value.id,name:value.name,code:value.tsCode.split('.')[0],exchange:value.market??value.tsCode.split('.')[1],accessibleLabel:value.tsCode+' · '+value.name,security:value});
 const foreignChoice=(value:OverseasInstrument):Choice=>({key:value.market+':'+value.symbol,name:value.name,code:value.symbol,exchange:value.exchange,instrument:value});
-export function TradeStockPicker({request,value,onChange,disabled=false}:{request:RequestFn;value:SecuritySelection|null;onChange:(value:Security|null)=>void;disabled?:boolean}){
+export function TradeStockPicker({request,value,onChange,disabled=false,watchOnly=false}:{request:RequestFn;value:SecuritySelection|null;onChange:(value:Security|null)=>void;disabled?:boolean;watchOnly?:boolean}){
  const [market,setMarket]=useState<Market>(()=>value?selectionMarket(value):'ALL');
  useEffect(()=>{if(value)setMarket(selectionMarket(value));},[value?.id,value?.market]);
  return <div><nav className="market-switch" aria-label="投资市场">{([['ALL','全部'],['CN','A 股'],['HK','港股'],['US','美股']] as const).map(([key,label])=><button type="button" key={key} disabled={disabled} aria-pressed={market===key} onClick={()=>{if(key!==market){setMarket(key);onChange(null);}}}>{label}</button>)}</nav>
-  <MarketPicker market={market} request={request} value={value} onChange={onChange} disabled={disabled}/>
+  <MarketPicker market={market} request={request} value={value} onChange={onChange} disabled={disabled} watchOnly={watchOnly}/>
  </div>;
 }
-function MarketPicker({market,request,value,onChange,disabled}:{market:Market;request:RequestFn;value:SecuritySelection|null;onChange:(value:Security)=>void;disabled:boolean}){
+function MarketPicker({market,request,value,onChange,disabled,watchOnly}:{market:Market;request:RequestFn;value:SecuritySelection|null;onChange:(value:Security)=>void;disabled:boolean;watchOnly:boolean}){
  const id=useId(),pickerId=id+'-trade-search';const dropdown=useStockDropdown(pickerId);
  const {query,setQuery,debounced,composing,compositionProps}=useStockSearch();
  const alive=useRef(true),generation=useRef(0);
@@ -52,7 +52,7 @@ function MarketPicker({market,request,value,onChange,disabled}:{market:Market;re
  if(selected&&!options.some(item=>item.key===selected.key))options.unshift(selected);
  const resolve=useMutation({mutationFn:async(item:OverseasInstrument)=>{
   const version=generation.current;
-  const security=await request<Security>('/api/securities/overseas/resolve',{method:'POST',body:{market:item.market,symbol:item.symbol}});
+  const security=await request<Security>(watchOnly?'/api/securities/overseas/watch':'/api/securities/overseas/resolve',{method:'POST',body:{market:item.market,symbol:item.symbol}});
   if(!security?.id||security.market!==item.market||security.symbol!==item.symbol||security.currency!==item.currency)throw new Error('股票登记响应不匹配，请重试');
   return {security,version};
  },onSuccess:result=>{if(alive.current&&result.version===generation.current)onChange(result.security);}});

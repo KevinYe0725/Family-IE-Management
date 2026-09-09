@@ -11,7 +11,15 @@ public record TransactionSummaryResponse(
         int transactionCount,
         int unconvertedCount,
         List<CategorySummary> categories,
-        List<DailySummary> daily) {
+        List<DailySummary> daily,
+        int nonCashTransactionCount) {
+
+    public TransactionSummaryResponse(
+            String currency, String income, String expense, String balance,
+            int transactionCount, int unconvertedCount,
+            List<CategorySummary> categories, List<DailySummary> daily) {
+        this(currency, income, expense, balance, transactionCount, unconvertedCount, categories, daily, 0);
+    }
 
     public record CategorySummary(
             Long categoryId,

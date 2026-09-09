@@ -60,11 +60,16 @@ public class LoanPrepaymentService {
  @Transactional(propagation=Propagation.MANDATORY)
  public LoanPrepayment prepayAuthorized(FamilyMutationAuthorization.LockedFamilyAccess access,Loan loan,FinancialAccount selectedAccount,
          long amount,LocalDate paidOn,PrepaymentStrategy strategy,List<InstallmentDraft> replacement,String key){
+  return prepayAuthorized(access,loan,selectedAccount,amount,paidOn,strategy,replacement,key,LoanSettlementFunding.cash());
+ }
+ @Transactional(propagation=Propagation.MANDATORY)
+ public LoanPrepayment prepayAuthorized(FamilyMutationAuthorization.LockedFamilyAccess access,Loan loan,FinancialAccount selectedAccount,
+         long amount,LocalDate paidOn,PrepaymentStrategy strategy,List<InstallmentDraft> replacement,String key,LoanSettlementFunding funding){
   long h=access.context().householdId();long loanId=loan.getId();
   if(loan.getHousehold().getId()!=h||selectedAccount.getHousehold().getId()!=h||amount<=0)throw new IllegalArgumentException("invalid authorized prepayment");
   LoanPrepayment prepayment=new LoanPrepayment(loan,key,amount,paidOn,clock.instant());prepayment.strategy(strategy);prepayments.saveAndFlush(prepayment);
   FinancialTransaction transaction=FinancialTransaction.loanPrepayment(access.household(),selectedAccount,access.membership().getUser(),settlement.member(loan,true),settlement.category(loan),amount,paidOn,prepayment.getId(),clock.instant());
-  transaction.loanSplit(amount,0);transactions.saveAndFlush(transaction);
+  transaction.loanSplit(amount,0);funding.mark(transaction);transactions.saveAndFlush(transaction);
   accounting.pay(loan,transaction,DecimalMoney.fromCents(amount),DecimalMoney.fromCents(0),key);
   prepayment.attach(transaction);
   var currentSchedule=installments.findAllLockedByLoanIdAndHouseholdIdOrderByInstallmentNo(loanId,h);

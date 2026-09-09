@@ -29,11 +29,20 @@ public class LoanAccountingService {
   var debit=new LedgerEntryInput("EQUITY:OPENING",EQUITY,loan.getPrincipalAmount(),BigDecimal.ZERO,null,null);
   if(loan.getFundingMode()==LoanFundingMode.DISBURSEMENT){
    cash.requireConfirmed(loan.getDisbursementAccount(),day);
-   debit=new LedgerEntryInput("CASH:"+loan.getDisbursementAccount().getId(),CASH,loan.getPrincipalAmount(),BigDecimal.ZERO,null,null);
+   debit=new LedgerEntryInput("CASH:"+loan.getDisbursementAccount().getId(),CASH,loan.getDisbursementAmount(),BigDecimal.ZERO,null,null);
   }
   if(loan.getFundingMode()==LoanFundingMode.FINANCED_PURCHASE)
-   debit=new LedgerEntryInput("ASSET:"+loan.getPurchasedAssetId(),ASSET,loan.getPrincipalAmount(),BigDecimal.ZERO,null,null);
-  var command=new LedgerPostingCommand(h,source,loan.getId(),key,day,actor,List.of(debit,new LedgerEntryInput("LOAN:"+loan.getId(),LOAN,BigDecimal.ZERO,loan.getPrincipalAmount(),null,null)));
+   debit=new LedgerEntryInput("ASSET:"+loan.getPurchasedAssetId(),ASSET,loan.getPurchaseValue(),BigDecimal.ZERO,null,null);
+  List<LedgerEntryInput> entries=new ArrayList<>();
+  entries.add(debit);
+  if(loan.getWithheldFee().signum()>0)
+   entries.add(new LedgerEntryInput("EXPENSE:"+loan.getPaymentCategory().getId(),EXPENSE,loan.getWithheldFee(),BigDecimal.ZERO,loan.getPaymentCategory().getId(),loan.getMember()==null?null:loan.getMember().getId()));
+  entries.add(new LedgerEntryInput("LOAN:"+loan.getId(),LOAN,BigDecimal.ZERO,loan.getPrincipalAmount(),null,null));
+  if(loan.getOwnContribution().signum()>0){
+   cash.requireConfirmed(loan.getOwnContributionAccount(),day);
+   entries.add(new LedgerEntryInput("CASH:"+loan.getOwnContributionAccount().getId(),CASH,BigDecimal.ZERO,loan.getOwnContribution(),null,null));
+  }
+  var command=new LedgerPostingCommand(h,source,loan.getId(),key,day,actor,entries);
   if(replace)posting.replace(command);else posting.post(command);
   requireBalance(loan);
  }
@@ -65,7 +74,8 @@ public class LoanAccountingService {
   List<LedgerEntryInput> entries=new ArrayList<>();
   if(principal.signum()>0)entries.add(new LedgerEntryInput("LOAN:"+loan.getId(),LOAN,principal,BigDecimal.ZERO,null,tx.getMember().getId()));
   if(interest.signum()>0)entries.add(new LedgerEntryInput("EXPENSE:"+tx.getCategory().getId(),EXPENSE,interest,BigDecimal.ZERO,tx.getCategory().getId(),tx.getMember().getId()));
-  entries.add(new LedgerEntryInput("CASH:"+tx.getAccount().getId(),CASH,BigDecimal.ZERO,principal.add(interest),null,tx.getMember().getId()));
+  entries.add(new LedgerEntryInput(tx.hasCashImpact()?"CASH:"+tx.getAccount().getId():"ASSET_SALE_CLEARING:"+tx.getAssetSettlementId(),
+          tx.hasCashImpact()?CASH:ASSET,BigDecimal.ZERO,principal.add(interest),null,tx.getMember().getId()));
   posting.post(new LedgerPostingCommand(loan.getHousehold().getId(),tx.getSourceType().name(),tx.getSourceId(),key,tx.getOccurredOn(),tx.getCreatedByUser().getId(),entries));
   loan.paidOn(tx.getOccurredOn());
  }

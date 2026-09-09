@@ -7,7 +7,7 @@ import { ApiError } from '../../api/client';
 import { businessDate, newIdempotencyKey } from '../../shared/runtime';
 import { DateField } from '../../shared/DateField';
 import { AccountOptions, cents, useFundsRefresh } from '../accounting';
-import { Drawer, FormError, dateText, money, type RequestFn } from '../common';
+import { ActionDialog as Drawer, FormError, dateText, money, type RequestFn } from '../common';
 import { LoanStrategyComparison } from './LoanStrategyComparison';
 import { LoanRepaymentPolicyPanel } from './LoanRepaymentPolicyPanel';
 

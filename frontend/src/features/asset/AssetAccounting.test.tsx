@@ -26,6 +26,7 @@ it('separates existing opening assets from cash purchases and exposes immutable 
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: '放弃修改' }));
   await user.click((await screen.findAllByRole('button', { name: '记录处置' }))[0]);
-  expect(screen.getByLabelText('处置所得')).toBeInTheDocument();
-  expect(screen.getByText(/处置后不可更正或恢复/)).toBeInTheDocument();
+  expect(screen.getByLabelText('出售总价')).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'预览结算'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'确认记录出售'})).not.toBeInTheDocument();
 });

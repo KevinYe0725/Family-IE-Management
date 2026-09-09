@@ -35,8 +35,13 @@ public class TransactionSummaryService {
         Map<CategoryKey, AggregateRow> categories = new LinkedHashMap<>();
         Map<DailyKey, AggregateRow> daily = new LinkedHashMap<>();
         int unconvertedCount = 0;
+        int nonCashTransactionCount = 0;
 
         for (FinancialTransaction transaction : transactions) {
+            if (!transaction.hasCashImpact()) {
+                nonCashTransactionCount++;
+                continue;
+            }
             BigDecimal amount = convertedAmount(householdId, transaction);
             if (amount == null) {
                 unconvertedCount++;
@@ -83,7 +88,8 @@ public class TransactionSummaryService {
                                 entry.getKey().categoryId(),
                                 entry.getValue().amount(),
                                 entry.getValue().count))
-                        .toList());
+                        .toList(),
+                nonCashTransactionCount);
     }
 
     private BigDecimal convertedAmount(long householdId, FinancialTransaction transaction) {

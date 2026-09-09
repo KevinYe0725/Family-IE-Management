@@ -236,6 +236,7 @@ public class AssetService {
         Asset asset=findCurrent(h,assetId);
         if(replay!=null)return response(asset);
         if(asset.isArchived())throw archived();
+        if(hasLoanReference(h,assetId))throw new ResourceConflictException("ASSET_SALE_REQUIRED","资产仍有关联债务，请使用资产出售结算流程选择还款或保留债务");
         Map<String,String> fields=new LinkedHashMap<>();
         Long proceeds=parseRequiredMoney(request==null?null:request.proceeds(),"proceeds",fields);
         throwIfInvalid(fields);
@@ -275,7 +276,8 @@ public class AssetService {
     }
 
     private boolean hasLoanReference(long householdId, long assetId) {
-        return loans.existsByHouseholdIdAndLinkedAsset_Id(householdId, assetId);
+        return loans.findAllCurrentLinked(householdId,assetId).stream()
+                .anyMatch(loan->loan.getCurrentPrincipalAmount().signum()>0);
     }
 
     private FamilyMember resolveOwner(long householdId, Long ownerMemberId, Map<String, String> fields) {

@@ -82,6 +82,17 @@ public class FinancialTransaction {
     private Long sourceId;
     @Column(name="loan_principal_cents") private Long loanPrincipalCents;
     @Column(name="loan_interest_cents") private Long loanInterestCents;
+    @Column(name="asset_settlement_id", updatable=false) private Long assetSettlementId;
+
+    public Long getAssetSettlementId(){return assetSettlementId;}
+    public boolean hasCashImpact(){return assetSettlementId==null;}
+    /** Internal asset-sale funding attribution; the account remains a real household context account. */
+    public void markAssetSettlement(long assetId){
+        if(assetId<=0 || (sourceType!=TransactionSourceType.LOAN_PAYMENT&&sourceType!=TransactionSourceType.LOAN_PREPAYMENT)
+                || (assetSettlementId!=null&&assetSettlementId!=assetId))
+            throw new IllegalArgumentException("invalid asset settlement");
+        assetSettlementId=assetId;
+    }
 
     public Long getLoanPrincipalCents(){return loanPrincipalCents;}
     public Long getLoanInterestCents(){return loanInterestCents;}

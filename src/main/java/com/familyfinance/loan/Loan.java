@@ -22,6 +22,9 @@ public class Loan {
     @Enumerated(EnumType.STRING) @Column(name = "loan_type", nullable = false) private LoanType type;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "linked_asset_id") private Asset linkedAsset;
     @Column(name = "purchased_asset_id") private Long purchasedAssetId;
+    @Enumerated(EnumType.STRING) @Column(name = "asset_relation", length=16) private LoanAssetRelation assetRelation;
+    @Column(name = "purchase_value", precision=21, scale=2) private BigDecimal purchaseValue;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "own_contribution_account_id") private FinancialAccount ownContributionAccount;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "member_id") private FamilyMember member;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "assigned_user_id") private AppUser assignedUser;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "payment_account_id") private FinancialAccount paymentAccount;
@@ -38,6 +41,7 @@ public class Loan {
     @Enumerated(EnumType.STRING) @Column(name = "funding_mode") private LoanFundingMode fundingMode;
     @Column(name = "accounting_on") private LocalDate accountingOn;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "disbursement_account_id") private FinancialAccount disbursementAccount;
+    @Column(name = "disbursement_amount", precision=21, scale=2) private BigDecimal disbursementAmount;
     @Column(name = "last_payment_on") private LocalDate lastPaymentOn;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private LoanStatus status = LoanStatus.ACTIVE;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "created_by") private AppUser createdBy;
@@ -65,11 +69,22 @@ public class Loan {
     void replaceSchedule(List<InstallmentDraft> drafts) { installments.clear(); drafts.forEach(d -> installments.add(new LoanInstallment(this,d))); }
     public LoanFundingMode getFundingMode(){return fundingMode;}
     public Long getPurchasedAssetId(){return purchasedAssetId;}
-    void attachPurchasedAsset(Asset asset){linkedAsset=asset;purchasedAssetId=asset.getId();}
+    void attachPurchasedAsset(Asset asset){assetLink(asset,LoanAssetRelation.FINANCING);purchasedAssetId=asset.getId();}
+    public LoanAssetRelation getAssetRelation(){return linkedAsset==null?null:assetRelation==null?LoanAssetRelation.FINANCING:assetRelation;}
+    void assetLink(Asset asset,LoanAssetRelation relation){linkedAsset=asset;assetRelation=asset==null?null:relation;}
+    /** Legacy purchases were fully financed; null metadata never changes their existing journal. */
+    public BigDecimal getPurchaseValue(){return fundingMode==LoanFundingMode.FINANCED_PURCHASE?(purchaseValue==null?principalAmount:purchaseValue):null;}
+    public BigDecimal getOwnContribution(){return fundingMode==LoanFundingMode.FINANCED_PURCHASE?getPurchaseValue().subtract(principalAmount):BigDecimal.ZERO.setScale(2);}
+    public FinancialAccount getOwnContributionAccount(){return ownContributionAccount;}
+    void purchaseTerms(BigDecimal value,FinancialAccount account){purchaseValue=value;ownContributionAccount=account;}
     public LocalDate getAccountingOn(){return accountingOn;}
     public FinancialAccount getDisbursementAccount(){return disbursementAccount;}
+    /** Legacy null amounts represent a full-principal receipt; noncash origins have no receipt. */
+    public BigDecimal getDisbursementAmount(){return fundingMode==LoanFundingMode.DISBURSEMENT?(disbursementAmount==null?principalAmount:disbursementAmount):null;}
+    public BigDecimal getWithheldFee(){return fundingMode==LoanFundingMode.DISBURSEMENT?principalAmount.subtract(getDisbursementAmount()):BigDecimal.ZERO.setScale(2);}
     public LocalDate getLastPaymentOn(){return lastPaymentOn;}
     void accounting(LoanFundingMode mode, LocalDate day, FinancialAccount account){fundingMode=mode;accountingOn=day;disbursementAccount=account;}
+    void accounting(LoanFundingMode mode, LocalDate day, FinancialAccount account,BigDecimal amount){accounting(mode,day,account);disbursementAmount=amount;}
     void paidOn(LocalDate day){lastPaymentOn=day;}
     void updateDefaults(String name, FamilyMember member, AppUser user, Asset asset, FinancialAccount account, Category category) {
         this.name=name;this.member=member;this.assignedUser=user;this.linkedAsset=asset;this.paymentAccount=account;this.paymentCategory=category;

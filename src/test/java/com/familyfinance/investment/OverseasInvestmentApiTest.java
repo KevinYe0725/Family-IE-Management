@@ -39,4 +39,17 @@ class OverseasInvestmentApiTest {
     .andExpect(status().isBadRequest());
   assertThat(jdbc.queryForObject("select count(*) from securities where ts_code='08001.HK'",Integer.class)).isZero();
  }
+ @Test void membersMaySelectPublicWatchQuotesWithoutReceivingInvestmentWritePermission()throws Exception{
+  when(client.overseasSearch("US","AAPL")).thenReturn(new OverseasSearchResponse(List.of(new OverseasInstrument("AAPL","Apple","US","USD","NASDAQ","America/New_York")),false,Instant.now(),false,"READY",null));
+  var session=login();long user=json.readTree(mvc.perform(get("/api/session").session(session)).andReturn().getResponse().getContentAsString()).path("data").path("userId").asLong();
+  String previous=jdbc.queryForObject("select role from household_memberships where user_id=?",String.class,user);
+  long trades=jdbc.queryForObject("select count(*) from investment_trades",Long.class);
+  try{
+   jdbc.update("update household_memberships set role='MEMBER' where user_id=?",user);
+   String body="{\"market\":\"US\",\"symbol\":\"AAPL\"}";
+   mvc.perform(post("/api/securities/overseas/resolve").session(session).with(csrf()).contentType("application/json").content(body)).andExpect(status().isForbidden());
+   mvc.perform(post("/api/securities/overseas/watch").session(session).with(csrf()).contentType("application/json").content(body)).andExpect(status().isOk()).andExpect(jsonPath("$.data.symbol").value("AAPL"));
+   assertThat(jdbc.queryForObject("select count(*) from investment_trades",Long.class)).isEqualTo(trades);
+  }finally{jdbc.update("update household_memberships set role=? where user_id=?",previous,user);}
+ }
 }

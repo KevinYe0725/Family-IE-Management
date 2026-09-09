@@ -15,12 +15,20 @@ class LoanRepaymentBatchMigrationTest {
   before.executeUpdate("insert into loan_installments(id,household_id,loan_id,installment_no,due_on,principal_amount,interest_amount,status,precise_principal_amount,precise_interest_amount,interest_carry_amount,rounding_policy) values(1,1,1,1,'2026-02-01',45.00,0.55,'PENDING',45.000000000001,0.550000000001,0.000000000001,'FIXED_CASH_V1'),(2,1,1,2,'2026-03-01',45.00,0.25,'PENDING',44.999999999999,0.25,0.000000000001,'FIXED_CASH_V1')");
   before.executeUpdate("insert into loan_prepayments(id,household_id,loan_id,request_key,amount,interest_amount,paid_on,created_at) values(1,1,1,'old-extra-key',10.00,0.00,'2026-01-02',current_timestamp)");
   before.executeUpdate("insert into accounting_commands(household_id,request_key,request_digest,source_id) values(1,'old-extra-key','"+"a".repeat(64)+"',1)");
-  var queries=List.of("select * from loans order by id","select * from loan_installments order by id","select id,loan_id,request_key,amount,interest_amount,paid_on,transaction_id,operation_kind,strategy from loan_prepayments order by id","select * from financial_transactions order by id","select * from ledger_accounts order by household_id,account_code","select * from ledger_journals order by id","select * from ledger_entries order by id","select * from ledger_sources order by household_id,source_type,source_id","select * from accounting_commands order by household_id,request_key");
+  var queries=List.of("select "+columns(before.databaseUrl(),"loans")+" from loans order by id","select * from loan_installments order by id","select id,loan_id,request_key,amount,interest_amount,paid_on,transaction_id,operation_kind,strategy from loan_prepayments order by id","select "+columns(before.databaseUrl(),"financial_transactions")+" from financial_transactions order by id","select * from ledger_accounts order by household_id,account_code","select * from ledger_journals order by id","select * from ledger_entries order by id","select * from ledger_sources order by household_id,source_type,source_id","select * from accounting_commands order by household_id,request_key");
   var snapshot=new ArrayList<List<List<String>>>();for(var q:queries)snapshot.add(rows(before.databaseUrl(),q));
-  var after=MigrationTestSupport.migrateExistingDatabase(file);assertThat(after.version()).isEqualTo("44");
+  var after=MigrationTestSupport.migrateExistingDatabase(file);assertThat(after.version()).isEqualTo("47");
   for(int i=0;i<queries.size();i++)assertThat(rows(after.databaseUrl(),queries.get(i))).as(queries.get(i)).isEqualTo(snapshot.get(i));
   assertThat(after.queryLong("select count(*) from loan_repayment_batches")).isZero();assertThat(after.queryLong("select count(*) from loan_repayment_batch_children")).isZero();
   assertThat(after.queryLong("select count(*) from loan_prepayments where repayment_batch_id is null")).isEqualTo(1);
+  assertThat(after.queryLong("select count(*) from loans where disbursement_amount is null")).isEqualTo(1);
+  assertThat(after.queryLong("select count(*) from financial_transactions where asset_settlement_id is not null")).isZero();
+  assertThat(after.queryLong("select count(*) from asset_sale_receipts")).isZero();
+ }
+ private String columns(String url,String table)throws Exception{
+  try(var c=DriverManager.getConnection(url,"sa","");var s=c.createStatement();var r=s.executeQuery("select * from "+table+" where 1=0")){
+   var columns=new ArrayList<String>();for(int i=1;i<=r.getMetaData().getColumnCount();i++)columns.add("\""+r.getMetaData().getColumnName(i)+"\"");return String.join(",",columns);
+  }
  }
  private List<List<String>> rows(String url,String sql)throws Exception{
   var rows=new ArrayList<List<String>>();try(var c=DriverManager.getConnection(url,"sa","");var s=c.createStatement();var r=s.executeQuery(sql)){

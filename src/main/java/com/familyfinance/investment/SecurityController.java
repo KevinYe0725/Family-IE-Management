@@ -55,4 +55,6 @@ public class SecurityController {
     }
     @PostMapping("/overseas/resolve")
     ApiEnvelope<SecurityResponse> overseas(Authentication authentication,@RequestBody OverseasInvestmentService.Resolve request){return ApiEnvelope.data(overseas.resolve(authentication,request));}
+    @PostMapping("/overseas/watch")
+    ApiEnvelope<SecurityResponse> watch(Authentication authentication,@RequestBody OverseasInvestmentService.Resolve request){return ApiEnvelope.data(overseas.watch(authentication,request));}
 }

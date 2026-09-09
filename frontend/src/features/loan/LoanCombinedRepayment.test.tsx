@@ -133,6 +133,20 @@ it('groups immutable repayment batch children once and labels original balances 
  expect(within(history).getAllByText(/交易 #/)).toHaveLength(2); expect(history).toHaveTextContent('¥100.00');
 });
 
+it('labels sale-funded repayment history without inventing another bank withdrawal',async()=>{
+ const page=(items:unknown[])=>({items,page:0,size:50,totalPages:1,totalElements:items.length,hasNext:false});
+ const batch={...quote(''),batchId:8,loanId:4,remainingPrincipal:'6000.00',recordedAt:'2026-01-31',cashImpact:false,settlementAssetId:7,children:[]};
+ const request:RequestFn=async<T,>(path:string)=>(path==='/api/loans/4'?loan:path.startsWith('/api/loans?')?page([loan]):path.endsWith('/repayments')?[batch]:path.endsWith('/prepayments')?[{id:9,repaymentBatchId:null,paidOn:'2026-01-01',principalAmount:'100.00',interestAmount:'0.00',cashAmount:'100.00',operationKind:'PAYOFF',cashImpact:false,settlementAssetId:7}]:path==='/api/members'?[]:page([])) as T;
+ render(<QueryClientProvider client={new QueryClient()}><LoansPage request={request} role="OWNER"/></QueryClientProvider>);
+ await userEvent.click(await screen.findByRole('button',{name:'查看计划'}));
+ const history=await screen.findByRole('region',{name:'提前还款与结清历史'});
+ expect(history).toHaveTextContent('出售款代偿');
+ expect(history).toHaveTextContent('买方代偿，无单独账户扣款');
+ expect(history).toHaveTextContent('买方代偿 ¥100.00');
+ expect(history).not.toHaveTextContent('当时付款后余额');
+ expect(history).not.toHaveTextContent('本次总付款');
+});
+
 it('refreshes and opens the current plan after one combined write', async () => {
  let paid = false; let writes = 0; const scheduleReads: boolean[] = [];
  const page = (items: unknown[]) => ({ items, page: 0, size: 50, totalPages: 1, totalElements: items.length, hasNext: false });

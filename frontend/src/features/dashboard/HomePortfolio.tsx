@@ -4,6 +4,7 @@ import { ArrowRight, ArrowUpRight, ChartNoAxesCombined } from 'lucide-react';
 import type { Portfolio, PortfolioPosition } from '../../api/contracts';
 import { ActionDialog, QueryState, money, type RequestFn } from '../common';
 import { StockChart } from '../investment/StockChart';
+import {useLivePortfolio,sameRecordedPositions,quoteTime} from '../investment/live-quotes';
 
 const finite = (value: string | null | undefined) => value != null && Number.isFinite(Number(value)) ? Number(value) : null;
 const tone = (value: string | null | undefined) => value == null ? '' : Number(value) > 0 ? 'is-gain' : Number(value) < 0 ? 'is-loss' : '';
@@ -12,7 +13,10 @@ function baseValue(position: PortfolioPosition) {
 }
 
 export function HomePortfolio({ request, stale }: { request: RequestFn; stale: boolean }) {
-  const portfolio = useQuery({ queryKey: ['portfolio'], queryFn: () => request<Portfolio>('/api/portfolio') });
+  const daily = useQuery({ queryKey: ['portfolio'], queryFn: () => request<Portfolio>('/api/portfolio'),refetchInterval:60000,refetchIntervalInBackground:false });
+  const live = useLivePortfolio(request,Boolean(daily.data?.positions?.some(p=>Number(p.quantity)>0)));
+  const usingLive=sameRecordedPositions(daily.data,live.data?.portfolio);
+  const portfolio={...daily,data:usingLive?live.data!.portfolio:daily.data};
   const [selected, setSelected] = useState<PortfolioPosition | null>(null);
   const positions = (portfolio.data?.positions ?? []).filter(row => row.quantity > 0);
   const sorted = [...positions].sort((a,b) => (baseValue(b) ?? -1) - (baseValue(a) ?? -1));
@@ -24,7 +28,7 @@ export function HomePortfolio({ request, stale }: { request: RequestFn; stale: b
     <header className="home-section-heading"><h2><ChartNoAxesCombined size={20} aria-hidden="true"/>我的持仓</h2><a className="home-link" href="/workspace/investments">全部持仓<ArrowRight size={17}/></a></header>
     <QueryState loading={portfolio.isLoading} error={portfolio.error}>
       <div className="home-portfolio-metrics"><div><span>持仓市值</span><strong>{money(totals?.marketValue, totals?.currency ?? 'CNY')}</strong></div><div><span>持仓盈亏</span><strong className={tone(totals?.unrealizedProfit)}>{money(totals?.unrealizedProfit, totals?.currency ?? 'CNY')}</strong></div><div className="home-quote-status">
-        {totals?.unpricedPositions ? <span>缺价待补齐</span> : stale ? <span>行情已过期</span> : null}
+        {totals?.unpricedPositions ? <span>缺价待补齐</span> : live.error ? <span>报价更新失败</span> : (usingLive?portfolio.data?.positions.some(p=>p.stale):stale) ? <span>{usingLive?'含延迟或缓存报价':'行情已过期'}</span> : null}
         {!!totals?.missingFxRates && <a href="/workspace/investments?tab=rates">汇率待补齐</a>}
       </div></div>
       {positions.length ? <>
@@ -33,8 +37,9 @@ export function HomePortfolio({ request, stale }: { request: RequestFn; stale: b
           const foreign = row.market === 'HK' || row.market === 'US';
           const market = row.market === 'HK' ? '港股' : row.market === 'US' ? '美股' : 'A 股';
           const weight = total > 0 ? Math.max(0,Math.min(100,(baseValue(row) ?? 0)/total*100)) : null;
-          const priceState = row.price == null ? '缺少价格' : row.error ? '报价待更新' : row.stale ? '报价已过期' : row.source === 'MANUAL' ? '手工价格' : '参考报价';
-          return <button className="home-stock-row" key={`${row.accountId}-${row.securityId}`} aria-label={`查看${row.name}行情`} disabled={foreign && !row.symbol} onClick={() => setSelected(row)} title={`${row.accountName} · ${priceState}${row.tradeDate ? ' · '+row.tradeDate : ''}`}>
+          const spot=usingLive?live.data?.quotes.find(q=>q.securityId===row.securityId):undefined;
+          const priceState = row.price == null ? '缺少价格' : row.source === 'MANUAL' ? '手工价格' : spot?.status==='DELAYED'?'延迟报价':row.error ? '报价待更新' : row.stale ? '报价已过期' : '参考报价';
+          return <button className="home-stock-row" key={`${row.accountId}-${row.securityId}`} aria-label={`查看${row.name}行情`} disabled={foreign && !row.symbol} onClick={() => setSelected(row)} title={`${row.accountName} · ${priceState}${spot?.quotedAt?' · '+quoteTime(spot.quotedAt):row.tradeDate ? ' · '+row.tradeDate : ''}`}>
             <span className="home-stock-identity"><span className={`home-stock-emblem market-${row.market ?? 'CN'}`} aria-hidden="true">{(row.symbol ?? row.tsCode).replace(/[^A-Za-z]/g,'').slice(0,2) || row.name.slice(0,1)}</span><span><strong>{row.name}</strong><span className="home-stock-code">{row.symbol ?? row.tsCode} · {market}</span></span></span>
             <span className="home-stock-price"><strong>{money(row.price, row.currency ?? 'CNY')}</strong>{(row.price == null || row.stale || row.error || row.source === 'MANUAL') && <span>{priceState}</span>}</span>
             <span className={`home-stock-profit ${tone(row.unrealizedProfit)}`}>{money(row.unrealizedProfit, row.currency ?? 'CNY')}</span>

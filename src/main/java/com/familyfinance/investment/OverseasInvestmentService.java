@@ -27,7 +27,14 @@ public class OverseasInvestmentService {
  }
  public record Resolve(String market,String symbol){}
  public SecurityResponse resolve(Authentication auth,Resolve request){
-  policy.requireEnabled();permissions.requireAdmin(membership.require(auth));
+  return resolveCatalog(auth,request,false);
+ }
+ /** Publishes only a provider-verified public instrument, never an account, holding or trade. */
+ public SecurityResponse watch(Authentication auth,Resolve request){
+  return resolveCatalog(auth,request,true);
+ }
+ private SecurityResponse resolveCatalog(Authentication auth,Resolve request,boolean watchOnly){
+  policy.requireEnabled();var context=membership.require(auth);if(!watchOnly)permissions.requireAdmin(context);
   if(request==null||request.symbol()==null||request.market()==null)throw invalid("请提供市场和股票代码");
   String symbol=request.symbol().trim().toUpperCase(Locale.ROOT),marketName=request.market().trim().toUpperCase(Locale.ROOT);
   var directory=market.search(auth,marketName,symbol);
@@ -36,7 +43,7 @@ public class OverseasInvestmentService {
   if(!(marketName.equals("HK")&&instrument.currency().equals("HKD"))&&!(marketName.equals("US")&&instrument.currency().equals("USD")))throw invalid("当前支持港币港股和美元美股，此证券币种暂不支持记账");
   Security candidate=Security.overseas(instrument);
   return transaction.execute(ignored->{
-   authorization.requireAdmin(auth);
+   if(watchOnly)authorization.requireCurrent(auth);else authorization.requireAdmin(auth);
    jdbc.queryForObject("select id from security_catalog_state where id=1 for update",Long.class);
    Security value=securities.findByTsCode(candidate.getTsCode()).orElse(null);
    if(value==null)value=securities.saveAndFlush(candidate);else value.publishCatalog(candidate.getName());

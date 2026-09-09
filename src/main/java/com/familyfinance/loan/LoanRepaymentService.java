@@ -54,19 +54,36 @@ public class LoanRepaymentService {
         var loan=loans.findLockedByIdAndHouseholdId(id,h).orElseThrow(()->new ResourceNotFoundException("贷款不存在"));
         var prepared=prepare(access.context(),loan,request.additionalPrincipal(),request.paidOn(),request.paymentAccountId(),request.strategy(),request.targetPeriods(),true);
         var q=prepared.preview();plans.requireMatch(q.planToken(),request.planToken());
+        var response=repayPrepared(access,loan,prepared,key,LoanSettlementFunding.cash());
+        requests.record(h,key,digest,response.batchId());return response;
+    }
+    /** Joined snapshot preparation for an outer sale; projected cash is supplied only by trusted orchestration. */
+    @Transactional(propagation=Propagation.MANDATORY)
+    public Prepared prepareForSale(MembershipContext context,Loan loan,String extra,LocalDate day,long accountId,
+            PrepaymentStrategy strategy,Integer target,boolean locked,BigDecimal projectedBalance,LoanSettlementFunding funding){
+        permissions.requireAdmin(context);
+        if(loan.getHousehold().getId()!=context.householdId())throw new ResourceNotFoundException("贷款不存在");
+        return prepare(context,loan,extra,day,accountId,strategy,target,locked,projectedBalance,funding);
+    }
+    @Transactional(propagation=Propagation.MANDATORY)
+    public LoanRepaymentResponse repayPrepared(FamilyMutationAuthorization.LockedFamilyAccess access,Loan loan,
+            Prepared prepared,String key,LoanSettlementFunding funding){
+        long h=access.context().householdId();var q=prepared.preview();
+        if(loan.getHousehold().getId()!=h||!Objects.equals(q.settlementAssetId(),funding.settlementAssetId()))
+            throw new IllegalArgumentException("invalid prepared repayment");
         // The same current daily-balance engine used by posting verifies the entire debit before any child exists.
-        posting.requireAvailableCash(h,prepared.account().getId(),request.paidOn(),new BigDecimal(q.totalCashAmount()));
+        if(funding.cashImpact())posting.requireAvailableCash(h,prepared.account().getId(),q.paidOn(),new BigDecimal(q.totalCashAmount()));
         var children=new ArrayList<LoanRepaymentBatch.Child>();
         for(var due:prepared.projection().due()){
             var row=installments.findLockedByIdAndHouseholdId(due.id(),h).orElseThrow(()->new ResourceConflictException("LOAN_PLAN_CHANGED","期次已变化"));
-            var tx=settlement.settleAuthorized(access,loan,row,prepared.account(),request.paidOn(),childKey(key,"due:"+due.id()));
+            var tx=settlement.settleAuthorized(access,loan,row,prepared.account(),q.paidOn(),childKey(key,"due:"+due.id()),funding);
             children.add(child(tx));
         }
         var event=prepayments.prepayAuthorized(access,loan,prepared.account(),DecimalMoney.toCents(new BigDecimal(q.additionalPrincipal())),
-                request.paidOn(),q.strategy(),prepared.replacement(),childKey(key,"extra"));
+                q.paidOn(),q.strategy(),prepared.replacement(),childKey(key,"extra"),funding);
         children.add(child(event.getTransaction()));
         var batch=batches.append(h,access.context().userId(),key,loan,q,children,clock.instant());
-        event.attachRepaymentBatch(batch.id());loans.flush();requests.record(h,key,digest,batch.id());
+        event.attachRepaymentBatch(batch.id());loans.flush();
         return LoanRepaymentResponse.from(batch);
     }
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
@@ -75,10 +92,14 @@ public class LoanRepaymentService {
         loans.findByIdAndHouseholdId(id,h).orElseThrow(()->new ResourceNotFoundException("贷款不存在"));
         return batches.history(h,id).stream().map(LoanRepaymentResponse::from).toList();
     }
-    private record Prepared(LoanRepaymentPreview preview,LoanRepaymentPolicyService.Projection projection,
+    public record Prepared(LoanRepaymentPreview preview,LoanRepaymentPolicyService.Projection projection,
             FinancialAccount account,List<InstallmentDraft> replacement){}
     private Prepared prepare(MembershipContext context,Loan loan,String raw,LocalDate day,Long accountId,
             PrepaymentStrategy requestedStrategy,Integer target,boolean locked){
+        return prepare(context,loan,raw,day,accountId,requestedStrategy,target,locked,null,LoanSettlementFunding.cash());
+    }
+    private Prepared prepare(MembershipContext context,Loan loan,String raw,LocalDate day,Long accountId,
+            PrepaymentStrategy requestedStrategy,Integer target,boolean locked,BigDecimal projectedBalance,LoanSettlementFunding funding){
         long h=context.householdId();validateLoan(loan,day,locked);
         BigDecimal additional=parse(raw);var periods=plans.pending(h,loan.getId(),locked);
         BigDecimal duePrincipal=periods.stream().filter(p->!p.dueOn().isAfter(day)).map(LoanPlanToken.Period::principalAmount).reduce(BigDecimal.ZERO,BigDecimal::add);
@@ -101,6 +122,7 @@ public class LoanRepaymentService {
             if(day.isBefore(account.getOpeningOn()))throw new ResourceConflictException("ACCOUNT_ACTIVITY_BEFORE_OPENING","日期不能早于付款账户开账日期");
         }
         BigDecimal balance=jdbc.queryForList("select balance_amount from ledger_accounts where household_id=? and account_code=?"+(locked?" for update":""),BigDecimal.class,h,"CASH:"+selected).stream().findFirst().orElse(BigDecimal.ZERO);
+        if(projectedBalance!=null)balance=projectedBalance;
         var strategy=requestedStrategy==null?PrepaymentStrategy.REDUCE_PAYMENT:requestedStrategy;
         if(strategy!=PrepaymentStrategy.ADJUST_TERM&&target!=null)throw new RequestValidationException(Map.of("targetPeriods","只有指定期数策略可设置目标期数"));
         if(strategy==PrepaymentStrategy.ADJUST_TERM&&(target==null||target<1||target>=projection.future().size()))
@@ -116,12 +138,13 @@ public class LoanRepaymentService {
         String token=plans.token(loan,periods,"COMBINED_REPAYMENT_V1",day,selected,DecimalMoney.toCents(interest),
                 "additional="+DecimalMoney.format(additional)+";strategy="+strategy+";target="+target+";context="+projection.roundingContext()
                 +";member="+effectiveMember+";assignee="+(loan.getAssignedUser()==null?null:loan.getAssignedUser().getId())
-                +";cashBalance="+DecimalMoney.format(balance)+";accountOpening="+account.getOpeningOn());
+                +";cashBalance="+DecimalMoney.format(balance)+";accountOpening="+account.getOpeningOn()
+                +(funding.cashImpact()?"":";assetSettlement="+funding.settlementAssetId()));
         var dues=projection.due().stream().map(p->new LoanRepaymentPreview.DueInstallment(p.id(),p.installmentNo(),p.dueOn(),
                 DecimalMoney.format(p.principalAmount()),DecimalMoney.format(p.interestAmount()),DecimalMoney.format(p.principalAmount().add(p.interestAmount())))).toList();
         var preview=new LoanRepaymentPreview(dues,DecimalMoney.format(projection.duePrincipal()),DecimalMoney.format(interest),DecimalMoney.format(additional),
-                DecimalMoney.format(principal),DecimalMoney.format(interest),DecimalMoney.format(total),selected,DecimalMoney.format(balance),DecimalMoney.format(balance.subtract(total)),
-                day,strategy,target,summary(before),summary(after),options,LoanRepaymentPolicy.from(loan),token);
+                DecimalMoney.format(principal),DecimalMoney.format(interest),DecimalMoney.format(total),selected,DecimalMoney.format(balance),DecimalMoney.format(funding.cashImpact()?balance.subtract(total):balance),
+                day,strategy,target,summary(before),summary(after),options,LoanRepaymentPolicy.from(loan),token,funding.cashImpact(),funding.settlementAssetId());
         return new Prepared(preview,projection,account,after);
     }
     private void validateLoan(Loan loan,LocalDate day,boolean locked){

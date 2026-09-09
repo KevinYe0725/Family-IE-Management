@@ -106,7 +106,7 @@ class CsvExportApiTest {
         assertThat(bytes).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
 
         String csv = new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
-        assertThat(csv).startsWith("日期,类型,金额,成员,分类,商家,地点,备注,币种,人民币参考金额,参考汇率,汇率日期\n");
+        assertThat(csv).startsWith("日期,类型,金额,成员,分类,商家,地点,备注,币种,人民币参考金额,参考汇率,汇率日期,现金影响\n");
         assertThat(csv).contains("2026-09-06,支出,156.80,Lily,餐饮,菜场,杭州,家庭餐饮");
         assertThat(csv).contains("2026-09-18,支出,12.30,Kevin,餐饮,\"老王\"\"面馆,西湖店\",杭州,\"招牌\"\"拌面\"\"\"");
         assertThat(csv).doesNotContain("九月工资");

@@ -24,7 +24,7 @@ public class CsvExportService {
     @org.springframework.transaction.annotation.Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public byte[] export(long householdId, TransactionFilter filter) {
         List<FinancialTransaction> transactions = transactionService.findAllForCsvExport(householdId, filter);
-        StringBuilder csv = new StringBuilder("日期,类型,金额,成员,分类,商家,地点,备注,币种,人民币参考金额,参考汇率,汇率日期\n");
+        StringBuilder csv = new StringBuilder("日期,类型,金额,成员,分类,商家,地点,备注,币种,人民币参考金额,参考汇率,汇率日期,现金影响\n");
         for (FinancialTransaction transaction : transactions) {
             String currency=transaction.getAccount().getCurrency();
             var rate=fx.sourceReference(householdId,"TRANSACTION",transaction.getId(),currency);
@@ -38,7 +38,8 @@ public class CsvExportService {
                     .append(escape(transaction.getLocation())).append(',')
                     .append(escape(transaction.getNote())).append(',').append(escape(currency)).append(',')
                     .append(converted==null?"":converted.toPlainString()).append(',').append(rate==null?"":rate.value().toPlainString()).append(',')
-                    .append(rate==null||rate.effectiveOn()==null?"":rate.effectiveOn()).append('\n');
+                    .append(rate==null||rate.effectiveOn()==null?"":rate.effectiveOn()).append(',')
+                    .append(transaction.hasCashImpact()?"是":"否（买方代偿）").append('\n');
         }
 
         byte[] body = csv.toString().getBytes(StandardCharsets.UTF_8);

@@ -48,16 +48,22 @@ public class LoanService {
         boolean purchased=Boolean.TRUE.equals(r.createPurchasedAsset());
         if(purchased!=(r.fundingMode()==LoanFundingMode.FINANCED_PURCHASE))throw new RequestValidationException(Map.of("createPurchasedAsset","本次贷款购买物必须同时选择直接购买入账方式"));
         if(purchased&&r.linkedAssetId()!=null)throw new RequestValidationException(Map.of("linkedAssetId","本次贷款购买物不能同时关联已有资产"));
+        if(purchased&&r.assetRelation()==LoanAssetRelation.COLLATERAL)throw new RequestValidationException(Map.of("assetRelation","本次购置资产的贷款关系必须是购置融资"));
+        if(!purchased&&v.asset==null&&r.assetRelation()!=null)throw new RequestValidationException(Map.of("assetRelation","请选择要关联的已有资产"));
+        BigDecimal receipt=disbursementAmount(r,v.principal);
+        PurchaseTerms purchase=purchaseTerms(h,r,v.principal);
         FinancialAccount disbursement=disbursement(h,r.fundingMode(),r.disbursementAccountId());
         LocalDate day=accounting.accountingDate(r.accountingOn());
         Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,v.user,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
+        loan.assetLink(v.asset,r.assetRelation()==null?LoanAssetRelation.FINANCING:r.assetRelation());
         loan.replaceSchedule(v.schedule);
         if(purchased){
             // Persist the valid all-null accounting tuple to obtain the immutable origin ID.
             loans.saveAndFlush(loan);
-            loan.attachPurchasedAsset(purchasedAssets.create(loan,day));
+            loan.attachPurchasedAsset(purchasedAssets.create(loan,day,purchase.value));
         }
-        loan.accounting(r.fundingMode(),day,disbursement);loans.saveAndFlush(loan);
+        loan.purchaseTerms(purchase.value,purchase.account);
+        loan.accounting(r.fundingMode(),day,disbursement,receipt);loans.saveAndFlush(loan);
         accounting.originate(loan,access.context().userId(),key,false);requests.record(h,key,digest,loan.getId());return response(loan,true);
     }
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r){return update(a,id,r,AccountingRequests.key(null));}
@@ -66,6 +72,9 @@ public class LoanService {
         Long replay=requests.replay(h,key,digest);if(replay!=null)return response(locked(h,replay),true);
         Loan old=locked(h,id);if(old.isArchived())throw new ResourceConflictException("LOAN_CLOSED","贷款已归档或结清");
         if(r==null)throw new RequestValidationException(Map.of("request","请求不能为空"));
+        boolean feeBearing=old.getWithheldFee().signum()>0;
+        if(feeBearing&&(r.principal()!=null||r.accountingOn()!=null||r.disbursementAccountId()!=null))
+            throw new ResourceConflictException("LOAN_DISBURSEMENT_IMMUTABLE","含预扣费用的贷款不能单独更改本金、放款日期或收款账户；可更正未付款的利率与计划");
         if(old.getPurchasedAssetId()!=null && (r.principal()!=null||r.accountingOn()!=null||r.startOn()!=null||r.disbursementAccountId()!=null
                 ||r.linkedAssetId()!=null&&!r.linkedAssetId().equals(old.getPurchasedAssetId())))
             throw new ResourceConflictException("LOAN_PURCHASE_IMMUTABLE","贷款购买物的本金、起始日期和来源关联不能单独更改；可以更正未付款的利率与计划");
@@ -77,19 +86,21 @@ public class LoanService {
             List<CustomInstallmentRequest> custom=r.customSchedule();
             if(custom==null&&old.getRepaymentMethod()==RepaymentMethod.CUSTOM)custom=currentSchedule.stream().map(i->new CustomInstallmentRequest(i.getDueOn(),Money.formatCents(i.getPrincipalCents()),Money.formatCents(i.getInterestCents()))).toList();
             LoanCreateRequest merged=new LoanCreateRequest(r.name()==null?old.getName():r.name(),old.getType(),r.linkedAssetId()==null?(old.getLinkedAsset()==null?null:old.getLinkedAsset().getId()):r.linkedAssetId(),r.memberId()==null?(old.getMember()==null?null:old.getMember().getId()):r.memberId(),r.assignedUserId()==null?(old.getAssignedUser()==null?null:old.getAssignedUser().getId()):r.assignedUserId(),r.paymentAccountId()==null?old.getPaymentAccount().getId():r.paymentAccountId(),r.paymentCategoryId()==null?old.getPaymentCategory().getId():r.paymentCategoryId(),r.principal()==null?Money.formatCents(old.getPrincipalCents()):r.principal(),r.annualRate()==null?old.getAnnualRate():r.annualRate(),r.termMonths()==null?old.getTermMonths():r.termMonths(),r.repaymentMethod()==null?old.getRepaymentMethod():r.repaymentMethod(),r.startOn()==null?old.getStartOn():r.startOn(),custom);
-            Values v=validate(h,merged);
+            Values v=validate(h,merged,old.getAssetRelation());
             LoanTermOptions.requireMinimum(v.schedule,old.getMinimumInstallmentAmount());
             FinancialAccount disbursement=r.disbursementAccountId()==null?old.getDisbursementAccount():disbursement(h,old.getFundingMode(),r.disbursementAccountId());
-            old.accounting(old.getFundingMode(),r.accountingOn()==null?old.getAccountingOn():r.accountingOn(),disbursement);
+            BigDecimal receipt=old.getFundingMode()==LoanFundingMode.DISBURSEMENT?(feeBearing?old.getDisbursementAmount():DecimalMoney.fromCents(v.principal)):null;
             // Remove old unposted rows before inserting their replacement installment numbers.
             installments.deleteAll(currentSchedule);installments.flush();
             old.updateContract(v.name,v.member,v.user,v.asset,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start);
+            old.accounting(old.getFundingMode(),r.accountingOn()==null?old.getAccountingOn():r.accountingOn(),disbursement,receipt);
             installments.saveAll(v.schedule.stream().map(d->new LoanInstallment(old,d)).toList());
-            if(old.getPurchasedAssetId()==null)accounting.originate(old,access.context().userId(),key,true);
+            // A plan/defaults correction must not rewrite the original receipt or its fee category.
+            if(old.getPurchasedAssetId()==null&&!feeBearing)accounting.originate(old,access.context().userId(),key,true);
         }else{
             Map<String,String> errors=new LinkedHashMap<>();String name=r.name()==null?old.getName():required(r.name(),"name",errors);
             FamilyMember member=r.memberId()==null?old.getMember():resolveMember(h,r.memberId(),errors);
-            Asset asset=r.linkedAssetId()==null?old.getLinkedAsset():resolveAsset(h,r.linkedAssetId(),old.getType(),errors);
+            Asset asset=r.linkedAssetId()==null?old.getLinkedAsset():resolveAsset(h,r.linkedAssetId(),old.getType(),old.getAssetRelation(),errors);
             FinancialAccount account=r.paymentAccountId()==null?old.getPaymentAccount():accounts.findLockedByIdAndHouseholdId(r.paymentAccountId(),h).filter(x->!x.isArchived()).orElse(null);
             Category category=r.paymentCategoryId()==null?old.getPaymentCategory():categories.findByIdAndHouseholdId(r.paymentCategoryId(),h).filter(x->x.getKind()==TransactionKind.EXPENSE).orElse(null);
             if(account==null)errors.put("paymentAccountId","请选择当前家庭未归档的付款账户");else if(!account.getCurrency().equals("CNY"))errors.put("paymentAccountId","贷款请使用人民币付款账户");if(category==null)errors.put("paymentCategoryId","请选择当前家庭的支出分类");if(!errors.isEmpty())throw new RequestValidationException(errors);
@@ -112,12 +123,68 @@ public class LoanService {
         if(id==null)throw new RequestValidationException(Map.of("disbursementAccountId","实际放款必须选择收款账户"));
         return accounts.findLockedByIdAndHouseholdId(id,h).filter(account->account.getCurrency().equals("CNY")).orElseThrow(()->new RequestValidationException(Map.of("disbursementAccountId","放款账户必须属于当前家庭且为人民币账户")));
     }
-    private Values validate(long h,LoanCreateRequest r){Map<String,String> f=new LinkedHashMap<>(); if(r==null){throw new RequestValidationException(Map.of("request","请求不能为空"));} String name=required(r.name(),"name",f);LoanType type=r.type();if(type==null)f.put("type","贷款类型不能为空");long principal=parseMoney(r.principal(),"principal",f);BigDecimal rate=r.annualRate();if(rate==null||rate.scale()>6||rate.signum()<0||rate.compareTo(BigDecimal.ONE)>0)f.put("annualRate","年利率必须在 0 到 1 之间且最多六位小数");int term=r.termMonths()==null?0:r.termMonths();if(term<1||term>360)f.put("termMonths","期数必须在 1 到 360 之间");if(r.startOn()==null)f.put("startOn","起息日不能为空"); RepaymentMethod method=r.repaymentMethod();if(method==null)f.put("repaymentMethod","还款方式不能为空"); Asset asset=resolveAsset(h,r.linkedAssetId(),type,f); FamilyMember member=resolveMember(h,r.memberId(),f);AppUser user=resolveUser(h,r.assignedUserId(),null);FinancialAccount account=r.paymentAccountId()==null?null:accounts.findByIdAndHouseholdIdAndArchivedAtIsNull(r.paymentAccountId(),h).orElse(null);if(account==null)f.put("paymentAccountId","付款账户必须属于当前家庭且未归档");else if(!account.getCurrency().equals("CNY"))f.put("paymentAccountId","贷款请使用人民币付款账户");Category category=r.paymentCategoryId()==null?null:categories.findByIdAndHouseholdId(r.paymentCategoryId(),h).filter(c->c.getKind()==TransactionKind.EXPENSE).orElse(null);if(category==null)f.put("paymentCategoryId","付款分类必须是当前家庭的支出分类");if(!f.isEmpty())throw new RequestValidationException(f);List<InstallmentDraft> schedule=method==RepaymentMethod.CUSTOM?custom(r.customSchedule(),principal,term):standard(principal,rate,term,r.startOn(),method);return new Values(name,type,asset,member,user,account,category,principal,rate.setScale(6),term,method,r.startOn(),schedule);}
+    private BigDecimal disbursementAmount(LoanCreateRequest r,long principal){
+        if(r.fundingMode()!=LoanFundingMode.DISBURSEMENT){
+            if(r.disbursementAmount()!=null)throw new RequestValidationException(Map.of("disbursementAmount","仅实际放款可填写到账金额"));
+            return null;
+        }
+        BigDecimal full=DecimalMoney.fromCents(principal);
+        if(r.disbursementAmount()==null)return full;
+        try{
+            BigDecimal receipt=DecimalMoney.fromCents(Money.parseCents(r.disbursementAmount()));
+            if(receipt.compareTo(full)>0)throw new IllegalArgumentException("到账金额不能超过合同本金");
+            return receipt;
+        }catch(IllegalArgumentException error){throw new RequestValidationException(Map.of("disbursementAmount",error.getMessage()));}
+    }
+    private PurchaseTerms purchaseTerms(long h,LoanCreateRequest r,long principal){
+        if(r.fundingMode()!=LoanFundingMode.FINANCED_PURCHASE){
+            Map<String,String> errors=new LinkedHashMap<>();
+            if(r.purchaseValue()!=null)errors.put("purchaseValue","仅本次贷款购置资产可填写完整购置金额");
+            if(r.ownContributionAccountId()!=null)errors.put("ownContributionAccountId","仅本次贷款购置资产可选择自有出资账户");
+            if(!errors.isEmpty())throw new RequestValidationException(errors);
+            return new PurchaseTerms(null,null);
+        }
+        BigDecimal full=DecimalMoney.fromCents(principal),price=full;
+        if(r.purchaseValue()!=null){
+            try{
+                price=DecimalMoney.fromCents(Money.parseCents(r.purchaseValue()));
+                if(price.compareTo(full)<0)throw new IllegalArgumentException("完整购置金额不能少于贷款本金");
+            }catch(IllegalArgumentException error){throw new RequestValidationException(Map.of("purchaseValue",error.getMessage()));}
+        }
+        if(price.compareTo(full)==0)return new PurchaseTerms(price,null);
+        if(r.ownContributionAccountId()==null)throw new RequestValidationException(Map.of("ownContributionAccountId","自有出资必须选择付款账户"));
+        FinancialAccount account=accounts.findLockedByIdAndHouseholdId(r.ownContributionAccountId(),h)
+            .filter(a->a.getCurrency().equals("CNY"))
+            .orElseThrow(()->new RequestValidationException(Map.of("ownContributionAccountId","自有出资账户必须属于当前家庭且为人民币账户")));
+        return new PurchaseTerms(price,account);
+    }
+    private Values validate(long h,LoanCreateRequest r){return validate(h,r,r==null?null:r.assetRelation());}
+    private Values validate(long h,LoanCreateRequest r,LoanAssetRelation relation){
+        Map<String,String> f=new LinkedHashMap<>();
+        if(r==null)throw new RequestValidationException(Map.of("request","请求不能为空"));
+        String name=required(r.name(),"name",f);LoanType type=r.type();
+        if(type==null)f.put("type","贷款类型不能为空");
+        long principal=parseMoney(r.principal(),"principal",f);BigDecimal rate=r.annualRate();
+        if(rate==null||rate.scale()>6||rate.signum()<0||rate.compareTo(BigDecimal.ONE)>0)f.put("annualRate","年利率必须在 0 到 1 之间且最多六位小数");
+        int term=r.termMonths()==null?0:r.termMonths();
+        if(term<1||term>360)f.put("termMonths","期数必须在 1 到 360 之间");
+        if(r.startOn()==null)f.put("startOn","起息日不能为空");
+        RepaymentMethod method=r.repaymentMethod();if(method==null)f.put("repaymentMethod","还款方式不能为空");
+        Asset asset=resolveAsset(h,r.linkedAssetId(),type,relation,f);
+        FamilyMember member=resolveMember(h,r.memberId(),f);AppUser user=resolveUser(h,r.assignedUserId(),null);
+        FinancialAccount account=r.paymentAccountId()==null?null:accounts.findByIdAndHouseholdIdAndArchivedAtIsNull(r.paymentAccountId(),h).orElse(null);
+        if(account==null)f.put("paymentAccountId","付款账户必须属于当前家庭且未归档");else if(!account.getCurrency().equals("CNY"))f.put("paymentAccountId","贷款请使用人民币付款账户");
+        Category category=r.paymentCategoryId()==null?null:categories.findByIdAndHouseholdId(r.paymentCategoryId(),h).filter(c->c.getKind()==TransactionKind.EXPENSE).orElse(null);
+        if(category==null)f.put("paymentCategoryId","付款分类必须是当前家庭的支出分类");
+        if(!f.isEmpty())throw new RequestValidationException(f);
+        List<InstallmentDraft> schedule=method==RepaymentMethod.CUSTOM?custom(r.customSchedule(),principal,term):standard(principal,rate,term,r.startOn(),method);
+        return new Values(name,type,asset,member,user,account,category,principal,rate.setScale(6),term,method,r.startOn(),schedule);
+    }
     private List<InstallmentDraft> standard(long principal,BigDecimal rate,int term,LocalDate start,RepaymentMethod method){
         try{return calculator.calculate(principal,rate,term,start,method);}catch(IllegalArgumentException e){throw new RequestValidationException(Map.of("termMonths","所选期数无法形成正现金计划，请减少期数"));}
     }
     private List<InstallmentDraft> custom(List<CustomInstallmentRequest> rows,long principal,int term){if(rows==null||rows.size()!=term)throw new RequestValidationException(Map.of("customSchedule","自定义计划必须与期数相同"));List<InstallmentDraft> out=new ArrayList<>();long sum=0;LocalDate previous=null;for(int i=0;i<rows.size();i++){var r=rows.get(i);if(r==null||r.dueOn()==null||previous!=null&&!r.dueOn().isAfter(previous))throw new RequestValidationException(Map.of("customSchedule","自定义到期日必须递增"));long p;try{if(r.principal()==null)throw new IllegalArgumentException();BigDecimal value=new BigDecimal(r.principal());if(value.signum()<0||value.compareTo(DecimalMoney.fromCents(principal))>0)throw new IllegalArgumentException();p=DecimalMoney.toCents(value);}catch(IllegalArgumentException e){throw new RequestValidationException(Map.of("customSchedule","自定义本金格式不正确"));}long interest=r.interest()==null||r.interest().equals("0")||r.interest().equals("0.00")?0:Money.parseCents(r.interest());if(Math.addExact(p,interest)<=0)throw new RequestValidationException(Map.of("customSchedule","每期付款必须为正"));if(p>principal-sum)throw new RequestValidationException(Map.of("customSchedule","自定义本金总和不能超过贷款本金"));sum=Math.addExact(sum,p);out.add(new InstallmentDraft(i+1,r.dueOn(),p,interest,0));previous=r.dueOn();}if(sum!=principal)throw new RequestValidationException(Map.of("customSchedule","自定义本金总和必须等于贷款本金"));long remaining=principal;List<InstallmentDraft> fixed=new ArrayList<>();for(var d:out){remaining-=d.principalCents();if(remaining==0&&fixed.size()<out.size()-1)throw new RequestValidationException(Map.of("customSchedule","本金不能早于末期结清"));fixed.add(new InstallmentDraft(d.installmentNo(),d.dueOn(),d.principalCents(),d.interestCents(),remaining,d.principalAmount().setScale(12),d.interestAmount().setScale(12),BigDecimal.ZERO.setScale(12),"CUSTOM_CONTRACT_V1",DecimalMoney.fromCents(remaining+d.principalCents()).setScale(12),d.interestAmount().setScale(12)));}return fixed;}
-    private Asset resolveAsset(long h,Long id,LoanType type,Map<String,String> f){if(id==null)return null;Asset a=assets.findCurrent(id,h).filter(x->!x.isArchived()).orElse(null);if(a==null){f.put("linkedAssetId","关联资产必须属于当前家庭且未归档");return null;}if((a.getType()==AssetType.PROPERTY&&type!=LoanType.MORTGAGE)||(a.getType()==AssetType.VEHICLE&&type!=LoanType.CAR)||(a.getType()==AssetType.OTHER&&type!=LoanType.OTHER))f.put("linkedAssetId","贷款类型与关联资产类型不兼容");return a;}
+    private Asset resolveAsset(long h,Long id,LoanType type,LoanAssetRelation relation,Map<String,String> f){if(id==null)return null;Asset a=assets.findCurrent(id,h).filter(x->!x.isArchived()).orElse(null);if(a==null){f.put("linkedAssetId","关联资产必须属于当前家庭且未归档");return null;}if(!(relation==null?LoanAssetRelation.FINANCING:relation).supports(type,a.getType()))f.put("linkedAssetId","贷款类型与关联资产类型不兼容");return a;}
     private FamilyMember resolveMember(long h,Long id,Map<String,String> f){if(id==null)return null;return members.findByIdAndHouseholdId(id,h).orElseGet(()->{f.put("memberId","成员必须属于当前家庭");return null;});}
     private AppUser resolveUser(long h,Long id,AppUser fallback){if(id==null)return fallback;return users.findByIdAndHouseholdIdAndStatus(id,h,AppUserStatus.ACTIVE).orElseThrow(()->new RequestValidationException(Map.of("assignedUserId","指派用户必须属于当前家庭且有效")));}
     private static String required(String v,String field){return required(v,field,new LinkedHashMap<>());} private static String required(String v,String field,Map<String,String> f){String n=v==null?"":v.trim();if(n.isEmpty()||n.length()>100)f.put(field,"名称不能为空且不超过 100 个字符");return n;}
@@ -129,4 +196,5 @@ public class LoanService {
     private Loan locked(long h,long id){return loans.findLockedByIdAndHouseholdId(id,h).orElseThrow(()->new ResourceNotFoundException("贷款不存在"));}
     private Loan find(long h,long id){return loans.findByIdAndHouseholdId(id,h).orElseThrow(()->new ResourceNotFoundException("贷款不存在"));}
     private record Values(String name,LoanType type,Asset asset,FamilyMember member,AppUser user,FinancialAccount account,Category category,long principal,BigDecimal rate,int term,RepaymentMethod method,LocalDate start,List<InstallmentDraft> schedule){}
+    private record PurchaseTerms(BigDecimal value,FinancialAccount account){}
 }

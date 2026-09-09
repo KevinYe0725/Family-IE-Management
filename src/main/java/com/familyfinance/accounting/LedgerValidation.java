@@ -85,6 +85,7 @@ class LedgerValidation {
                     case "CASH" -> { match(e,LedgerAccountKind.CASH,parts,2); ownedCurrency("financial_accounts",id,c.householdId(),e.currency()); }
                     case "LOAN" -> { match(e,LedgerAccountKind.LOAN,parts,2); owned("loans",id,c.householdId()); require(e.currency().equals("CNY"),"currency","贷款仅支持人民币"); }
                     case "ASSET" -> { match(e,LedgerAccountKind.ASSET,parts,2); owned("assets",id,c.householdId()); require(e.currency().equals("CNY"),"currency","实体资产仅支持人民币"); }
+                    case "ASSET_SALE_CLEARING" -> { match(e,LedgerAccountKind.ASSET,parts,2); owned("assets",id,c.householdId()); require(e.currency().equals("CNY"),"currency","资产结算仅支持人民币"); }
                     case "POSITION" -> {
                         match(e,LedgerAccountKind.ASSET,parts,3); ownedCurrency("investment_accounts",id,c.householdId(),e.currency());
                         require(currentSecurities.contains(parseId(parts[2])),"accountCode","证券不存在");

@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ApiRequestOptions } from '../api/client';
 
 const summaries = ['dashboard', 'net-worth', 'analysis', 'debt-analysis', 'plugin'];
-const ledger = ['transactions', 'accounts', 'accounting-history', 'transfers', 'budget-usage', 'budget-hit', 'budget-entries', 'notifications', ...summaries];
+const ledger = ['transactions', 'accounts', 'cash-position', 'cash-movements', 'accounting-history', 'transfers', 'budget-usage', 'budget-hit', 'budget-entries', 'notifications', ...summaries];
 const investments = [...ledger, 'portfolio', 'investment-setup', 'investment-accounts', 'investment-trades', 'investment-plans', 'market-quotes', 'securities', ...summaries];
 const dependencies: Record<string, string[]> = {
   transactions: ledger,
@@ -14,7 +14,7 @@ const dependencies: Record<string, string[]> = {
   categories: ['categories', 'budget-revisions', 'recurring-rules', ...ledger],
   budgets: ['budgets', 'budget-total', 'budget-revisions', ...ledger],
   'budget-templates': ['budget-templates', 'budgets', 'budget-total', 'budget-revisions', ...ledger],
-  assets: ['assets', 'asset-valuations', 'loans', ...ledger],
+  assets: ['assets', 'asset-valuations', 'loans', 'loan-schedule', 'loan-prepayments', 'loan-repayments', 'loan-repayment-preview', 'loan-term-options', 'loan-repayment-policy', ...ledger],
   'investment-accounts': investments,
   'investment-trades': investments,
   'investment-plans': investments,
@@ -33,8 +33,11 @@ const pendingRefreshes = new WeakMap<QueryClient, Promise<void>>();
 
 /** Await fresh active AND previously viewed inactive reads after a persisted write. */
 export async function refreshAfterWrite(cache: QueryClient, path: string, options: ApiRequestOptions | undefined, isCurrent: () => boolean) {
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes((options?.method ?? 'GET').toUpperCase())) return;
-  const roots = dependencies[path.split('?')[0].split('/')[2]];
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return;
+  const resourcePath = path.split('?')[0];
+  if (method === 'POST' && /^\/api\/assets\/\d+\/sale-preview$/.test(resourcePath)) return;
+  const roots = dependencies[resourcePath.split('/')[2]];
   if (!roots || !isCurrent()) return;
   // Serialize refreshes so concurrent successful writes cannot cancel each
   // other's awaited reads and prematurely finish a saving indicator.

@@ -7,7 +7,7 @@ import { ApiError } from '../../api/client';
 import { businessDate, newIdempotencyKey } from '../../shared/runtime';
 import { DateField } from '../../shared/DateField';
 import { AccountOptions, PaymentPreview, useFundsRefresh } from '../accounting';
-import { Drawer, FormError, money, type RequestFn } from '../common';
+import { ActionDialog as Drawer, FormError, money, type RequestFn } from '../common';
 
 type PayoffBody = { paidOn: string; paymentAccountId: number; interestAmount: string | null; idempotencyKey: string; planToken: string };
 type PayoffAttempt = { body: PayoffBody; quote: LoanPayoffQuote };

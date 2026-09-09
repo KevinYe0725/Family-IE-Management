@@ -19,6 +19,14 @@ beforeEach(() => {
   dispose.mockClear();
   Object.values(chart).forEach(mock => mock.mockClear());
 });
+it('shows a timestamped delayed spot quote separately from daily candles and names its comparison date',async()=>{
+ const request=(async()=>({...data,adjustment:'none'})) as RequestFn;
+ render(<QueryClientProvider client={new QueryClient()}><StockChart request={request} security={stock} compact liveQuote={{securityId:5,price:'18.00',currency:'CNY',source:'TENCENT_PUBLIC',quotedAt:'2026-09-30T06:00:00Z',fetchedAt:'2026-09-30T06:01:00Z',status:'DELAYED',marketState:'OPEN',ageSeconds:60,delayMinutes:15}}/></QueryClientProvider>);
+ expect(screen.getByText('¥18.00')).toBeInTheDocument();expect(screen.getByText('延迟报价')).toBeInTheDocument();
+ expect(await screen.findByText('+28.57% · 较 2026-09-01 收盘')).toBeInTheDocument();
+ expect(screen.queryByLabelText('复权方式')).not.toBeInTheDocument();
+ expect(screen.queryByText('今日涨跌')).not.toBeInTheDocument();
+});
 it('shares one unadjusted request between reference price and initial chart instead of racing the adapter', async () => {
   const request = vi.fn(async (path: string) => ({...data, adjustment: path.endsWith('none') ? 'none' : 'qfq'}));
   render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false}}})}><ReferenceQuote request={request as RequestFn} security={stock}/><StockChart request={request as RequestFn} security={stock}/></QueryClientProvider>);

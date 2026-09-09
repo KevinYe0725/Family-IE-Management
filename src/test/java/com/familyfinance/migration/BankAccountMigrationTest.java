@@ -28,7 +28,7 @@ class BankAccountMigrationTest {
 
         MigrationResult after = MigrationTestSupport.migrateExistingDatabase(database);
 
-        assertThat(after.version()).isEqualTo("44");
+        assertThat(after.version()).isEqualTo("47");
         assertThat(after.queryLong("select count(*) from bank_accounts where household_id=1")).isEqualTo(2);
         assertThat(after.queryLong("select count(*) from financial_accounts where household_id=1 and type='BANK' and bank_account_id is not null")).isEqualTo(2);
         assertThat(after.queryLong("select count(*) from financial_accounts a join bank_accounts b on b.id=a.bank_account_id and b.household_id=a.household_id where a.name=b.name and a.bank_name=b.bank_name and a.card_last_four=b.card_last_four")).isEqualTo(2);

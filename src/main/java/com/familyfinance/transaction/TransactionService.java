@@ -159,6 +159,7 @@ public class TransactionService {
         long householdId = access.context().householdId();
         FinancialTransaction transaction = findForMutation(householdId, transactionId);
         permissions.requireCanMutateTransaction(access.context(), transaction.getCreatedByUser().getId());
+        requireMutableSettlement(transaction);
         key=AccountingRequests.key(key);
         String digest=requests.digest("TRANSACTION_UPDATE:"+transactionId,access.context().userId(),request);
         if(requests.replay(householdId,key,digest)!=null) return TransactionResponse.from(transaction);
@@ -219,6 +220,7 @@ public class TransactionService {
         if(requests.replay(householdId,key,digest)!=null) return;
         FinancialTransaction transaction = findForMutation(householdId, transactionId);
         permissions.requireCanMutateTransaction(access.context(), transaction.getCreatedByUser().getId());
+        requireMutableSettlement(transaction);
         if (transaction.getSourceType() != TransactionSourceType.MANUAL) {
             throw new ResourceConflictException(
                     "RESOURCE_IN_USE",
@@ -228,6 +230,14 @@ public class TransactionService {
         ledger.reverse(householdId,"TRANSACTION",transactionId,key,access.context().userId());
         transactionRepository.delete(transaction);
         requests.record(householdId,key,digest,transactionId);
+    }
+
+    private static void requireMutableSettlement(FinancialTransaction transaction) {
+        if (!transaction.hasCashImpact()) {
+            throw new ResourceConflictException(
+                    "ASSET_SETTLEMENT_IMMUTABLE",
+                    "买方代偿还款属于资产出售结算历史，无法独立修改或删除");
+        }
     }
 
     private FinancialTransaction findOne(long householdId, long transactionId) {

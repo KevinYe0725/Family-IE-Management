@@ -1,0 +1,14 @@
+.asset-sale-dialog {--sale-line:var(--ledger-border,#e5e9ef);--sale-muted:var(--ledger-muted,#798493);}
+.asset-sale-dialog fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:24px;}
+.asset-sale-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+.asset-sale-loan-choices>section{border-top:1px solid var(--sale-line);padding:20px 0;display:grid;gap:16px;}
+.asset-sale-loan-choices header,.asset-sale-loan-result h3{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;}
+.asset-sale-loan-choices h3,.asset-sale-account h3,.asset-sale-loan-result h3{margin:0;font-size:17px;}
+.asset-sale-loan-choices header span,.asset-sale-loan-result h3 span{color:var(--sale-muted);font-size:14px;font-weight:400;}
+.asset-sale-dialog .asset-sale-consent{display:flex;align-items:center;gap:10px;line-height:1.6;}.asset-sale-consent input{width:18px;height:18px;flex:none;}
+.asset-sale-actions{display:flex;justify-content:flex-end;gap:12px;padding-top:20px;border-top:1px solid var(--sale-line);}
+.asset-sale-receipt{display:grid;gap:24px;margin:0 0 24px;}
+.asset-sale-net{display:grid;gap:10px;padding:24px 0;border-bottom:1px solid var(--sale-line);}.asset-sale-net span{color:var(--sale-muted);}.asset-sale-net strong{font-size:38px;line-height:1.1;letter-spacing:-.035em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.asset-sale-breakdown,.asset-sale-account dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:0;}.asset-sale-breakdown div,.asset-sale-account dl div{display:grid;gap:8px;min-width:0;}.asset-sale-receipt dt{font-size:14px;color:var(--sale-muted);}.asset-sale-receipt dd{margin:0;font-size:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.asset-sale-account{border:1px solid var(--sale-line);border-radius:14px;padding:20px;}.asset-sale-account dl{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:18px;}.asset-sale-loan-result{border-bottom:1px solid var(--sale-line);padding-bottom:16px;}.asset-sale-route-note{margin:0;line-height:1.6;}.asset-sale-blockers{color:#ad3c32;}.asset-sale-retained p{display:flex;justify-content:space-between;gap:16px;}
+@media(max-width:560px){.asset-sale-fields,.asset-sale-account dl{grid-template-columns:1fr;}.asset-sale-account dl div{display:flex;justify-content:space-between;gap:16px;}.asset-sale-net strong{font-size:32px;}}
