@@ -385,7 +385,8 @@ export function LoansPage({
   });
   const blank = (): LoanDraft => ({
     key: newIdempotencyKey(),
-    fundingMode: "OPENING",
+    fundingMode: "FINANCED_PURCHASE",
+    createPurchasedAsset: true,
     accountingOn: businessDate(),
     disbursementAccountId: "",
     name: "",
@@ -914,7 +915,7 @@ export function LoansPage({
                     关联资产
                     <select
                       name="linkedAssetId"
-                      disabled={Boolean(draft.purchasedAssetId)}
+                      disabled={Boolean(draft.purchasedAssetId) || draft.createPurchasedAsset === true}
                       value={
                         draft.createPurchasedAsset
                           ? "PURCHASED"
@@ -938,25 +939,31 @@ export function LoansPage({
                         })
                       }
                     >
-                      <option value="">不关联</option>
-                      {!draft.id && (
+                      {draft.createPurchasedAsset === true ? (
                         <option value="PURCHASED">本次贷款购买物</option>
+                      ) : (
+                        <>
+                          <option value="">不关联</option>
+                          {!draft.id && (
+                            <option value="PURCHASED">本次贷款购买物</option>
+                          )}
+                          {assets.data
+                            ?.filter(
+                              (item) =>
+                                item.type ===
+                                (draft.type === "MORTGAGE"
+                                  ? "PROPERTY"
+                                  : draft.type === "CAR"
+                                    ? "VEHICLE"
+                                    : "OTHER"),
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                        </>
                       )}
-                      {assets.data
-                        ?.filter(
-                          (item) =>
-                            item.type ===
-                            (draft.type === "MORTGAGE"
-                              ? "PROPERTY"
-                              : draft.type === "CAR"
-                                ? "VEHICLE"
-                                : "OTHER"),
-                        )
-                        .map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
                     </select>
                   </label>
                   {draft.fundingMode === "FINANCED_PURCHASE" && (

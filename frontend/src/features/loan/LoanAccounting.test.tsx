@@ -43,7 +43,9 @@ it('offers closed loan history and explicit opening versus disbursement creation
   const { user } = setup();
   expect(screen.getByLabelText('贷款状态')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: '新建贷款' }));
-  expect(screen.getByLabelText('入账方式')).toHaveValue('OPENING');
+  expect(screen.getByLabelText('入账方式')).toHaveValue('FINANCED_PURCHASE');
+  expect(screen.getByLabelText('贷款购买本金')).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText('入账方式'), 'OPENING');
   expect(screen.getByLabelText('账务起始日剩余本金')).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText('入账方式'), 'DISBURSEMENT');
   expect(screen.getByLabelText('放款到账账户')).toBeRequired();
