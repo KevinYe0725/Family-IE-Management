@@ -228,7 +228,7 @@ class StageTwoLedgerSmokeTest {
     }
 
     private static void assertBudgetUsage(Api api, long budgetId, String spent, String remaining) throws Exception {
-        JsonNode usage = api.data(api.get("/api/budgets/usage?periodMonth=" + PERIOD));
+        JsonNode usage = api.data(api.get("/api/budgets/usage?periodMonth=" + PERIOD + "&rollupCategories=false"));
         assertThat(usage).hasSize(1);
         assertThat(usage.get(0).at("/budget/id").asLong()).isEqualTo(budgetId);
         assertThat(usage.get(0).path("spent").asString()).isEqualTo(spent);

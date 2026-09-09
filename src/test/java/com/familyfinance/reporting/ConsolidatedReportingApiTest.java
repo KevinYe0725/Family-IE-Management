@@ -71,7 +71,7 @@ class ConsolidatedReportingApiTest {
                 .andExpect(jsonPath("$.data.budget.nearLimitCount").value(0))
                 .andExpect(jsonPath("$.data.budget.overLimitCount").value(1));
         mvc.perform(get("/api/budgets/usage").session(session)
-                        .param("periodMonth", "2026-09"))
+                        .param("periodMonth", "2026-09").param("rollupCategories", "false"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].budget.id").value(budget.getId()))
                 .andExpect(jsonPath("$.data[0].spent").value("1591.35"))

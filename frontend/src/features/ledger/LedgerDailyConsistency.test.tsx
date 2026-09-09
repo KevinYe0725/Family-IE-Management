@@ -4,6 +4,9 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {TransactionsPage} from './TransactionsPage';
 import type {RequestFn} from '../common';
 
+beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-09-10T04:00:00Z'));});
+afterEach(()=>{vi.useRealTimers();});
+
 const page=(items:unknown[])=>({items,page:0,size:50,totalElements:items.length,totalPages:items.length?1:0,hasNext:false});
 const records=[
  {id:1,kind:'expense',amount:'1060.00',principalAmount:'1000.00',interestAmount:'60.00',sourceType:'LOAN_PAYMENT',categoryId:3,categoryName:'居家',occurredOn:'2026-09-10',merchant:'到期还款'},
@@ -19,7 +22,7 @@ function show(){
   }
   const url=new URL(path,'http://test.local');const params=url.searchParams;
   if(url.pathname.startsWith('/api/transactions')){
-   const rows=savedRows.filter(r=>(!params.get('kind')||r.kind===params.get('kind'))&&(!params.get('from')||r.occurredOn===params.get('from'))&&(!params.get('categoryId')||r.categoryId===Number(params.get('categoryId'))));
+   const rows=savedRows.filter(r=>(!params.get('month')||r.occurredOn.startsWith(params.get('month')!))&&(!params.get('q')||r.merchant.includes(params.get('q')!))&&(!params.get('kind')||r.kind===params.get('kind'))&&(!params.get('from')||r.occurredOn===params.get('from'))&&(!params.get('categoryId')||r.categoryId===Number(params.get('categoryId'))));
    if(url.pathname==='/api/transactions')return page(rows);
    const income=rows.filter(r=>r.kind==='income').reduce((s,r)=>s+Number(r.amount),0),expense=rows.filter(r=>r.kind==='expense').reduce((s,r)=>s+Number(r.amount),0);
    const groups=new Map<string,{date:string;kind:string;categoryId:number;amount:string;count:number}>();
@@ -42,12 +45,39 @@ it('opens in expense mode and uses the same direction for the chart and records'
  expect(screen.queryByText('收支差额')).not.toBeInTheDocument();
  for(const [path] of request.mock.calls.filter(([p])=>p.startsWith('/api/transactions')))expect(new URL(path,'http://test.local').searchParams.get('kind')).toBe('expense');
 });
+it('only offers categories matching the selected income or expense direction',async()=>{
+ show();await screen.findByRole('region',{name:'支出汇总'});
+ const selector=screen.getByRole('combobox',{name:'分类筛选'});
+ expect(within(selector).queryByRole('option',{name:'工资'})).not.toBeInTheDocument();
+ expect(within(selector).getByRole('option',{name:'居家'})).toBeInTheDocument();
+ await userEvent.selectOptions(screen.getByRole('combobox',{name:'收支类型筛选'}),'income');
+ expect(within(selector).queryByRole('option',{name:'居家'})).not.toBeInTheDocument();
+ expect(within(selector).getByRole('option',{name:'工资'})).toBeInTheDocument();
+});
 it('preserves the month selected on the homepage',async()=>{
  window.history.replaceState({},'', '/workspace/transactions?month=2026-08');
  try {
   const request=show();await screen.findByRole('region',{name:'支出汇总'});
   expect(screen.getByRole('textbox',{name:'账期'})).toHaveValue('2026-08');
   expect(request.mock.calls.some(([path])=>path.startsWith('/api/transactions?month=2026-08'))).toBe(true);
+ } finally {window.history.replaceState({},'', '/');}
+});
+it('reveals a new record saved from a different month or search filter',async()=>{
+ window.history.replaceState({},'', '/workspace/transactions?month=2026-08');
+ try {
+  show();await screen.findByRole('region',{name:'支出汇总'});
+  await userEvent.type(screen.getByRole('textbox',{name:'搜索收支'}),'旧记录');
+  await userEvent.click(screen.getByRole('button',{name:'记一笔'}));
+  const dialog=screen.getByRole('dialog',{name:'记一笔'});
+  await userEvent.type(within(dialog).getByLabelText('金额'),'12.35');
+  await userEvent.selectOptions(within(dialog).getByLabelText('分类'),'3');
+  await userEvent.type(within(dialog).getByLabelText('商家'),'当月新增');
+  await userEvent.clear(within(dialog).getByRole('textbox',{name:'日期'}));
+  await userEvent.type(within(dialog).getByRole('textbox',{name:'日期'}),'2026-09-10');
+  await userEvent.click(within(dialog).getByRole('button',{name:'保存收支'}));
+  expect(await screen.findByRole('row',{name:/当月新增/})).toBeInTheDocument();
+  expect(screen.getByRole('textbox',{name:'账期'})).toHaveValue('2026-09');
+  expect(screen.getByRole('textbox',{name:'搜索收支'})).toHaveValue('');
  } finally {window.history.replaceState({},'', '/');}
 });
 it('reveals an income saved from expense view and defaults the next draft to the visible direction',async()=>{

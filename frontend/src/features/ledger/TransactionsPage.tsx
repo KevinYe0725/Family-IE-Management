@@ -100,7 +100,11 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
       body: value.generated ? { merchant: value.merchant || null, location: value.location || null, note: value.note || null } : { kind: value.kind, amount: value.amount, occurredOn: value.occurredOn, accountId: Number(value.accountId), memberId: Number(value.memberId), categoryId: Number(value.categoryId), merchant: value.merchant || null, location: value.location || null, note: value.note || null }
     }),
     onError: fundsError,
-    onSuccess: (_saved, value) => { setDraft(null); setTransactionPage(0); if(value.kind!==kind)selectKind(value.kind); }
+    onSuccess: (_saved, value) => {
+      setDraft(null); setTransactionPage(0); selectKind(value.kind);
+      setMonth(value.occurredOn.slice(0, 7));
+      setQ(''); setAccountId(''); setBankAccountId(''); setMemberId('');
+    }
   });
   const remove = useMutation({ mutationFn: (id: number) => request<void>(`/api/transactions/${id}`, { method: 'DELETE', headers: { 'Idempotency-Key': deleting!.key } }), onError: fundsError, onSuccess: () => { setDeleteId(null); setTransactionPage(0); } });
   const saveAccount = useMutation({ mutationFn: (value: NonNullable<typeof accountDraft>) => request<Account>(value.id ? `/api/accounts/${value.id}` : '/api/accounts', { method: value.id ? 'PATCH' : 'POST', headers: { 'Idempotency-Key': value.key }, body: value.mode === 'opening' ? { openingBalance: value.openingBalance, openingOn: value.openingOn } : value.mode === 'metadata' ? { name: value.name, type: value.type, walletProvider: value.walletProvider || null, bankName: value.bankName, cardLastFour: value.cardLastFour } : { name: value.name, type: value.type, walletProvider: value.walletProvider || null, bankName: value.bankName, cardLastFour: value.cardLastFour, currency: value.currency, openingBalance: value.openingBalance, openingOn: value.openingOn } }), onError: fundsError, onSuccess: () => { setAccountDraft(null); } });
@@ -126,7 +130,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
 <label>银行卡<select aria-label="银行卡筛选" value={bankAccountId} onChange={e=>{setBankAccountId(e.target.value);setAccountId("");}}><option value="">全部</option>{[...new Map((accountOptions.data??[]).filter(a=>a.bankAccountId).map(a=>[a.bankAccountId!,a.bankAccountName??a.name])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
         <label>账户<select aria-label="账户筛选" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">全部</option>{accountOptions.data?.filter(a=>!bankAccountId||a.bankAccountId===Number(bankAccountId)).map(item => <option key={item.id} value={item.id}>{accountLabel(item)}</option>)}</select></label>
         <label>成员<select aria-label="成员筛选" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="">全部</option><option value="0">全体（家庭共同）</option>{members.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>分类<select aria-label="分类筛选" value={categoryId} onChange={e => setCategoryId(e.target.value)}><option value="">全部</option>{flatCategories.map(item => <option key={item.id} value={item.id}>{item.level === 2 ? '　' : ''}{item.name}</option>)}</select></label>
+        <label>分类<select aria-label="分类筛选" value={categoryId} onChange={e => setCategoryId(e.target.value)}><option value="">全部</option>{flatCategories.filter(item => item.kind === kind).map(item => <option key={item.id} value={item.id}>{item.level === 2 ? '　' : ''}{item.name}</option>)}</select></label>
         <label className="search-field">搜索<input aria-label="搜索收支" value={q} onChange={e => setQ(e.target.value)} placeholder="商家、地点或备注" /></label>
         <a className="secondary-action" href={exportHref} download><Download size={15} aria-hidden="true"/>导出 CSV</a>
       </div>
