@@ -9,6 +9,21 @@ const pageResult = <T,>(items: T[], current = 0, total = items.length) => ({
   items, page: current, size: 50, totalElements: total, totalPages: total === 0 ? 0 : Math.ceil(total / 50), hasNext: (current + 1) * 50 < total
 });
 
+it('does not count an existing transaction again in the new-expense budget preview', async () => {
+ const request=vi.fn(async(path:string)=>{
+  if(path.startsWith('/api/transactions'))return pageResult([{id:7,kind:'expense',amount:'100.00',occurredOn:'2026-09-09',accountId:1,accountName:'银行卡',memberId:2,memberName:'Kevin',categoryId:3,categoryName:'餐饮',createdByUserId:7,createdByName:'Kevin',sourceType:'MANUAL'}]);
+  if(path==='/api/members')return [{id:2,name:'Kevin'}];
+  if(path.startsWith('/api/accounts'))return pageResult([{id:1,name:'银行卡',type:'BANK',currency:'CNY',openingConfirmed:true,balance:'1000.00',availableBalance:'1000.00'}]);
+  if(path.startsWith('/api/budgets/hit-check'))return [{budgetId:1,statusAfter:'OVER_BUDGET',categoryName:'餐饮',percentAfter:'110',spent:'100.00',scopeType:'CATEGORY'}];
+  return pageResult([]);
+ });
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TransactionsPage request={request as RequestFn} role="OWNER" userId={7}/></QueryClientProvider>);
+ await userEvent.click((await screen.findAllByRole('button',{name:'编辑'}))[0]);
+ await screen.findByRole('dialog',{name:'编辑收支'});
+ expect(request.mock.calls.some(([path])=>path.startsWith('/api/budgets/hit-check'))).toBe(false);
+ expect(screen.queryByRole('status',{name:'预算影响提醒'})).not.toBeInTheDocument();
+});
+
 it('opens one empty entry from the homepage shortcut without submitting anything', async () => {
   const original = window.location.href;
   window.history.replaceState({}, '', '/workspace/transactions?create=1');

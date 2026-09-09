@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,8 +48,14 @@ class BudgetApiTest {
     @Autowired FamilyMemberRepository members;
     @Autowired CategoryRepository categories;
 
+    @Test void totalRequiresMonth() throws Exception {
+        mvc.perform(put("/api/budgets/total").session(login()).with(csrf()).contentType("application/json")
+                .content("{\"amount\":\"1000.00\",\"version\":0}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.fields.periodMonth").exists());
+    }
+
     @Test
-    void ownerCreatesPositiveTotalBudgetForCanonicalYearMonth() throws Exception {
+    void ownerSetsAndReadsMonthlyTotalBudgetAndCannotCreateLegacyTotalRow() throws Exception {
         MockHttpSession session = login();
 
         mvc.perform(post("/api/budgets").session(session).with(csrf())
@@ -56,14 +63,22 @@ class BudgetApiTest {
                         .content("""
                                 {"periodMonth":"2026-09","scopeType":"TOTAL","amount":"1000.00"}
                                 """))
-                .andExpect(status().isCreated())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.scopeType").exists());
+
+        mvc.perform(put("/api/budgets/total").session(session).with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"periodMonth":"2026-09","amount":"1000.00","version":0}
+                                """))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.periodMonth").value("2026-09"))
-                .andExpect(jsonPath("$.data.scopeType").value("TOTAL"))
-                .andExpect(jsonPath("$.data.categoryId").isEmpty())
-                .andExpect(jsonPath("$.data.memberId").isEmpty())
                 .andExpect(jsonPath("$.data.amount").value("1000.00"))
-                .andExpect(jsonPath("$.data.version").isNumber())
-                .andExpect(jsonPath("$.data.active").value(true));
+                .andExpect(jsonPath("$.data.version").value(0));
+
+        mvc.perform(get("/api/budgets/total").session(session).param("periodMonth", "2026-09"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.amount").value("1000.00"));
     }
 
     @Test
@@ -78,18 +93,10 @@ class BudgetApiTest {
         FamilyMember foreignMember = members.saveAndFlush(new FamilyMember(
                 foreign, "外部成员", "成员", Instant.parse("2026-09-03T00:00:00Z")));
 
-        assertValidation(session, """
-                {"periodMonth":"2026-9","scopeType":"TOTAL","amount":"100.00"}
-                """, "periodMonth");
-        assertValidation(session, """
-                {"periodMonth":"2026-09","scopeType":"TOTAL","amount":"0.00"}
-                """, "amount");
-        assertValidation(session, """
-                {"periodMonth":"2026-09","scopeType":"TOTAL","amount":"1000000000.00"}
-                """, "amount");
-        assertValidation(session, """
-                {"periodMonth":"2026-09","scopeType":"TOTAL","categoryId":%d,"amount":"100.00"}
-                """.formatted(expense.getId()), "scopeType");
+        assertValidation(session, categoryBody("2026-9", expense.getId(), "100.00"), "periodMonth");
+        assertValidation(session, categoryBody("2026-09", expense.getId(), "0.00"), "amount");
+        assertValidation(session, categoryBody("2026-09", expense.getId(), "1000000000.00"), "amount");
+        assertValidation(session, categoryMemberBody("2026-09", expense.getId(), null, "100.00"), "categoryId");
         assertValidation(session, categoryBody(income.getId(), "100.00"), "categoryId");
 
         MvcResult foreignCategoryResult = create(session, categoryBody(foreignCategory.getId(), "100.00"))
@@ -110,15 +117,22 @@ class BudgetApiTest {
         create(session, memberBody(member.getId(), "300.00"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.memberId").value(member.getId()));
+        create(session, categoryMemberBody("2026-09", expense.getId(), member.getId(), "80.00"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.scopeType").value("CATEGORY_MEMBER"))
+                .andExpect(jsonPath("$.data.categoryId").value(expense.getId()))
+                .andExpect(jsonPath("$.data.memberId").value(member.getId()));
     }
 
     @Test
-    void enforcesOneActiveBudgetPerMonthAndScopeTargetButAllowsReplacementAfterDeactivation() throws Exception {
+    void enforcesOneActiveBudgetPerMonthAndScopeShapeButAllowsReplacementAfterDeactivation() throws Exception {
         MockHttpSession session = login();
-        long id = createId(session, totalBody("2026-10", "100.00"));
+        Household current = currentHousehold();
+        Category food = category(current, TransactionKind.EXPENSE, "互斥餐饮");
+        long id = createId(session, categoryBody("2026-10", food.getId(), "100.00"));
         int version = getBudget(session, id).path("version").asInt();
 
-        create(session, totalBody("2026-10", "200.00"))
+        create(session, categoryBody("2026-10", food.getId(), "200.00"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"));
 
@@ -130,8 +144,42 @@ class BudgetApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.active").value(false));
 
-        create(session, totalBody("2026-10", "200.00"))
+        create(session, categoryBody("2026-10", food.getId(), "200.00"))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void memberCategoryRowsAreRejectedWhenPoolWouldExceedMonthlyTotalAndTotalCannotShrinkBelowPool() throws Exception {
+        MockHttpSession session = login();
+        Household current = currentHousehold();
+        Category food = category(current, TransactionKind.EXPENSE, "池餐饮");
+        Category travel = category(current, TransactionKind.EXPENSE, "池旅行");
+
+        mvc.perform(put("/api/budgets/total").session(session).with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"periodMonth":"2026-11","amount":"1000.00","version":0}
+                                """))
+                .andExpect(status().isOk());
+
+        create(session, categoryBody("2026-11", food.getId(), "600.00"))
+                .andExpect(status().isCreated());
+        assertValidation(session, categoryBody("2026-11", travel.getId(), "500.00"), "amount");
+        create(session, categoryBody("2026-11", travel.getId(), "400.00"))
+                .andExpect(status().isCreated());
+
+        // Member-tagged rows are observation lines and never hit the pool.
+        FamilyMember member = members.findByHouseholdOrderById(current).get(0);
+        create(session, categoryMemberBody("2026-11", food.getId(), member.getId(), "20000.00"))
+                .andExpect(status().isCreated());
+
+        mvc.perform(put("/api/budgets/total").session(session).with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"periodMonth":"2026-11","amount":"999.00","version":0}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("TOTAL_BELOW_ALLOCATED"));
     }
 
     @Test
@@ -146,16 +194,18 @@ class BudgetApiTest {
         MvcResult updated = mvc.perform(patch("/api/budgets/{id}", id).session(session).with(csrf())
                         .contentType("application/json")
                         .content("""
-                                {"version":%d,"periodMonth":"2026-10","scopeType":"MEMBER",
-                                 "memberId":%d,"amount":"1200.00","active":false}
-                                """.formatted(before.path("version").asInt(), member.getId())))
+                                {"version":%d,"periodMonth":"2026-10","scopeType":"CATEGORY_MEMBER",
+                                 "categoryId":%d,"memberId":%d,"amount":"1200.00","active":false,
+                                 "note":"孩子开学季"}
+                                """.formatted(before.path("version").asInt(), food.getId(), member.getId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.periodMonth").value("2026-10"))
-                .andExpect(jsonPath("$.data.scopeType").value("MEMBER"))
-                .andExpect(jsonPath("$.data.categoryId").isEmpty())
+                .andExpect(jsonPath("$.data.scopeType").value("CATEGORY_MEMBER"))
+                .andExpect(jsonPath("$.data.categoryId").value(food.getId()))
                 .andExpect(jsonPath("$.data.memberId").value(member.getId()))
                 .andExpect(jsonPath("$.data.amount").value("1200.00"))
                 .andExpect(jsonPath("$.data.active").value(false))
+                .andExpect(jsonPath("$.data.note").value("孩子开学季"))
                 .andReturn();
         int newVersion = objectMapper.readTree(updated.getResponse().getContentAsString())
                 .path("data").path("version").asInt();
@@ -172,15 +222,17 @@ class BudgetApiTest {
                 .andExpect(jsonPath("$.data[0].oldPeriodMonth").value("2026-09"))
                 .andExpect(jsonPath("$.data[0].newPeriodMonth").value("2026-10"))
                 .andExpect(jsonPath("$.data[0].oldScopeType").value("CATEGORY"))
-                .andExpect(jsonPath("$.data[0].newScopeType").value("MEMBER"))
+                .andExpect(jsonPath("$.data[0].newScopeType").value("CATEGORY_MEMBER"))
                 .andExpect(jsonPath("$.data[0].oldCategoryId").value(food.getId()))
-                .andExpect(jsonPath("$.data[0].newCategoryId").isEmpty())
+                .andExpect(jsonPath("$.data[0].newCategoryId").value(food.getId()))
                 .andExpect(jsonPath("$.data[0].oldMemberId").isEmpty())
                 .andExpect(jsonPath("$.data[0].newMemberId").value(member.getId()))
                 .andExpect(jsonPath("$.data[0].oldAmount").value("1000.00"))
                 .andExpect(jsonPath("$.data[0].newAmount").value("1200.00"))
                 .andExpect(jsonPath("$.data[0].oldActive").value(true))
                 .andExpect(jsonPath("$.data[0].newActive").value(false))
+                .andExpect(jsonPath("$.data[0].oldNote").isEmpty())
+                .andExpect(jsonPath("$.data[0].newNote").value("孩子开学季"))
                 .andExpect(jsonPath("$.data[0].changedByUserId").isNumber())
                 .andExpect(jsonPath("$.data[0].changedAt").isNotEmpty());
 
@@ -204,7 +256,9 @@ class BudgetApiTest {
     void memberCanReadStableBoundedHouseholdListsAndHistoryButCannotMutate() throws Exception {
         MockHttpSession owner = login();
         MockHttpSession member = join(owner, unique("budget-member") + "@example.com", HouseholdRole.MEMBER);
-        long id = createId(owner, totalBody("2026-11", "100.00"));
+        Household current = currentHousehold();
+        Category food = category(current, TransactionKind.EXPENSE, "只读餐饮");
+        long id = createId(owner, categoryBody("2026-11", food.getId(), "100.00"));
         int version = getBudget(owner, id).path("version").asInt();
         mvc.perform(patch("/api/budgets/{id}", id).session(owner).with(csrf())
                         .contentType("application/json")
@@ -230,8 +284,11 @@ class BudgetApiTest {
         mvc.perform(get("/api/budgets/usage").session(member).param("periodMonth", "2026-11"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].budget.id").value(id));
+        mvc.perform(get("/api/budgets/total").session(member).param("periodMonth", "2026-11"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.amount").isEmpty());
 
-        create(member, totalBody("2026-12", "100.00"))
+        create(member, categoryBody("2026-12", food.getId(), "100.00"))
                 .andExpect(status().isForbidden());
         mvc.perform(patch("/api/budgets/{id}", id).session(member).with(csrf())
                         .contentType("application/json")
@@ -245,7 +302,9 @@ class BudgetApiTest {
     void foreignAndUnknownBudgetReadsAndUpdatesAreIndistinguishable() throws Exception {
         MockHttpSession session = login();
         Household foreign = households.saveAndFlush(new Household(unique("隔离家庭"), Instant.parse("2026-09-03T00:00:00Z")));
-        Budget foreignBudget = new Budget(foreign, java.time.YearMonth.of(2026, 9), BudgetScopeType.TOTAL, null, null, 10000L);
+        Category foreignCategory = category(foreign, TransactionKind.EXPENSE, "隔离分类");
+        Budget foreignBudget = new Budget(foreign, java.time.YearMonth.of(2026, 9), BudgetScopeType.CATEGORY,
+                foreignCategory, null, 10000L);
         // Persist through the already mapped aggregate so the API boundary is exercised against a real foreign row.
         long foreignId = budgetRepository().saveAndFlush(foreignBudget).getId();
 
@@ -341,22 +400,29 @@ class BudgetApiTest {
                 household, kind, unique(prefix), "#123456", false, Instant.parse("2026-09-03T00:00:00Z")));
     }
 
-    private static String totalBody(String month, String amount) {
+    private static String categoryBody(String month, long categoryId, String amount) {
         return """
-                {"periodMonth":"%s","scopeType":"TOTAL","amount":"%s"}
-                """.formatted(month, amount);
+                {"periodMonth":"%s","scopeType":"CATEGORY","categoryId":%d,"amount":"%s"}
+                """.formatted(month, categoryId, amount);
     }
 
     private static String categoryBody(long categoryId, String amount) {
-        return """
-                {"periodMonth":"2026-09","scopeType":"CATEGORY","categoryId":%d,"amount":"%s"}
-                """.formatted(categoryId, amount);
+        return categoryBody("2026-09", categoryId, amount);
     }
 
     private static String memberBody(long memberId, String amount) {
         return """
                 {"periodMonth":"2026-09","scopeType":"MEMBER","memberId":%d,"amount":"%s"}
                 """.formatted(memberId, amount);
+    }
+
+    private static String categoryMemberBody(String month, Long categoryId, Long memberId, String amount) {
+        return """
+                {"periodMonth":"%s","scopeType":"CATEGORY_MEMBER","categoryId":%s,"memberId":%s,"amount":"%s"}
+                """.formatted(month,
+                categoryId == null ? "null" : categoryId,
+                memberId == null ? "null" : memberId,
+                amount);
     }
 
     private static String unique(String prefix) {

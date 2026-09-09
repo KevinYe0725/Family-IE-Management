@@ -26,3 +26,12 @@ it('identifies unpriced cost estimates and does not report an incomplete market 
   expect(screen.getByText(/含成本估算/)).toBeInTheDocument();
   expect(screen.getByText(/市值与浮动收益尚不完整/)).toBeInTheDocument();
 });
+
+it('refreshes budget totals and hit previews after budget and template writes', async () => {
+ for(const path of ['/api/budgets/total','/api/budget-templates/2/apply']) {
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  for(const key of ['budget-total','budget-usage','budget-entries','budget-hit'])cache.setQueryData([key],1);
+  await refreshAfterWrite(cache,path,{method:'POST'},()=>true);
+  for(const key of ['budget-total','budget-usage','budget-entries','budget-hit'])expect(cache.getQueryState([key])?.isInvalidated).toBe(true);
+ }
+});

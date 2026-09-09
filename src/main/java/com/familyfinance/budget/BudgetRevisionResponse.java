@@ -18,6 +18,8 @@ public record BudgetRevisionResponse(
         String newAmount,
         boolean oldActive,
         boolean newActive,
+        String oldNote,
+        String newNote,
         Long changedByUserId,
         Instant changedAt) {
 
@@ -37,6 +39,8 @@ public record BudgetRevisionResponse(
                 Money.formatCents(revision.getNewAmountCents()),
                 revision.isOldActive(),
                 revision.isNewActive(),
+                revision.getOldNote(),
+                revision.getNewNote(),
                 revision.getChangedBy().getId(),
                 revision.getChangedAt());
     }

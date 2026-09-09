@@ -58,6 +58,9 @@ public class Budget {
     @Column(nullable = false)
     private boolean active = true;
 
+    @Column(name = "note", length = 200)
+    private String note;
+
     protected Budget() {
     }
 
@@ -68,6 +71,17 @@ public class Budget {
             Category category,
             FamilyMember member,
             Long amountCents) {
+        this(household, periodMonth, scopeType, category, member, amountCents, null);
+    }
+
+    public Budget(
+            Household household,
+            YearMonth periodMonth,
+            BudgetScopeType scopeType,
+            Category category,
+            FamilyMember member,
+            Long amountCents,
+            String note) {
         requireValidScope(household, scopeType, category, member, amountCents);
         this.household = household;
         this.periodMonth = Objects.requireNonNull(periodMonth).toString();
@@ -75,6 +89,7 @@ public class Budget {
         this.category = category;
         this.member = member;
         this.amountCents = Objects.requireNonNull(amountCents);
+        this.note = note;
     }
 
     public Long getId() { return id; }
@@ -86,6 +101,7 @@ public class Budget {
     public Long getAmountCents() { return amountCents; }
     public Integer getVersion() { return version; }
     public boolean isActive() { return active; }
+    public String getNote() { return note; }
 
     void update(
             YearMonth periodMonth,
@@ -94,6 +110,17 @@ public class Budget {
             FamilyMember member,
             Long amountCents,
             boolean active) {
+        update(periodMonth, scopeType, category, member, amountCents, active, null);
+    }
+
+    void update(
+            YearMonth periodMonth,
+            BudgetScopeType scopeType,
+            Category category,
+            FamilyMember member,
+            Long amountCents,
+            boolean active,
+            String note) {
         requireValidScope(household, scopeType, category, member, amountCents);
         this.periodMonth = Objects.requireNonNull(periodMonth).toString();
         this.scopeType = Objects.requireNonNull(scopeType);
@@ -101,6 +128,7 @@ public class Budget {
         this.member = member;
         this.amountCents = Objects.requireNonNull(amountCents);
         this.active = active;
+        this.note = note;
     }
 
     private static void requireValidScope(
@@ -132,6 +160,14 @@ public class Budget {
             }
             if (!sameHousehold(household, member.getHousehold())) {
                 throw new IllegalArgumentException("Budget member must belong to its household");
+            }
+        }
+        if (scopeType == BudgetScopeType.CATEGORY_MEMBER) {
+            if (category == null || member == null || category.getKind() != TransactionKind.EXPENSE) {
+                throw new IllegalArgumentException("Category-member budgets require an expense category and exactly one member");
+            }
+            if (!sameHousehold(household, category.getHousehold()) || !sameHousehold(household, member.getHousehold())) {
+                throw new IllegalArgumentException("Budget targets must belong to its household");
             }
         }
     }

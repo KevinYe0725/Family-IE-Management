@@ -35,7 +35,11 @@ final class TransactionSpecifications {
                         root.get("account").get("bankAccount").get("id"), criteria.bankAccountId()));
             }
             if (criteria.memberId() != null) {
-                predicates.add(builder.equal(root.get("member").get("id"), criteria.memberId()));
+                if (criteria.memberId() == 0L) {
+                    predicates.add(builder.isNull(root.get("member")));
+                } else {
+                    predicates.add(builder.equal(root.get("member").get("id"), criteria.memberId()));
+                }
             }
             if (criteria.categoryId() != null) {
                 predicates.add(builder.equal(root.get("category").get("id"), criteria.categoryId()));

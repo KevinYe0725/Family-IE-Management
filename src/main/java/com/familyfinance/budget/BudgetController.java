@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,10 +21,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class BudgetController {
     private final BudgetService budgets;
     private final BudgetUsageService usage;
+    private final BudgetTotalService totals;
 
-    public BudgetController(BudgetService budgets, BudgetUsageService usage) {
+    public BudgetController(BudgetService budgets, BudgetUsageService usage, BudgetTotalService totals) {
         this.budgets = budgets;
         this.usage = usage;
+        this.totals = totals;
     }
 
     @GetMapping
@@ -35,6 +38,20 @@ public class BudgetController {
         BudgetPage result = budgets.list(authentication, periodMonth, page, size);
         return paged(result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext(),
                 ApiEnvelope.data(result.items()));
+    }
+
+    @GetMapping("/total")
+    ApiEnvelope<BudgetTotalResponse> total(
+            Authentication authentication,
+            @RequestParam String periodMonth) {
+        return ApiEnvelope.data(totals.get(authentication, periodMonth));
+    }
+
+    @PutMapping("/total")
+    ApiEnvelope<BudgetTotalResponse> saveTotal(
+            Authentication authentication,
+            @RequestBody BudgetTotalRequest request) {
+        return ApiEnvelope.data(totals.save(authentication, request));
     }
 
     @GetMapping("/{id}")
@@ -78,6 +95,50 @@ public class BudgetController {
         BudgetRevisionPage result = budgets.revisions(authentication, id, page, size);
         return paged(result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext(),
                 ApiEnvelope.data(result.items()));
+    }
+
+    @GetMapping("/{id}/usage-entries")
+    ResponseEntity<ApiEnvelope<List<BudgetUsageEntryResponse>>> usageEntries(
+            Authentication authentication,
+            @PathVariable long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        BudgetUsageEntryPage result = usage.usageEntries(authentication, id, page, size);
+        return paged(result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext(),
+                ApiEnvelope.data(result.items()));
+    }
+
+    @PostMapping("/copy")
+    ApiEnvelope<BudgetCopyResponse> copy(
+            Authentication authentication,
+            @RequestParam String fromMonth,
+            @RequestParam String toMonth,
+            @RequestParam(defaultValue = "all") String scope) {
+        return ApiEnvelope.data(budgets.copy(authentication, fromMonth, toMonth, scope));
+    }
+
+    @GetMapping("/hit-check")
+    ApiEnvelope<List<BudgetHitResponse>> hitCheck(
+            Authentication authentication,
+            @RequestParam String periodMonth,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long memberId,
+            @RequestParam long amountCents) {
+        return ApiEnvelope.data(usage.hitCheck(authentication,
+                BudgetService.requireMonth(periodMonth), categoryId, memberId, amountCents));
+    }
+
+    @GetMapping("/export.csv")
+    ResponseEntity<String> exportCsv(
+            Authentication authentication,
+            @RequestParam String periodMonth,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
+        String csv = usage.exportCsv(authentication, BudgetService.requireMonth(periodMonth), includeInactive);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "text/csv;charset=UTF-8")
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=budget-" + periodMonth + ".csv")
+                .body(csv);
     }
 
     static <T> ResponseEntity<T> paged(

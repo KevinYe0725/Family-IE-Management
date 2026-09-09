@@ -6,7 +6,8 @@ record BudgetSnapshot(
         Long categoryId,
         Long memberId,
         Long amountCents,
-        boolean active) {
+        boolean active,
+        String note) {
 
     static BudgetSnapshot from(Budget budget) {
         return new BudgetSnapshot(
@@ -15,6 +16,7 @@ record BudgetSnapshot(
                 budget.getCategory() == null ? null : budget.getCategory().getId(),
                 budget.getMember() == null ? null : budget.getMember().getId(),
                 budget.getAmountCents(),
-                budget.isActive());
+                budget.isActive(),
+                budget.getNote());
     }
 }
