@@ -455,86 +455,7 @@ export function LoansPage({
                   <span>剩余本金</span>
                   <strong>{money(item.currentPrincipal)}</strong>
                 </div>
-                <dl className="loan-facts" aria-label="贷款信息">
-                  <div>
-                    <dt>年利率</dt>
-                    <dd>{formatAnnualRatePercent(item.annualRate)}%</dd>
-                  </div>
-                  {item.remainingTerm !== undefined && (
-                    <div>
-                      <dt>剩余期数</dt>
-                      <dd>{item.remainingTerm} 期</dd>
-                    </div>
-                  )}
-                  {item.nextPaymentOn && (
-                    <>
-                      <div>
-                        <dt>下期还款日</dt>
-                        <dd>{dateText(item.nextPaymentOn)}</dd>
-                      </div>
-                      <div>
-                        <dt>下期应还</dt>
-                        <dd>{money(item.nextPaymentAmount)}</dd>
-                      </div>
-                    </>
-                  )}
-                </dl>
-                <details className="loan-facts-more">
-                  <summary>更多贷款信息</summary>
-                  <dl className="loan-facts">
-                    <div>
-                      <dt>
-                        {item.fundingMode === "OPENING"
-                          ? "期初剩余本金"
-                          : item.fundingMode === "FINANCED_PURCHASE"
-                            ? "贷款购买本金"
-                            : "放款本金"}
-                      </dt>
-                      <dd>{money(item.principal)}</dd>
-                    </div>
-                    <div>
-                      <dt>原合同期限</dt>
-                      <dd>
-                        {item.termMonths}{" "}
-                        {item.repaymentMethod === "CUSTOM" ? "期" : "个月"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>开始日</dt>
-                      <dd>{dateText(item.startOn)}</dd>
-                    </div>
-                    <div>
-                      <dt>当前有效计划总金额</dt>
-                      <dd>{money(item.scheduledRepaymentTotal)}</dd>
-                    </div>
-                    <div>
-                      <dt>计划剩余本息</dt>
-                      <dd>{money(item.remainingRepaymentTotal)}</dd>
-                    </div>
-                    <div>
-                      <dt>累计已还现金</dt>
-                      <dd>{money(item.paidRepaymentTotal)}</dd>
-                    </div>
-                    {item.remainingTerm !== undefined && (
-                      <div>
-                        <dt>计划到期</dt>
-                        <dd>{dateText(item.maturityOn)}</dd>
-                      </div>
-                    )}
-                    {item.latestStrategy && (
-                      <div className="loan-facts__wide">
-                        <dt>最近调整</dt>
-                        <dd>
-                          {item.latestStrategy === "REDUCE_TERM"
-                            ? "按原付款上限缩期"
-                            : item.latestStrategy === "ADJUST_TERM"
-                              ? "自选更短期数"
-                              : "保留期数"}
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                </details>
+                {loanOverviewFacts(item)}
                 <footer>
                   <Button
                     size="small"
@@ -1637,6 +1558,116 @@ export function LoansPage({
         )}
       </Drawer>
     </PageScaffold>
+  );
+}
+
+function loanOverviewFacts(item: Loan) {
+  const closed = item.status === "CLOSED";
+  const principalLabel =
+    item.fundingMode === "OPENING"
+      ? "期初剩余本金"
+      : item.fundingMode === "FINANCED_PURCHASE"
+        ? "贷款购买本金"
+        : "放款本金";
+  const rate = `${formatAnnualRatePercent(item.annualRate)}%`;
+  const term = `${item.termMonths} ${item.repaymentMethod === "CUSTOM" ? "期" : "个月"}`;
+  const strategy =
+    item.latestStrategy === "REDUCE_TERM"
+      ? "按原付款上限缩期"
+      : item.latestStrategy === "ADJUST_TERM"
+        ? "自选更短期数"
+        : item.latestStrategy
+          ? "保留期数"
+          : null;
+  type Fact = { dt: string; dd: string; wide?: boolean };
+  const facts = (rows: Array<Fact | null>): Fact[] =>
+    rows.filter((row): row is Fact => row !== null);
+
+  const head: Fact[] = closed
+    ? facts([
+        { dt: "年利率", dd: rate },
+        { dt: principalLabel, dd: money(item.principal) },
+        { dt: "开始日", dd: dateText(item.startOn) },
+        { dt: "累计已还现金", dd: money(item.paidRepaymentTotal) },
+      ])
+    : facts([
+        { dt: "年利率", dd: rate },
+        item.remainingTerm !== undefined
+          ? { dt: "剩余期数", dd: `${item.remainingTerm} 期` }
+          : null,
+        item.nextPaymentOn
+          ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+          : null,
+        item.nextPaymentOn
+          ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+          : null,
+      ]);
+
+  const fold: Fact[] = closed
+    ? facts([
+        { dt: "原合同期限", dd: term },
+        item.remainingTerm !== undefined
+          ? { dt: "剩余期数", dd: `${item.remainingTerm} 期` }
+          : null,
+        item.remainingTerm !== undefined
+          ? { dt: "计划到期", dd: dateText(item.maturityOn) }
+          : null,
+        {
+          dt: "当前有效计划总金额",
+          dd: money(item.scheduledRepaymentTotal),
+        },
+        { dt: "计划剩余本息", dd: money(item.remainingRepaymentTotal) },
+        item.nextPaymentOn
+          ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
+          : null,
+        item.nextPaymentOn
+          ? { dt: "下期应还", dd: money(item.nextPaymentAmount) }
+          : null,
+        strategy ? { dt: "最近调整", dd: strategy, wide: true } : null,
+      ])
+    : facts([
+        { dt: principalLabel, dd: money(item.principal) },
+        { dt: "原合同期限", dd: term },
+        { dt: "开始日", dd: dateText(item.startOn) },
+        {
+          dt: "当前有效计划总金额",
+          dd: money(item.scheduledRepaymentTotal),
+        },
+        { dt: "计划剩余本息", dd: money(item.remainingRepaymentTotal) },
+        { dt: "累计已还现金", dd: money(item.paidRepaymentTotal) },
+        item.remainingTerm !== undefined
+          ? { dt: "计划到期", dd: dateText(item.maturityOn) }
+          : null,
+        strategy ? { dt: "最近调整", dd: strategy, wide: true } : null,
+      ]);
+
+  return (
+    <>
+      <dl className="loan-facts" aria-label="贷款信息">
+        {head.map((fact) => (
+          <div key={fact.dt}>
+            <dt>{fact.dt}</dt>
+            <dd>{fact.dd}</dd>
+          </div>
+        ))}
+      </dl>
+      {fold.length > 0 && (
+        <details className="loan-facts-more">
+          <summary>更多贷款信息</summary>
+          <dl className="loan-facts">
+            {fold.map((fact) => (
+              <div
+                className={fact.wide ? "loan-facts__wide" : undefined}
+                key={fact.dt}
+              >
+                <dt>{fact.dt}</dt>
+                <dd>{fact.dd}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+    </>
   );
 }
 
