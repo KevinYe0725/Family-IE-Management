@@ -29,11 +29,18 @@ public class TransactionSummaryService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TransactionSummaryResponse summarize(long householdId, TransactionFilter filter) {
+        return report(householdId, filter, false).summary();
+    }
+
+    /** Shared record-based totals for the ledger and homepage; no second accounting definition. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Report report(long householdId, TransactionFilter filter, boolean rollupCategories) {
         List<FinancialTransaction> transactions = transactionService.findAllForCsvExport(householdId, filter);
         AmountAggregate income = new AmountAggregate();
         AmountAggregate expense = new AmountAggregate();
         Map<CategoryKey, AggregateRow> categories = new LinkedHashMap<>();
         Map<DailyKey, AggregateRow> daily = new LinkedHashMap<>();
+        Map<Long, AggregateRow> members = new LinkedHashMap<>();
         int unconvertedCount = 0;
         int nonCashTransactionCount = 0;
 
@@ -49,7 +56,8 @@ public class TransactionSummaryService {
             AmountAggregate kindTotal = transaction.getKind() == TransactionKind.INCOME ? income : expense;
             kindTotal.add(amount);
 
-            Category category = transaction.getCategory();
+            Category category = rollupCategories && transaction.getCategory().getParent() != null
+                    ? transaction.getCategory().getParent() : transaction.getCategory();
             CategoryKey categoryKey = new CategoryKey(category.getId(), transaction.getKind());
             categories.computeIfAbsent(categoryKey, ignored -> new AggregateRow(category.getName(), category.getColor()))
                     .add(amount);
@@ -57,12 +65,17 @@ public class TransactionSummaryService {
             DailyKey dailyKey = new DailyKey(transaction.getOccurredOn(), transaction.getKind(), category.getId());
             daily.computeIfAbsent(dailyKey, ignored -> new AggregateRow())
                     .add(amount);
+            if (transaction.getKind() == TransactionKind.EXPENSE) {
+                var member = transaction.getMember();
+                members.computeIfAbsent(member == null ? 0L : member.getId(), ignored ->
+                        new AggregateRow(member == null ? "家庭共同" : member.getName(), null)).add(amount);
+            }
         }
 
         String balance = income.unknown || expense.unknown
                 ? null
                 : format(income.total.subtract(expense.total));
-        return new TransactionSummaryResponse(
+        var summary = new TransactionSummaryResponse(
                 "CNY",
                 income.text(),
                 expense.text(),
@@ -90,7 +103,12 @@ public class TransactionSummaryService {
                                 entry.getValue().count))
                         .toList(),
                 nonCashTransactionCount);
+        return new Report(summary, members.entrySet().stream().map(entry ->
+                new MemberSummary(entry.getKey(), entry.getValue().name, entry.getValue().amount())).toList());
     }
+
+    public record Report(TransactionSummaryResponse summary, List<MemberSummary> members) {}
+    public record MemberSummary(long id, String name, String amount) {}
 
     private BigDecimal convertedAmount(long householdId, FinancialTransaction transaction) {
         Long amountCents = transaction.getAmountCents();

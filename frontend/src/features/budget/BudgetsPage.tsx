@@ -48,7 +48,7 @@ export function BudgetsPage({ request, role }: { request: RequestFn; role: House
   const usage = useQuery({ queryKey: ['budget-usage', month, filter, usagePage], queryFn: () => request<Page<BudgetUsage>>(`/api/budgets/usage?periodMonth=${month}&rollupCategories=true${usageStatus}&page=${usagePage}&size=50`, { responseType: 'page' }) });
   const allUsage = useQuery({ queryKey: ['budget-usage', month, 'all-rows'], queryFn: () => readAllPages(page => request<Page<BudgetUsage>>(`/api/budgets/usage?periodMonth=${month}&rollupCategories=true&includeInactive=true&page=${page}&size=50`, { responseType: 'page' })), enabled: manager });
   const total = useQuery({ queryKey: ['budget-total', month], queryFn: () => request<BudgetTotal>(`/api/budgets/total?periodMonth=${month}`) });
-  const dashboard = useQuery({ queryKey: ['dashboard', month, 'budget-total'], queryFn: () => request<{ summary: { expense?: string | null } }>(`/api/dashboard?month=${month}`) });
+  const expenseSummary = useQuery({ queryKey: ['budget-usage', month, 'expense-summary'], queryFn: () => request<{ expense?: string | null }>(`/api/budgets/expense-summary?periodMonth=${month}`) });
   const categories = useQuery({ queryKey: ['categories', 'flat-all-options'], queryFn: () => readAllPages(page => request<Page<Category>>(`/api/categories?projection=flat&page=${page}&size=50`, { responseType: 'page' })) });
   const members = useQuery({ queryKey: ['members'], queryFn: () => request<Member[]>('/api/members') });
   const revisions = useQuery({ queryKey: ['budget-revisions', historyId, revisionPage], queryFn: () => request<Page<BudgetRevision>>(`/api/budgets/${historyId}/revisions?page=${revisionPage}&size=50`, { responseType: 'page' }), enabled: historyId !== null });
@@ -68,7 +68,7 @@ export function BudgetsPage({ request, role }: { request: RequestFn; role: House
     .reduce((sum, item) => sum + parseCents(item.budget.amount), 0n);
   const totalAmount = total.data?.amount ? parseCents(total.data.amount) : null;
   const totalVersion = total.data?.version ?? 0;
-  const actualSpent = !dashboard.error && dashboard.data?.summary?.expense != null ? parseCents(dashboard.data.summary.expense) : null;
+  const actualSpent = !expenseSummary.error && expenseSummary.data?.expense != null ? parseCents(expenseSummary.data.expense) : null;
   const categoryName = (id: number | null) => categories.data?.find(item => item.id === id)?.name ?? '全部分类';
   const memberName = (id: number | null) => members.data?.find(item => item.id === id)?.name ?? '全家';
   const isObservation = (budget: Budget) => budget.scopeType === 'MEMBER' || budget.scopeType === 'CATEGORY_MEMBER';
@@ -109,17 +109,17 @@ export function BudgetsPage({ request, role }: { request: RequestFn; role: House
           : <button type="button" className="toolbar-button" onClick={() => setTotalDraft({ periodMonth: month, amount: formatYuan(totalAmount), version: totalVersion })}>调整总预算</button>}
       </div>
       {totalAmount !== null && <>
-        <div className="budget-total-values"><span>总额 {money(formatYuan(totalAmount))}</span><span>已分配 {money(formatYuan(allocated))}</span><span>剩余可分配 {money(formatYuan(remaining))}</span><span>实际总支出 {money(actualSpent == null ? null : formatYuan(actualSpent))}</span></div>
+        <div className="budget-total-values"><span>总额 {money(formatYuan(totalAmount))}</span><span>已分配 {money(formatYuan(allocated))}</span><span>剩余可分配 {money(formatYuan(remaining))}</span><span>实际费用 {money(actualSpent == null ? null : formatYuan(actualSpent))}</span></div>
         <div className="budget-segment-bar" aria-label="分类预算占总预算的分段">
           {bigSegments.map(segment => <i key={segment.key} data-tip={`${segment.name} · 预算 ${money(formatYuan(segment.amount))} · 占总预算 ${shareLabel(segment.amount)}`} style={{ width: segmentWidth(segment.amount), background: segment.color }} />)}
           {otherAmount > 0n && <i data-tip={`其他 · ${otherCount} 个分类（各占总预算不超过 1%）合计 预算 ${money(formatYuan(otherAmount))} · 占总预算 ${shareLabel(otherAmount)}`} style={{ width: segmentWidth(otherAmount), background: OTHER_COLOR }} />}
           {remaining > 0n && <i data-tip={`未分配 · 剩余可分配 ${money(formatYuan(remaining))} · 占总预算 ${shareLabel(remaining)}`} style={{ width: segmentWidth(remaining), background: UNALLOCATED_COLOR }} />}
         </div>
         {allocated > totalAmount && <p role="alert" className="field-help">分类预算合计已超过月度总预算，请先调整总预算或缩减分类预算。</p>}
-        {actualSpent !== null && actualSpent > totalAmount && <p role="alert" className="field-help">本月实际总支出已超过总预算。</p>}
+        {actualSpent !== null && actualSpent > totalAmount && <p role="alert" className="field-help">本月实际费用已超过总预算。</p>}
       </>}
       {totalAmount === null && <p className="field-help">尚未设置本月总预算：设置后分类预算的“已分配”合计将受总预算约束。</p>}
-    <QueryState loading={dashboard.isLoading} error={dashboard.error}>{null}</QueryState></QueryState></section>}
+    <QueryState loading={expenseSummary.isLoading} error={expenseSummary.error}>{null}</QueryState></QueryState></section>}
     <div className="toolbar budget-toolbar"><label>预算月份<DateField mode="month" allowClear={false} value={month} onChange={e => { if(e.target.value)setMonth(e.target.value); }} /></label>
       <div className="budget-toolbar-actions">{manager && <button type="button" className="toolbar-button" onClick={() => { setTemplateOpen(true); setTemplateMessage(null); }}>预算模板</button>}<a className="toolbar-button" href={`/api/budgets/export.csv?periodMonth=${month}`} download>预算 CSV</a></div></div>
     <nav className="segmented-tabs" aria-label="预算状态"><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>全部预算</button><button className={filter==='active'?'active':''} onClick={()=>setFilter('active')}>使用中</button><button className={filter==='inactive'?'active':''} onClick={()=>setFilter('inactive')}>已停用</button></nav>

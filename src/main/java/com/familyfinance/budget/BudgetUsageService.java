@@ -71,6 +71,13 @@ public class BudgetUsageService {
                 items, safePage, safeSize, result.getTotalElements(), result.getTotalPages(), result.hasNext());
     }
 
+    public java.util.Map<String, String> expenseSummary(Authentication authentication, YearMonth month) {
+        long householdId = currentMembership.require(authentication).householdId();
+        var amount = transactions.sumBudgetExpenseAmount(householdId, month.atDay(1),
+                month.plusMonths(1).atDay(1), "TOTAL", null, null, true);
+        return java.util.Map.of("expense", com.familyfinance.shared.DecimalMoney.format(amount));
+    }
+
     /** Drill-down of the effective expense entries that make up one budget's spent. */
     public BudgetUsageEntryPage usageEntries(
             Authentication authentication, long budgetId, int page, int size) {

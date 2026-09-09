@@ -29,7 +29,10 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const currencyOptions=useQuery({queryKey:['currency-capabilities'],queryFn:()=>request<{currencies:string[];deploymentReady?:boolean}>('/api/currencies'),refetchInterval:query=>query.state.data?.deploymentReady===false?5000:false});
   const supportedCurrencies=currencyOptions.data?.currencies??['CNY'];
   const [viewMode,setViewMode]=useState<'records'|'cash'>('records');
-  const [month, setMonth] = useState(localYearMonth());
+  const [month, setMonth] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('month');
+    return requested && /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(requested) ? requested : localYearMonth();
+  });
   const [selectedDay,setSelectedDay]=useState<string|null>(null);
   const [detail,setDetail]=useState<Transaction|null>(null);
   const [archiveCandidate,setArchiveCandidate]=useState<Account|null>(null);

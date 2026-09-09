@@ -103,3 +103,13 @@ it('keeps the applied dashboard month when manual filter text is invalid or clea
   expect(input).toHaveValue(appliedMonth);
   expect(screen.queryByText(/请输入有效月份（YYYY-MM）/)).not.toBeInTheDocument();
 });
+
+it('carries the selected month when opening income and expense details', async () => {
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><DashboardPage request={request as RequestFn} role="OWNER"/></QueryClientProvider>);
+  await screen.findByText('¥350,000.00');
+  const input = screen.getByRole('textbox', {name:'收支月份'});
+  await userEvent.clear(input);
+  await userEvent.type(input, '2026-08');
+  await userEvent.tab();
+  expect(screen.getByRole('link',{name:'收支明细'})).toHaveAttribute('href','/workspace/transactions?month=2026-08');
+});

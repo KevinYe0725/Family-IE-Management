@@ -42,6 +42,14 @@ it('opens in expense mode and uses the same direction for the chart and records'
  expect(screen.queryByText('收支差额')).not.toBeInTheDocument();
  for(const [path] of request.mock.calls.filter(([p])=>p.startsWith('/api/transactions')))expect(new URL(path,'http://test.local').searchParams.get('kind')).toBe('expense');
 });
+it('preserves the month selected on the homepage',async()=>{
+ window.history.replaceState({},'', '/workspace/transactions?month=2026-08');
+ try {
+  const request=show();await screen.findByRole('region',{name:'支出汇总'});
+  expect(screen.getByRole('textbox',{name:'账期'})).toHaveValue('2026-08');
+  expect(request.mock.calls.some(([path])=>path.startsWith('/api/transactions?month=2026-08'))).toBe(true);
+ } finally {window.history.replaceState({},'', '/');}
+});
 it('reveals an income saved from expense view and defaults the next draft to the visible direction',async()=>{
  show();await screen.findByRole('button',{name:'筛选2026-09-10支出'});
  await userEvent.click(screen.getByRole('button',{name:'记一笔'}));

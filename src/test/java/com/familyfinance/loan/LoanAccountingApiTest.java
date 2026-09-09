@@ -45,6 +45,23 @@ class LoanAccountingApiTest {
   assertThat(jdbc.queryForObject("select status from loan_installments where id=?",String.class,installment)).isEqualTo("PENDING");
   assertThat(principal(loan)).isEqualTo(200000);assertThat(ledger.balance(household,"CASH:"+account)).isZero();
  }
+ @Test void dashboardAndLedgerIncludeTheSameFullRepaymentOnItsActualDate() throws Exception {
+  fund("1100.00");long loan=create("OPENING");
+  pay(first(loan),"report-payment","2026-01-03").andExpect(status().isOk());
+  mvc.perform(get("/api/transactions/summary").session(session).param("month","2026-01"))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.data.expense").value("1100.00"));
+  mvc.perform(get("/api/dashboard").session(session).param("month","2026-01"))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.data.summary.income").value("0.00"))
+   .andExpect(jsonPath("$.data.summary.expense").value("1100.00"))
+   .andExpect(jsonPath("$.data.summary.balance").value("-1100.00"))
+   .andExpect(jsonPath("$.data.daily[0].date").value("2026-01-03"))
+   .andExpect(jsonPath("$.data.daily[0].expense").value("1100.00"))
+   .andExpect(jsonPath("$.data.expenseByCategory[0].amount").value("1100.00"))
+   .andExpect(jsonPath("$.data.expenseByMember[0].amount").value("1100.00"));
+  mvc.perform(get("/api/budgets/expense-summary").session(session).param("periodMonth","2026-01"))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.data.expense").value("100.00"));
+ }
  @Test void exactFundsSplitPrincipalInterestAndMetadataKeepsAllHistory() throws Exception {
   fund("1100.00");long loan=create("OPENING"),installment=first(loan);
   long tx=data(pay(installment,"exact","2026-01-03").andExpect(status().isOk()).andExpect(jsonPath("$.data.paidOn").value("2026-01-03")).andReturn()).path("confirmedTransactionId").asLong();

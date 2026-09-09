@@ -50,7 +50,7 @@ export function DashboardPage({ request, role }: { request: RequestFn; role: Hou
           {!!dashboard.data?.daily.length && <div className="home-cash-chart"><FlowChart points={dashboard.data.daily.map(row => ({ label: row.date.slice(8)+'日', income: row.income, expense: row.expense }))} compact/></div>}
           {!dashboard.data?.daily.length && <p className="home-empty-inline">本月还没有收支</p>}
         </QueryState>
-        <footer className="home-cash-footer"><a className="home-link" href="/workspace/transactions">收支明细<ArrowRight size={16}/></a><a className="home-record-button" href="/workspace/transactions?create=1">记一笔<ArrowUpRight size={16}/></a></footer>
+        <footer className="home-cash-footer"><a className="home-link" href={`/workspace/transactions?month=${month}`}>收支明细<ArrowRight size={16}/></a><a className="home-record-button" href="/workspace/transactions?create=1">记一笔<ArrowUpRight size={16}/></a></footer>
       </section>
     <HomePortfolio request={request} stale={netWorth.data?.investment.stalePrice ?? false}/>
     <PinnedStockCard request={request} page="home"/>

@@ -47,6 +47,12 @@ public class BudgetController {
         return ApiEnvelope.data(totals.get(authentication, periodMonth));
     }
 
+    @GetMapping("/expense-summary")
+    ApiEnvelope<java.util.Map<String, String>> expenseSummary(
+            Authentication authentication, @RequestParam String periodMonth) {
+        return ApiEnvelope.data(usage.expenseSummary(authentication, BudgetService.requireMonth(periodMonth)));
+    }
+
     @PutMapping("/total")
     ApiEnvelope<BudgetTotalResponse> saveTotal(
             Authentication authentication,
