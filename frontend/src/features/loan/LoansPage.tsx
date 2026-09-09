@@ -479,6 +479,17 @@ export function LoansPage({
                     <strong>{money(item.currentPrincipal)}</strong>
                   </div>
                 )}
+                {(item.overdueInstallments ?? 0) > 0 && (
+                  <div className="loan-overdue" role="status">
+                    <StatusTag tone="danger">
+                      逾期 {item.overdueDays ?? 0} 天
+                    </StatusTag>
+                    <span>
+                      待确认应还 {money(item.overdueAmount)} ·{" "}
+                      {item.overdueInstallments} 期未还
+                    </span>
+                  </div>
+                )}
                 {loanOverviewFacts(item)}
                 <footer>
                   <Button

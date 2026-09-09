@@ -10,5 +10,8 @@ public record LoanDebtOverviewResponse(
         String thirtyDayDue,
         String paidRepayment,
         String weightedAnnualRatePercent,
-        LocalDate nextDueOn) {
+        LocalDate nextDueOn,
+        int overdueInstallments,
+        String overdueAmount,
+        int overdueDays) {
 }

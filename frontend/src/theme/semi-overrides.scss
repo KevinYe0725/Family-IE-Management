@@ -592,3 +592,12 @@ a:hover { text-decoration: underline; }
 .is-collapsed .sidebar-collapse .navigation-icon { transform: rotate(180deg); }
 .mobile-drawer { overflow-y: auto; }
 @media (max-width: 820px) { .unified-sidebar { display: none; } .mobile-drawer .grouped-nav { padding-inline: 8px; } }
+
+/* 逾期提示（贷款卡片 / 债务总览 / 首页近期提醒） */
+.loan-overdue { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 7px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); }
+.loan-overdue span { color: var(--ledger-text); font-size: 12px; font-weight: 500; }
+.debt-overview__overdue { display: block; margin-top: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 7px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); color: var(--ledger-danger, #d54941); font-size: 12px; font-weight: 600; text-decoration: none; }
+.debt-overview__overdue:hover { background: color-mix(in srgb, var(--ledger-danger, #d54941) 10%, #fff); }
+.overdue-reminder { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--ledger-danger, #d54941) 30%, var(--ledger-border)); border-radius: 8px; background: color-mix(in srgb, var(--ledger-danger, #d54941) 6%, #fff); text-decoration: none; }
+.overdue-reminder strong { display: block; color: var(--ledger-text); font-size: 13px; }
+.overdue-reminder small { color: var(--ledger-muted); font-size: 11px; }

@@ -79,6 +79,20 @@ public class LoanDebtOverviewService {
                 BigDecimal.class, household);
         BigDecimal paid = paidInstallments.add(paidPrepayments);
 
+        Object[] overdue = jdbc.query(
+                "select count(*), coalesce(sum(principal_amount + interest_amount),0), min(due_on)"
+                        + " from loan_installments"
+                        + " where household_id=? and status='PENDING' and due_on<?"
+                        + " and loan_id in (select id from loans where household_id=? and status='ACTIVE')",
+                rs -> {
+                    if (!rs.next()) return new Object[]{0, BigDecimal.ZERO, null};
+                    return new Object[]{rs.getInt(1), rs.getBigDecimal(2), rs.getObject(3, LocalDate.class)};
+                }, household, today, household);
+        int overdueInstallments = (Integer) overdue[0];
+        BigDecimal overdueAmount = (BigDecimal) overdue[1];
+        LocalDate oldestDue = (LocalDate) overdue[2];
+        int overdueDays = oldestDue == null ? 0 : (int) java.time.temporal.ChronoUnit.DAYS.between(oldestDue, today);
+
         BigDecimal weighted = weightedBase != null && weightedBase.signum() > 0
                 ? loan[1].multiply(new BigDecimal("100")).divide(weightedBase, 4, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
@@ -89,7 +103,10 @@ public class LoanDebtOverviewService {
                 plain(thirtyDay),
                 plain(paid),
                 weighted.setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                nextDueOn);
+                nextDueOn,
+                overdueInstallments,
+                plain(overdueAmount),
+                overdueDays);
     }
 
     private static String plain(BigDecimal value) {

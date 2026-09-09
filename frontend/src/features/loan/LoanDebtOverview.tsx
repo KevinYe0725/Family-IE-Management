@@ -35,6 +35,12 @@ export function LoanDebtOverviewPanel({ data }: { data: LoanDebtOverview }) {
           <dd>{data.nextDueOn ? dateText(data.nextDueOn) : '—'}</dd>
         </div>
       </dl>
+      {data.overdueInstallments > 0 && (
+        <a className="debt-overview__overdue" href="/workspace/loans">
+          逾期待还 {money(data.overdueAmount)}（{data.overdueInstallments} 期 · 最长逾期{' '}
+          {data.overdueDays} 天）去还款
+        </a>
+      )}
     </section>
   );
 }

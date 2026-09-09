@@ -11,6 +11,7 @@ const request = vi.fn(async (path: string) => {
   if (path === '/api/debt-analysis') return { liability: '210000.00', asset: '560000.00', debtRatioPercent: '37.5', loans: [] };
   if (path === '/api/portfolio') return { positions: [], totals: { cost: '30000.00', marketValue: '32000.00', realizedProfit: '200.00', unrealizedProfit: '1800.00', totalProfit: '2000.00', unpricedPositions: 0 } };
   if (path === '/api/notifications') return { items: [], unreadCount: 2 };
+  if (path === '/api/loans/debt-overview') return { count: 0, remainingPrincipal: '0.00', remainingRepayment: '0.00', thirtyDayDue: '0.00', paidRepayment: '0.00', weightedAnnualRatePercent: '0.00', nextDueOn: null, overdueInstallments: 0, overdueAmount: '0.00', overdueDays: 0 };
   throw new Error(`unexpected ${path}`);
 });
 
