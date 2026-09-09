@@ -84,19 +84,19 @@ function useModal(open: boolean, onClose: () => void) {
   return { id, ref };
 }
 
-export function Drawer({ open, title, description, onClose, children, draft, busy = false, sessionKey, savedKey, onSessionStart, presentation='drawer', size='medium',className='' }: {
+export function Drawer({ open, title, description, onClose, children, draft, busy = false, sessionKey, savedKey, onSessionStart, presentation='drawer', size='medium',className='', obscured=false }: {
   open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode;
-  draft?: unknown; busy?: boolean; sessionKey?: unknown; savedKey?: unknown; onSessionStart?: () => void; presentation?:'drawer'|'modal';size?:'medium'|'wide';className?:string;
+  draft?: unknown; busy?: boolean; sessionKey?: unknown; savedKey?: unknown; onSessionStart?: () => void; presentation?:'drawer'|'modal';size?:'medium'|'wide';className?:string; obscured?:boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
   const protection = useDraftProtection({ active: open, draft, busy, sessionKey, savedKey, onDiscard: onClose });
   const start = useRef(onSessionStart); start.current = onSessionStart;
   useLayoutEffect(() => { setConfirming(false); if (open) start.current?.(); }, [open, sessionKey]);
   const requestClose = () => { if (busy) return; if (protection.dirty) setConfirming(true); else onClose(); };
-  const {id,ref} = useModal(open,requestClose);
+  const {id,ref} = useModal(open && !obscured,requestClose);
   const Panel=presentation==='modal'?'section':'aside';
   if (!open) return null;
-  return createPortal(<><div className={`sheet-backdrop${presentation==='modal'?' action-dialog-backdrop':''}`} onMouseDown={event => event.target === event.currentTarget && requestClose()}>
+  return createPortal(<><div style={obscured?{display:'none'}:undefined} className={`sheet-backdrop${presentation==='modal'?' action-dialog-backdrop':''}`} onMouseDown={event => event.target === event.currentTarget && requestClose()}>
     <Panel ref={ref} tabIndex={-1} className={`side-sheet${presentation==='modal'?` action-dialog action-dialog--${size}`:''} ${className}`} role="dialog" aria-modal="true" aria-labelledby={id}>
       <header><div><h2 id={id}>{title}</h2>{description && <p>{description}</p>}</div><button type="button" className="icon-button" aria-label="关闭" disabled={busy} onClick={requestClose}><X size={20} aria-hidden="true"/></button></header>
       <div className="sheet-body"><fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'grid', gap: 'inherit' }} onSubmitCapture={event => { if (busy) { event.preventDefault(); event.stopPropagation(); } }}>{children}</fieldset></div>

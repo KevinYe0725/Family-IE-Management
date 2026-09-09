@@ -26,11 +26,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final TransactionSummaryService transactionSummaryService;
     private final CurrentHousehold currentHousehold;
     private final AccountingCommandExecutor executor;
 
-    public TransactionController(TransactionService transactionService, CurrentHousehold currentHousehold,AccountingCommandExecutor executor) {
+    public TransactionController(
+            TransactionService transactionService,
+            TransactionSummaryService transactionSummaryService,
+            CurrentHousehold currentHousehold,
+            AccountingCommandExecutor executor) {
         this.transactionService = transactionService;
+        this.transactionSummaryService = transactionSummaryService;
         this.currentHousehold = currentHousehold;
         this.executor=executor;
     }
@@ -49,7 +55,7 @@ public class TransactionController {
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId);
+        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q);
         TransactionPage result = transactionService.list(currentHousehold.id(authentication), filter, page, size);
         return ResponseEntity.ok()
                 .header("X-Page", Integer.toString(result.page()))
@@ -58,6 +64,22 @@ public class TransactionController {
                 .header("X-Total-Pages", Integer.toString(result.totalPages()))
                 .header("X-Has-Next", Boolean.toString(result.hasNext()))
                 .body(ApiEnvelope.data(result.items()));
+    }
+
+    @GetMapping("/summary")
+    ApiEnvelope<TransactionSummaryResponse> summary(
+            Authentication authentication,
+            @RequestParam(required = false) String month,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String kind,
+            @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false) Long bankAccountId,
+            @RequestParam(required = false) Long memberId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String q) {
+        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q);
+        return ApiEnvelope.data(transactionSummaryService.summarize(currentHousehold.id(authentication), filter));
     }
 
     @GetMapping("/{id}")
@@ -91,5 +113,18 @@ public class TransactionController {
             @RequestHeader(value="Idempotency-Key",required=false) String suppliedKey) {
         String key=AccountingRequests.key(suppliedKey);
         executor.execute(()->{transactionService.delete(authentication, id,key);return null;});
+    }
+
+    private static TransactionFilter filter(
+            String month,
+            String from,
+            String to,
+            String kind,
+            Long accountId,
+            Long bankAccountId,
+            Long memberId,
+            Long categoryId,
+            String q) {
+        return new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId);
     }
 }

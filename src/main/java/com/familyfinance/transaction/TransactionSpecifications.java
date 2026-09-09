@@ -52,12 +52,14 @@ final class TransactionSpecifications {
             }
             if (criteria.keyword() != null) {
                 String pattern = "%" + escapeLike(criteria.keyword().toLowerCase(Locale.ROOT)) + "%";
+                var category = root.join("category", JoinType.LEFT);
+                var member = root.join("member", JoinType.LEFT);
                 predicates.add(builder.or(
                         builder.like(builder.lower(root.get("merchant")), pattern, LIKE_ESCAPE),
                         builder.like(builder.lower(root.get("location")), pattern, LIKE_ESCAPE),
                         builder.like(builder.lower(root.get("note")), pattern, LIKE_ESCAPE),
-                        builder.like(builder.lower(root.join("category").get("name")), pattern, LIKE_ESCAPE),
-                        builder.like(builder.lower(root.join("member").get("name")), pattern, LIKE_ESCAPE)));
+                        builder.like(builder.lower(category.get("name")), pattern, LIKE_ESCAPE),
+                        builder.like(builder.lower(member.get("name")), pattern, LIKE_ESCAPE)));
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         };

@@ -7,21 +7,23 @@ import { businessDate, newIdempotencyKey } from '../../shared/runtime';
 import { DateField } from '../../shared/DateField';
 import { PaginationControls, usePageRecovery } from '../../shared/pagination';
 import { AccountOptions, PaymentPreview, useFundsRefresh } from '../accounting';
-import { DataPanel, Drawer, FormError, QueryState, isManager, money, type RequestFn } from '../common';
+import { DataPanel, ActionDialog, FormError, QueryState, isManager, money, type RequestFn } from '../common';
 
-export function TransfersPanel({ request, role, accounts, onHistory }: { request: RequestFn; role: HouseholdRole; accounts: Account[]; onHistory: (id: number) => void }) {
+export function TransfersPanel({ request, role, accounts, onHistory, onOverlayChange }: { request: RequestFn; role: HouseholdRole; accounts: Account[]; onHistory: (id: number) => void; onOverlayChange?: (open:boolean)=>void }) {
   const [page, setPage] = useState(0);
   const [draft, setDraft] = useState<{ fromAccountId: string; toAccountId: string; amount: string; occurredOn: string; idempotencyKey: string } | null>(null);
+  useEffect(()=>{onOverlayChange?.(draft!==null);},[draft,onOverlayChange]);
+  useEffect(()=>()=>onOverlayChange?.(false),[onOverlayChange]);
   const history = useQuery({ queryKey: ['transfers', page], queryFn: () => request<Page<CashTransfer>>(`/api/transfers?page=${page}&size=20`, { responseType: 'page' }) });
   const fundsError = useFundsRefresh();
   usePageRecovery(page, history.data, setPage);
   const save = useMutation({ mutationFn: (value: NonNullable<typeof draft>) => request<CashTransfer>('/api/transfers', { method: 'POST', body: { ...value, fromAccountId: Number(value.fromAccountId), toAccountId: Number(value.toAccountId) } }), onError: fundsError, onSuccess: () => { setDraft(null); setPage(0); } });
-  return <DataPanel title="账户互转" meta="记录家庭账户间已发生的转账，不计入收入或费用。" action={isManager(role) && <Button onClick={() => setDraft({ fromAccountId: '', toAccountId: '', amount: '', occurredOn: businessDate(), idempotencyKey: newIdempotencyKey() })}>记录账户互转</Button>}>
+  return <DataPanel title="账户互转"  action={isManager(role) && <Button onClick={() => setDraft({ fromAccountId: '', toAccountId: '', amount: '', occurredOn: businessDate(), idempotencyKey: newIdempotencyKey() })}>记录账户互转</Button>}>
     <QueryState loading={history.isLoading} error={history.error} empty={!history.data?.items.length && page === 0} emptyTitle="还没有账户互转记录">
       <div className="responsive-data"><table><thead><tr><th>日期</th><th>转出账户</th><th>转入账户</th><th>金额</th><th>历史</th></tr></thead><tbody>{history.data?.items.map(row => <tr key={row.id}><td>{row.occurredOn}</td><td>{accounts.find(a => a.id === row.fromAccountId)?.name ?? `已归档账户 #${row.fromAccountId}`}</td><td>{accounts.find(a => a.id === row.toAccountId)?.name ?? `已归档账户 #${row.toAccountId}`}</td><td>{money(row.amount,accounts.find(a=>a.id===row.fromAccountId)?.currency)}</td><td><button className="text-action" onClick={() => onHistory(row.id)}>账务历史</button></td></tr>)}</tbody></table></div>
       <PaginationControls page={page} totalPages={history.data?.totalPages ?? 0} hasNext={history.data?.hasNext ?? false} onPageChange={setPage} label="账户互转" />
     </QueryState>
-    <Drawer open={draft !== null} draft={draft} sessionKey={draft?.idempotencyKey} busy={save.isPending} onSessionStart={save.reset} title="记录账户互转" onClose={() => setDraft(null)}>{draft && <form className="feature-form" onSubmit={e => { e.preventDefault(); save.mutate(draft); }}>
+    <ActionDialog open={draft !== null} draft={draft} sessionKey={draft?.idempotencyKey} busy={save.isPending} onSessionStart={save.reset} title="记录账户互转" onClose={() => setDraft(null)}>{draft && <form className="feature-form" onSubmit={e => { e.preventDefault(); save.mutate(draft); }}>
       <FormError error={save.error} />
       <BankAccountPicker label="转出账户" name="fromAccountId" request={request} accounts={accounts} value={draft.fromAccountId} onChange={id => setDraft({ ...draft, fromAccountId:id,toAccountId:'' })}/>
       <BankAccountPicker label="转入账户" name="toAccountId" request={request} accounts={accounts} currency={accounts.find(a=>String(a.id)===draft.fromAccountId)?.currency??'CNY'} excludeId={Number(draft.fromAccountId)} value={draft.toAccountId} onChange={id => setDraft({ ...draft, toAccountId:id })}/>
@@ -30,7 +32,7 @@ export function TransfersPanel({ request, role, accounts, onHistory }: { request
       <PaymentPreview account={accounts.find(a => String(a.id) === draft.fromAccountId)} amount={draft.amount} />
       <PaymentPreview incoming account={accounts.find(a => String(a.id) === draft.toAccountId)} amount={draft.amount} />
       <Button htmlType="submit" theme="solid" loading={save.isPending} disabled={!draft.fromAccountId || !draft.toAccountId || draft.fromAccountId === draft.toAccountId}>保存互转记录</Button>
-    </form>}</Drawer>
+    </form>}</ActionDialog>
   </DataPanel>;
 }
 
