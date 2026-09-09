@@ -52,13 +52,39 @@ public class LoanService {
         LocalDate day=accounting.accountingDate(r.accountingOn());
         Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,v.user,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
         loan.replaceSchedule(v.schedule);
+        long purchasePriceCents=loan.getPrincipalCents();
+        com.familyfinance.ledger.FinancialAccount downAccount=null;
+        var spec=r.purchasedAsset();
+        if(purchased&&spec!=null){
+            var perrors=new LinkedHashMap<String,String>();
+            if(spec.purchaseValue()!=null){
+                try{purchasePriceCents=Money.parseCents(spec.purchaseValue());}
+                catch(IllegalArgumentException e){perrors.put("purchaseValue",e.getMessage());}
+            }
+            if(purchasePriceCents<loan.getPrincipalCents())perrors.put("purchaseValue","资产购入价值不能低于贷款本金");
+            if(purchasePriceCents>loan.getPrincipalCents()){
+                if(r.downPaymentAccountId()==null)perrors.put("downPaymentAccountId","有首付差额时必须选择首付资金账户");
+                else{
+                    FinancialAccount candidate=accounts.findLockedByIdAndHouseholdId(r.downPaymentAccountId(),h).filter(x->!x.isArchived()).orElse(null);
+                    if(candidate==null)perrors.put("downPaymentAccountId","首付资金账户必须属于当前家庭且未归档");
+                    else if(!candidate.getCurrency().equals("CNY"))perrors.put("downPaymentAccountId","首付请使用人民币资金账户");
+                    else downAccount=candidate;
+                }
+            }
+            if(!perrors.isEmpty())throw new RequestValidationException(perrors);
+        }
         if(purchased){
             // Persist the valid all-null accounting tuple to obtain the immutable origin ID.
             loans.saveAndFlush(loan);
-            loan.attachPurchasedAsset(purchasedAssets.create(loan,day));
+            String assetName=spec==null||spec.name()==null?null:spec.name().trim();
+            FamilyMember assetOwner=spec==null||spec.ownerMemberId()==null?null:resolveMember(h,spec.ownerMemberId(),new LinkedHashMap<>());
+            loan.attachPurchasedAsset(purchasedAssets.create(loan,day,assetName,assetOwner,purchasePriceCents));
         }
         loan.accounting(r.fundingMode(),day,disbursement);loans.saveAndFlush(loan);
-        accounting.originate(loan,access.context().userId(),key,false);requests.record(h,key,digest,loan.getId());return response(loan,true);
+        if(purchased&&purchasePriceCents>loan.getPrincipalCents())
+            accounting.originateFinanced(loan,purchasePriceCents,downAccount,access.context().userId(),key);
+        else accounting.originate(loan,access.context().userId(),key,false);
+        requests.record(h,key,digest,loan.getId());return response(loan,true);
     }
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r){return update(a,id,r,AccountingRequests.key(null));}
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r,String key){
