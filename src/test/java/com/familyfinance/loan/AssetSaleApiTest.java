@@ -189,8 +189,18 @@ class AssetSaleApiTest extends LoanAssetApiSupport {
         long noLoan=asset("OTHER");String key=UUID.randomUUID().toString();
         var first=data(mvc.perform(post("/api/assets/"+noLoan+"/dispose").session(session).with(csrf()).header("Idempotency-Key",key)
             .contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk()).andReturn());
-        assertThat(data(mvc.perform(post("/api/assets/"+noLoan+"/dispose").session(session).with(csrf()).header("Idempotency-Key",key)
-            .contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk()).andReturn())).isEqualTo(first);
+        var settled=completeSnapshot();
+        var replay=data(mvc.perform(post("/api/assets/"+noLoan+"/dispose").session(session).with(csrf()).header("Idempotency-Key",key)
+            .contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk()).andReturn());
+        // Linux clocks expose nanoseconds; timestamp(6) storage rounds to microseconds.
+        // Preserve exact business-field equality and permit only that bounded timestamp rounding.
+        assertThat(java.time.Duration.between(java.time.Instant.parse(first.path("archivedAt").asText()),
+            java.time.Instant.parse(replay.path("archivedAt").asText())).abs().toNanos()).isLessThanOrEqualTo(1000L);
+        var originalFields=(tools.jackson.databind.node.ObjectNode)first.deepCopy();
+        var replayFields=(tools.jackson.databind.node.ObjectNode)replay.deepCopy();
+        originalFields.remove("archivedAt");replayFields.remove("archivedAt");
+        assertThat(replayFields).isEqualTo(originalFields);
+        assertThat(completeSnapshot()).isEqualTo(settled);
         mvc.perform(get("/api/assets/"+noLoan+"/sale").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
     }
     @Test void zeroAssetCanArchiveWithClosedOrArchivedZeroDebtReferencesWithoutUnlinkingHistory() throws Exception {
