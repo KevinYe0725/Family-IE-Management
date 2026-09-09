@@ -50,27 +50,22 @@ public class LoanService {
         if(purchased&&r.linkedAssetId()!=null)throw new RequestValidationException(Map.of("linkedAssetId","本次贷款购买物不能同时关联已有资产"));
         FinancialAccount disbursement=disbursement(h,r.fundingMode(),r.disbursementAccountId());
         LocalDate day=accounting.accountingDate(r.accountingOn());
-        Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,v.user,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
+        // 贷款购买自动建立的贷款默认由创建人担任确认人（可在贷款板块另行修改）；否则从未分配确认人的贷款无法确认任何一期还款。
+        var assignee=v.user!=null?v.user:(purchased?access.membership().getUser():null);
+        Loan loan=new Loan(access.household(),v.name,v.type,v.asset,v.member,assignee,v.account,v.category,v.principal,v.rate,v.term,v.method,v.start,access.membership().getUser());
         loan.replaceSchedule(v.schedule);
-        long purchasePriceCents=loan.getPrincipalCents();
-        com.familyfinance.ledger.FinancialAccount downAccount=null;
         var spec=r.purchasedAsset();
-        if(purchased&&spec!=null){
+        if(purchased){
             var perrors=new LinkedHashMap<String,String>();
-            if(spec.purchaseValue()!=null){
-                try{purchasePriceCents=Money.parseCents(spec.purchaseValue());}
-                catch(IllegalArgumentException e){perrors.put("purchaseValue",e.getMessage());}
+            if(spec!=null&&spec.purchaseValue()!=null){
+                try{
+                    long provided=Money.parseCents(spec.purchaseValue());
+                    if(provided!=loan.getPrincipalCents())
+                        perrors.put("purchaseValue","贷款购买时贷款本金必须等于购入价值");
+                }catch(IllegalArgumentException e){perrors.put("purchaseValue",e.getMessage());}
             }
-            if(purchasePriceCents<loan.getPrincipalCents())perrors.put("purchaseValue","资产购入价值不能低于贷款本金");
-            if(purchasePriceCents>loan.getPrincipalCents()){
-                if(r.downPaymentAccountId()==null)perrors.put("downPaymentAccountId","有首付差额时必须选择首付资金账户");
-                else{
-                    FinancialAccount candidate=accounts.findLockedByIdAndHouseholdId(r.downPaymentAccountId(),h).filter(x->!x.isArchived()).orElse(null);
-                    if(candidate==null)perrors.put("downPaymentAccountId","首付资金账户必须属于当前家庭且未归档");
-                    else if(!candidate.getCurrency().equals("CNY"))perrors.put("downPaymentAccountId","首付请使用人民币资金账户");
-                    else downAccount=candidate;
-                }
-            }
+            if(r.downPaymentAccountId()!=null)
+                perrors.put("downPaymentAccountId","贷款购买不支持首付差额（贷款本金=购入价值，由贷款全额支付）");
             if(!perrors.isEmpty())throw new RequestValidationException(perrors);
         }
         if(purchased){
@@ -78,12 +73,10 @@ public class LoanService {
             loans.saveAndFlush(loan);
             String assetName=spec==null||spec.name()==null?null:spec.name().trim();
             FamilyMember assetOwner=spec==null||spec.ownerMemberId()==null?null:resolveMember(h,spec.ownerMemberId(),new LinkedHashMap<>());
-            loan.attachPurchasedAsset(purchasedAssets.create(loan,day,assetName,assetOwner,purchasePriceCents));
+            loan.attachPurchasedAsset(purchasedAssets.create(loan,day,assetName,assetOwner,loan.getPrincipalCents()));
         }
         loan.accounting(r.fundingMode(),day,disbursement);loans.saveAndFlush(loan);
-        if(purchased&&purchasePriceCents>loan.getPrincipalCents())
-            accounting.originateFinanced(loan,purchasePriceCents,downAccount,access.context().userId(),key);
-        else accounting.originate(loan,access.context().userId(),key,false);
+        accounting.originate(loan,access.context().userId(),key,false);
         requests.record(h,key,digest,loan.getId());return response(loan,true);
     }
     @Transactional public LoanResponse update(Authentication a,long id,LoanPatchRequest r){return update(a,id,r,AccountingRequests.key(null));}

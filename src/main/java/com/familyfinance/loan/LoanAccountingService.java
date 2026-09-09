@@ -21,28 +21,6 @@ public class LoanAccountingService {
  private final org.springframework.jdbc.core.JdbcTemplate jdbc;
  public LoanAccountingService(LedgerPostingService posting,LedgerReadService ledger,CashAccountingService cash,org.springframework.jdbc.core.JdbcTemplate jdbc){this.posting=posting;this.ledger=ledger;this.cash=cash;this.jdbc=jdbc;}
  public LocalDate accountingDate(LocalDate day){return cash.date(day==null?null:day.toString(),"accountingOn");}
- /** 组合购买期初凭证：Dr ASSET:purchasePrice，差额首付 D=P-L>0 时 Cr CASH:downPaymentAccount，Cr LOAN:L。 */
- public void originateFinanced(Loan loan,long purchasePriceCents,
-         com.familyfinance.ledger.FinancialAccount downPaymentAccount,long actor,String key) {
-  if(loan.getFundingMode()!=LoanFundingMode.FINANCED_PURCHASE||loan.getPurchasedAssetId()==null)
-   throw new IllegalArgumentException("组合入账仅支持贷款购买（已关联资产）");
-  long down=Math.subtractExact(purchasePriceCents,loan.getPrincipalCents());
-  if(down<0)throw new IllegalArgumentException("贷款本金不能超过资产购入价值");
-  if(down>0&&downPaymentAccount==null)throw new IllegalArgumentException("存在首付差额时必须选择首付资金账户");
-  long h=loan.getHousehold().getId();LocalDate day=accountingDate(loan.getAccountingOn());
-  var entries=new ArrayList<LedgerEntryInput>();
-  entries.add(new LedgerEntryInput("ASSET:"+loan.getPurchasedAssetId(),ASSET,
-          DecimalMoney.fromCents(purchasePriceCents),BigDecimal.ZERO,null,null));
-  if(down>0){
-   cash.requireConfirmed(downPaymentAccount,day);
-   entries.add(new LedgerEntryInput("CASH:"+downPaymentAccount.getId(),CASH,
-           BigDecimal.ZERO,DecimalMoney.fromCents(down),null,null));
-  }
-  entries.add(new LedgerEntryInput("LOAN:"+loan.getId(),LOAN,
-          BigDecimal.ZERO,loan.getPrincipalAmount(),null,null));
-  posting.post(new LedgerPostingCommand(h,source(loan),loan.getId(),key,day,actor,entries));
-  requireBalance(loan);
- }
  public void originate(Loan loan,long actor,String key,boolean replace) {
   long h=loan.getHousehold().getId();
   String source=source(loan);

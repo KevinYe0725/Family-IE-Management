@@ -20,7 +20,7 @@ public class LoanPurchasedAssetService {
     public LoanPurchasedAssetService(AssetRepository assets,AssetValuationRepository valuations,JdbcTemplate jdbc,Clock clock){
         this.assets=assets;this.valuations=valuations;this.jdbc=jdbc;this.clock=clock;
     }
-    /** 自定义资产（名称/归属/购入价），用于“资产侧发起贷款购买”；购入价可大于贷款本金（差额首付）。 */
+    /** 自定义资产（名称/归属/购入价），用于“资产侧发起贷款购买”；贷款购买为全额贷款，购入价固定等于贷款本金（不允许首付差额）。 */
     @Transactional(propagation=Propagation.MANDATORY)
     public Asset create(Loan loan,LocalDate day,String name,FamilyMember owner,long purchasePriceCents){
         AssetType type=switch(loan.getType()){case MORTGAGE->AssetType.PROPERTY;case CAR->AssetType.VEHICLE;case OTHER->AssetType.OTHER;};
