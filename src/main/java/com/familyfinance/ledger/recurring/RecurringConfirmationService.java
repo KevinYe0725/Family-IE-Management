@@ -69,22 +69,13 @@ public class RecurringConfirmationService {
     }
 
     @Transactional
-    public RecurringOccurrenceResponse confirm(Authentication authentication, long occurrenceId) {
-        return confirm(authentication,occurrenceId,LocalDate.now(clock.withZone(ZoneId.of("Asia/Shanghai"))));
+    public RecurringOccurrenceResponse confirmReviewed(Authentication authentication, long occurrenceId,
+            LocalDate occurredOn, String amount, String confirmationToken) {
+        return confirmLocked(authentication, occurrenceId, occurredOn, parseAmountOverride(amount), confirmationToken);
     }
-    @Transactional
-    public RecurringOccurrenceResponse confirm(Authentication authentication,long occurrenceId,java.time.LocalDate occurredOn) {
-        return confirm(authentication, occurrenceId, occurredOn, (String) null);
-    }
-    @Transactional
-    public RecurringOccurrenceResponse confirm(
-            Authentication authentication, long occurrenceId, java.time.LocalDate occurredOn, String amount) {
-        Long amountOverrideCents = parseAmountOverride(amount);
-        return confirm(authentication, occurrenceId, occurredOn, amountOverrideCents);
-    }
-    private RecurringOccurrenceResponse confirm(
+    private RecurringOccurrenceResponse confirmLocked(
             Authentication authentication, long occurrenceId, java.time.LocalDate occurredOn,
-            Long amountOverrideCents) {
+            Long amountOverrideCents, String confirmationToken) {
         FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireCurrent(authentication);
         long householdId = access.context().householdId();
         RecurringOccurrence occurrence = occurrences.findLockedByIdAndHouseholdId(occurrenceId, householdId)
@@ -138,6 +129,10 @@ public class RecurringConfirmationService {
             return RecurringOccurrenceResponse.from(occurrence);
         }
 
+        if (!RecurringRuleSnapshot.token(rule).equals(confirmationToken)) {
+            throw new ResourceConflictException("RECURRING_CONFIRMATION_STALE",
+                    "账单信息已变更或尚未完整加载，请刷新后重新核对收支方向、金额和账户");
+        }
         try {
             cash.requireConfirmed(account);
             FinancialTransaction transaction = transactions.saveAndFlush(FinancialTransaction.recurring(
@@ -172,8 +167,8 @@ public class RecurringConfirmationService {
     }
 
     @Transactional
-    public RecurringBatchConfirmResponse confirmBatch(
-            Authentication authentication, List<Long> occurrenceIds, LocalDate occurredOn) {
+    public RecurringBatchConfirmResponse confirmBatchReviewed(Authentication authentication, List<Long> occurrenceIds,
+            LocalDate occurredOn, Map<Long,String> confirmationTokens) {
         if (occurrenceIds == null || occurrenceIds.isEmpty()) {
             throw new com.familyfinance.shared.RequestValidationException(
                     Map.of("occurrenceIds", "至少选择一条待确认账单"));
@@ -188,7 +183,8 @@ public class RecurringConfirmationService {
                     Map.of("occurrenceIds", "单次最多确认 100 条账单"));
         }
         List<RecurringOccurrenceResponse> confirmed = new ArrayList<>(uniqueIds.size());
-        for (Long id : uniqueIds) confirmed.add(confirm(authentication, id, occurredOn));
+        for (Long id : uniqueIds) confirmed.add(confirmLocked(authentication, id, occurredOn, null,
+                confirmationTokens == null ? null : confirmationTokens.get(id)));
         return new RecurringBatchConfirmResponse(occurrenceIds.size(), confirmed.size(), confirmed);
     }
 

@@ -291,10 +291,11 @@ class RecurringConcurrencyTest {
 
     private MvcResult atBarrier(
             CountDownLatch ready, CountDownLatch start, MockHttpSession session, long occurrenceId) throws Exception {
+        String review=RecurringReviewFixture.body(mvc,session,occurrenceId,null);
         ready.countDown();
         if (!start.await(5, TimeUnit.SECONDS)) throw new AssertionError("confirmation barrier timed out");
         return mvc.perform(post("/api/recurring-occurrences/{id}/confirm", occurrenceId)
-                        .session(session).with(csrf()))
+                        .session(session).with(csrf()).contentType("application/json").content(review))
                 .andReturn();
     }
 

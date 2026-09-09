@@ -184,12 +184,12 @@ class CashAccountingApiTest {
         long rule=mapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
         recurring.generateDueOccurrences();
         long occurrence=jdbc.queryForObject("select id from recurring_occurrences where rule_id=?",Long.class,rule);
-        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf())).andExpect(status().isConflict());
+        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf()).contentType("application/json").content(com.familyfinance.ledger.recurring.RecurringReviewFixture.body(mvc,session,occurrence,null))).andExpect(status().isConflict());
         assertThat(jdbc.queryForObject("select status from recurring_occurrences where id=?",String.class,occurrence)).isEqualTo("PENDING");
         assertThat(jdbc.queryForObject("select count(*) from financial_transactions where household_id=?",Long.class,household)).isZero();
         mvc.perform(patch("/api/accounts/"+a).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"openingBalance\":\"10.00\",\"openingOn\":\"2026-01-03\"}")).andExpect(status().isOk());
-        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf())).andExpect(status().isOk());
+        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf()).contentType("application/json").content(com.familyfinance.ledger.recurring.RecurringReviewFixture.body(mvc,session,occurrence,null))).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("select occurred_on from financial_transactions where household_id=?",java.sql.Date.class,household).toLocalDate())
             .isEqualTo(java.time.LocalDate.now(clock.withZone(java.time.ZoneId.of("Asia/Shanghai"))));
         assertThat(jdbc.queryForObject("select due_on from recurring_occurrences where id=?",java.sql.Date.class,occurrence).toLocalDate()).isEqualTo(java.time.LocalDate.of(2026,1,2));
@@ -208,7 +208,7 @@ class CashAccountingApiTest {
         long occurrence=jdbc.queryForObject("select id from recurring_occurrences where rule_id=?",Long.class,rule);
         mvc.perform(patch("/api/accounts/"+a).session(session).with(csrf()).header("Idempotency-Key","recurring:"+occurrence).contentType(MediaType.APPLICATION_JSON)
             .content("{\"name\":\"renamed\"}")).andExpect(status().isOk());
-        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf()))
+        mvc.perform(post("/api/recurring-occurrences/"+occurrence+"/confirm").session(session).with(csrf()).contentType("application/json").content(com.familyfinance.ledger.recurring.RecurringReviewFixture.body(mvc,session,occurrence,null)))
             .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
         assertThat(jdbc.queryForObject("select status from recurring_occurrences where id=?",String.class,occurrence)).isEqualTo("PENDING");
     }

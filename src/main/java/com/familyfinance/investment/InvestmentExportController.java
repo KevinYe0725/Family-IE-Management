@@ -28,7 +28,12 @@ public class InvestmentExportController {
    BigDecimal amount=t.getType()==InvestmentTradeType.SELL?gross.subtract(BigDecimal.valueOf(t.getFeeCents(),2)):gross.add(BigDecimal.valueOf(t.getFeeCents(),2));
    var rate=fx.sourceReference(h,"INVESTMENT_TRADE",t.getId(),currency);
    String[] cells={t.getTradedOn().toString(),security.getMarket(),security.getExchange(),security.getSymbol(),security.getName(),t.getType().name(),t.getQuantity()==null?"":t.getQuantity().toPlainString(),UnitPrice.format(t.getUnitPrice()),BigDecimal.valueOf(t.getFeeCents(),2).toPlainString(),currency,amount.toPlainString(),rate==null?"":amount.multiply(rate.value()).setScale(2,RoundingMode.HALF_UP).toPlainString(),rate==null?"":rate.value().toPlainString(),rate==null||rate.effectiveOn()==null?"":rate.effectiveOn().toString()};
-   csv.append(java.util.Arrays.stream(cells).map(CsvCell::escape).collect(java.util.stream.Collectors.joining(","))).append('\n');
+   for(int index=0;index<cells.length;index++){
+    if(index>0)csv.append(',');
+    boolean numeric=(index>=6&&index<=8)||(index>=10&&index<=12);
+    csv.append(numeric?cells[index]:CsvCell.escape(cells[index]));
+   }
+   csv.append('\n');
   }
   return ResponseEntity.ok().header("Content-Disposition","attachment; filename=\"investment-trades.csv\"").body(csv.toString().getBytes(StandardCharsets.UTF_8));
  }

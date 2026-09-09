@@ -26,7 +26,8 @@ public record RecurringRuleResponse(
         String assignedUserName,
         boolean active,
         boolean paused,
-        Long createdByUserId) {
+        Long createdByUserId,
+        String confirmationToken) {
     static RecurringRuleResponse from(RecurringRule rule) {
         return new RecurringRuleResponse(
                 rule.getId(), rule.getKind(), Money.formatCents(rule.getAmountCents()),
@@ -36,6 +37,6 @@ public record RecurringRuleResponse(
                 rule.getMember().getId(), rule.getMember().getName(),
                 rule.getCategory().getId(), rule.getCategory().getName(),
                 rule.getAssignedUser().getId(), rule.getAssignedUser().getDisplayName(),
-                rule.isActive(), rule.isPaused(), rule.getCreatedBy().getId());
+                rule.isActive(), rule.isPaused(), rule.getCreatedBy().getId(), RecurringRuleSnapshot.token(rule));
     }
 }

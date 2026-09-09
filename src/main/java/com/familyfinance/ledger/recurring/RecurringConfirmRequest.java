@@ -1,3 +1,3 @@
 package com.familyfinance.ledger.recurring;
 
-public record RecurringConfirmRequest(String amount) {}
+public record RecurringConfirmRequest(String amount, String confirmationToken) {}

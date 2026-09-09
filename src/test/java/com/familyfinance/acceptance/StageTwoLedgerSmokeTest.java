@@ -130,7 +130,8 @@ class StageTwoLedgerSmokeTest {
             assertOccurrence(pending.get(0), occurrenceId, ruleId, userId, "PENDING", null);
 
             JsonNode firstConfirmation = owner.data(owner.write(
-                    "POST", "/api/recurring-occurrences/" + occurrenceId + "/confirm", null));
+                    "POST", "/api/recurring-occurrences/" + occurrenceId + "/confirm",
+                    "{\"confirmationToken\":\""+pending.get(0).path("confirmationToken").asText()+"\"}"));
             JsonNode repeatedConfirmation = owner.data(owner.write(
                     "POST", "/api/recurring-occurrences/" + occurrenceId + "/confirm", null));
             long transactionId = firstConfirmation.path("confirmedTransactionId").asLong();

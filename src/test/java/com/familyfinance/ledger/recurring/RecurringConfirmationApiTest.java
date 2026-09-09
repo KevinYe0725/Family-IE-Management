@@ -61,6 +61,69 @@ class RecurringConfirmationApiTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired com.familyfinance.accounting.AccountingRequests accountingRequests;
 
+    @ParameterizedTest
+    @ValueSource(booleans={false,true})
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void staleAccountConfirmationCannotDebitAnUnreviewedAccount(boolean changeDirection) throws Exception {
+        var setup=reviewedFixture(); var owner=setup.session(); var f=setup.fixture();
+        long rule=createRule(owner,f,"12.00");
+        long occurrence=occurrences.findByRuleIdOrderByDueOnAscIdAsc(rule).get(0).getId();
+        String reviewed=RecurringReviewFixture.body(mvc,owner,occurrence,"12.00");
+        long other=data(mvc.perform(post("/api/accounts").session(owner).with(csrf()).contentType("application/json")
+                .content("{\"name\":\"review-other\",\"type\":\"CASH\",\"currency\":\"CNY\",\"openingBalance\":\"100.00\",\"openingOn\":\"2026-01-01\"}"))
+                .andExpect(status().isCreated()).andReturn()).path("id").asLong();
+        String change="{\"accountId\":"+other+"}";
+        if(changeDirection){
+            var income=categories.saveAndFlush(new Category(accounts.findById(f.accountId()).orElseThrow().getHousehold(),
+                    TransactionKind.INCOME,"收入核对","#345678",false,Instant.parse("2026-09-03T00:00:00Z")));
+            change="{\"kind\":\"INCOME\",\"categoryId\":"+income.getId()+"}";
+        }
+        mvc.perform(patch("/api/recurring-rules/{id}",rule).session(owner).with(csrf()).contentType("application/json")
+                .content(change)).andExpect(status().isOk());
+        mvc.perform(post("/api/recurring-occurrences/{id}/confirm",occurrence).session(owner).with(csrf())
+                .contentType("application/json").content(reviewed)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RECURRING_CONFIRMATION_STALE"));
+        assertThat(transactions.countBySourceTypeAndSourceId(TransactionSourceType.RECURRING,occurrence)).isZero();
+        assertThat(jdbc.queryForObject("select balance_amount from ledger_accounts where household_id=? and account_code=?",
+                java.math.BigDecimal.class, setup.householdId(), "CASH:"+other)).isEqualByComparingTo("100.00");
+        mvc.perform(post("/api/recurring-occurrences/{id}/confirm",occurrence).session(owner).with(csrf())
+                .contentType("application/json").content(RecurringReviewFixture.body(mvc,owner,occurrence,"12.00")))
+                .andExpect(status().isOk());
+        var saved=transactions.findBySourceTypeAndSourceId(TransactionSourceType.RECURRING,occurrence).orElseThrow();
+        assertThat(saved.getAccount().getId()).isEqualTo(changeDirection?f.accountId():other);
+        assertThat(saved.getKind()).isEqualTo(changeDirection?TransactionKind.INCOME:TransactionKind.EXPENSE);
+    }
+
+    @Test
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void staleBatchRollsBackEarlierItemsAndMissingReviewCannotPost() throws Exception {
+        var setup=reviewedFixture(); var owner=setup.session(); var f=setup.fixture();
+        long firstRule=createRule(owner,f,"12.00"), secondRule=createRule(owner,f,"13.00");
+        long first=occurrences.findByRuleIdOrderByDueOnAscIdAsc(firstRule).get(0).getId();
+        long second=occurrences.findByRuleIdOrderByDueOnAscIdAsc(secondRule).get(0).getId();
+        String reviewed=RecurringReviewFixture.batchBody(mvc,owner,java.util.List.of(first,second));
+        mvc.perform(patch("/api/recurring-rules/{id}",secondRule).session(owner).with(csrf()).contentType("application/json")
+                .content("{\"amount\":\"14.00\"}")).andExpect(status().isOk());
+        mvc.perform(post("/api/recurring-occurrences/confirm").session(owner).with(csrf()).contentType("application/json")
+                .content(reviewed)).andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("RECURRING_CONFIRMATION_STALE"));
+        mvc.perform(post("/api/recurring-occurrences/{id}/confirm",first).session(owner).with(csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("RECURRING_CONFIRMATION_STALE"));
+        assertThat(transactions.countBySourceTypeAndSourceId(TransactionSourceType.RECURRING,first)).isZero();
+        assertThat(transactions.countBySourceTypeAndSourceId(TransactionSourceType.RECURRING,second)).isZero();
+    }
+
+    private ReviewedFixture reviewedFixture() throws Exception {
+        String email=java.util.UUID.randomUUID()+"@review.test";
+        mvc.perform(post("/api/auth/register").with(csrf()).contentType("application/json")
+                .content("{\"email\":\""+email+"\",\"displayName\":\"Review\",\"password\":\"review-test-password\",\"mode\":\"CREATE\",\"householdName\":\"Review\"}"))
+                .andExpect(status().isCreated());
+        var session=login(email,"review-test-password"); var user=users.findByEmail(email).orElseThrow(); var f=fixture(user);
+        mvc.perform(patch("/api/accounts/{id}",f.accountId()).session(session).with(csrf()).contentType("application/json")
+                .content("{\"openingBalance\":\"1000.00\",\"openingOn\":\"2026-01-01\"}")).andExpect(status().isOk());
+        return new ReviewedFixture(session,f,user.getHousehold().getId());
+    }
+    private record ReviewedFixture(MockHttpSession session,Fixture fixture,long householdId) {}
+
     @Test
     void assignedMemberConfirmationIsIdempotentAndOnlyThenCountsTowardBudget() throws Exception {
         MockHttpSession owner = login("demo", "demo1234");
@@ -203,7 +266,7 @@ class RecurringConfirmationApiTest {
 
         mvc.perform(post("/api/recurring-occurrences/confirm").session(memberSession).with(csrf())
                         .contentType("application/json")
-                        .content("{\"occurrenceIds\":[%d,%d,%d]}".formatted(firstOccurrence, secondOccurrence, firstOccurrence)))
+                        .content(RecurringReviewFixture.batchBody(mvc,memberSession,java.util.List.of(firstOccurrence,secondOccurrence,firstOccurrence))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.requested").value(3))
                 .andExpect(jsonPath("$.data.confirmed").value(2));
@@ -263,7 +326,8 @@ class RecurringConfirmationApiTest {
 
     private org.springframework.test.web.servlet.ResultActions confirm(MockHttpSession session, long id)
             throws Exception {
-        return mvc.perform(post("/api/recurring-occurrences/{id}/confirm", id).session(session).with(csrf()));
+        return mvc.perform(post("/api/recurring-occurrences/{id}/confirm", id).session(session).with(csrf())
+                .contentType("application/json").content(RecurringReviewFixture.body(mvc,session,id,null)));
     }
 
     @ParameterizedTest
@@ -290,7 +354,7 @@ class RecurringConfirmationApiTest {
                 .isEqualTo(1_200L);
         confirm(assigned, occurrenceId, "12").andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.confirmedTransactionId").value(transactionId));
-        confirm(assigned, occurrenceId).andExpect(status().isOk())
+        mvc.perform(post("/api/recurring-occurrences/{id}/confirm",occurrenceId).session(assigned).with(csrf())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.confirmedTransactionId").value(transactionId));
         assertThat(transactions.countBySourceTypeAndSourceId(TransactionSourceType.RECURRING, occurrenceId)).isEqualTo(1);
     }
@@ -298,7 +362,7 @@ class RecurringConfirmationApiTest {
     private org.springframework.test.web.servlet.ResultActions confirm(
             MockHttpSession session, long id, String amount) throws Exception {
         return mvc.perform(post("/api/recurring-occurrences/{id}/confirm", id).session(session).with(csrf())
-                .contentType("application/json").content("{\"amount\":\"%s\"}".formatted(amount)));
+                .contentType("application/json").content(RecurringReviewFixture.body(mvc,session,id,amount)));
     }
 
     private long createRule(MockHttpSession owner, Fixture f, String amount) throws Exception {

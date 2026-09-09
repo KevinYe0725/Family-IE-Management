@@ -48,6 +48,17 @@ class WealthAccountingApiTest {
   mvc.perform(delete("/api/assets/"+a).session(session).with(csrf())).andExpect(status().isConflict());
   mvc.perform(get("/api/net-worth").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.data.netWorth").value("500000.00"));
  }
+ @Test void investmentExportKeepsFeeHeavySaleNetAmountsNumeric() throws Exception {
+  trade("BUY","100","0.01","0.00","2026-01-02","small-buy").andExpect(status().isCreated());
+  trade("SELL","100","0.01","2.00","2026-01-03","fee-heavy-sale").andExpect(status().isCreated());
+  assertThat(ledger.balance(household,"CASH:"+cash)).isEqualTo(49999800);
+  String csv=mvc.perform(get("/api/investment-trades/export.csv").session(session))
+   .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+  String[] sale=csv.lines().filter(line->line.contains(",SELL,")).findFirst().orElseThrow().split(",",-1);
+  assertThat(sale[10]).isEqualTo("-1.00");
+  assertThat(sale[11]).isEqualTo("-1.00");
+  assertThat(ledger.balances(household)).isEqualTo(ledger.reconstructedBalances(household));
+ }
  @Test void valuationIsNoncashAndDisposalPostsProceedsAndLoss() throws Exception {
   long a=id(send("/api/assets",asset("OPENING",null,"1000.00"),"asset").andExpect(status().isCreated()));
   send("/api/assets/"+a+"/valuations","{\"valuedOn\":\"2026-01-03\",\"value\":\"1200.00\"}","v1").andExpect(status().isCreated());
