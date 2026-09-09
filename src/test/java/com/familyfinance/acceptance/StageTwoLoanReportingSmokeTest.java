@@ -85,8 +85,8 @@ class StageTwoLoanReportingSmokeTest {
             owner.data(owner.expect(owner.write("POST", "/api/notifications/generate", null), 200));
             assertThat(owner.data(owner.get("/api/notifications")).path("items").toString()).contains("LOAN_DUE");
             owner.data(owner.expect(owner.write("POST", "/api/budgets", """
-                    {"periodMonth":"2026-09","scopeType":"TOTAL","amount":"10.00"}
-                    """), 201));
+                    {"periodMonth":"2026-09","scopeType":"CATEGORY","categoryId":%d,"amount":"10.00"}
+                    """.formatted(expenseCategoryId)), 201));
 
             JsonNode confirmed = owner.data(owner.expect(owner.write("POST", "/api/loan-installments/" + installmentId + "/confirm", null), 200));
             long transactionId = confirmed.path("confirmedTransactionId").asLong();

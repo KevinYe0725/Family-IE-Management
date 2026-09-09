@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.familyfinance.category.TransactionKind;
 import com.familyfinance.family.FamilyLockService;
 import com.familyfinance.family.HouseholdMembershipRepository;
 import com.familyfinance.family.HouseholdRole;
@@ -41,6 +42,7 @@ class BudgetConcurrencyApiTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired AppUserRepository users;
+    @Autowired com.familyfinance.category.CategoryRepository categories;
     @Autowired HouseholdMembershipRepository memberships;
     @Autowired BudgetRepository budgets;
     @Autowired BudgetRevisionRepository revisions;
@@ -70,7 +72,7 @@ class BudgetConcurrencyApiTest {
         try {
             Future<MvcResult> result = executor.submit(() -> mvc.perform(post("/api/budgets")
                             .session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                            .content(totalBody("2027-01", "100.00")))
+                            .content(categoryBody("2027-01", "100.00")))
                     .andReturn());
             assertThat(reachedLock.await(5, TimeUnit.SECONDS)).isTrue();
             mvc.perform(patch("/api/family/memberships/{id}", membershipId)
@@ -97,11 +99,11 @@ class BudgetConcurrencyApiTest {
         try {
             Future<MvcResult> first = executor.submit(() -> requestAtBarrier(
                     ready, start, () -> mvc.perform(post("/api/budgets").session(owner).with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON).content(totalBody("2027-02", "100.00")))
+                            .contentType(MediaType.APPLICATION_JSON).content(categoryBody("2027-02", "100.00")))
                             .andReturn()));
             Future<MvcResult> second = executor.submit(() -> requestAtBarrier(
                     ready, start, () -> mvc.perform(post("/api/budgets").session(admin).with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON).content(totalBody("2027-02", "200.00")))
+                            .contentType(MediaType.APPLICATION_JSON).content(categoryBody("2027-02", "200.00")))
                             .andReturn()));
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
@@ -124,7 +126,7 @@ class BudgetConcurrencyApiTest {
         MockHttpSession owner = login("demo", "demo1234");
         MockHttpSession admin = join(owner, uniqueEmail("budget-update-admin"), HouseholdRole.ADMIN);
         MvcResult created = mvc.perform(post("/api/budgets").session(owner).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content(totalBody("2027-03", "100.00")))
+                        .contentType(MediaType.APPLICATION_JSON).content(categoryBody("2027-03", "100.00")))
                 .andExpect(status().isCreated()).andReturn();
         JsonNode initial = objectMapper.readTree(created.getResponse().getContentAsString()).path("data");
         long id = initial.path("id").asLong();
@@ -201,8 +203,13 @@ class BudgetConcurrencyApiTest {
         });
     }
 
-    private static String totalBody(String month, String amount) {
-        return "{\"periodMonth\":\"" + month + "\",\"scopeType\":\"TOTAL\",\"amount\":\"" + amount + "\"}";
+    private String categoryBody(String month, String amount) {
+        long expenseCategoryId = categories.findAll().stream()
+                .filter(category -> category.getKind() == TransactionKind.EXPENSE)
+                .map(com.familyfinance.category.Category::getId)
+                .findFirst().orElseThrow();
+        return "{\"periodMonth\":\"" + month + "\",\"scopeType\":\"CATEGORY\",\"categoryId\":"
+                + expenseCategoryId + ",\"amount\":\"" + amount + "\"}";
     }
 
     private static String uniqueEmail(String prefix) {

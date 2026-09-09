@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import Button from '@douyinfe/semi-ui/lib/es/button';
-import type { Account, AccountType, WalletProvider, Category, HouseholdRole, Member, Page, Transaction, TransactionKind } from '../../api/contracts';
+import type { Account, AccountType, BudgetHit, WalletProvider, Category, HouseholdRole, Member, Page, Transaction, TransactionKind } from '../../api/contracts';
 import { businessDate, localYearMonth, newIdempotencyKey } from '../../shared/runtime';
 import { DateField } from '../../shared/DateField';
 import { PaginationControls, readAllPages, usePageRecovery } from '../../shared/pagination';
@@ -83,7 +83,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const saveCategory = useMutation({ mutationFn: (value: NonNullable<typeof categoryDraft>) => request<Category>(value.id ? `/api/categories/${value.id}` : '/api/categories', { method: value.id ? 'PATCH' : 'POST', body: { name: value.name, kind: value.kind, color: value.color, parentId: value.parentId ? Number(value.parentId) : null } }), onSuccess: () => { setCategoryDraft(null); } });
   const deleteCategory = useMutation({ mutationFn: (id: number) => request<void>(`/api/categories/${id}`, { method: 'DELETE' }) });
 
-  function editTransaction(item: Transaction) { setDraft({ key: newIdempotencyKey(), generated: item.sourceType !== 'MANUAL', principalAmount: item.principalAmount, interestAmount: item.interestAmount, id: item.id, kind: item.kind, amount: item.amount, occurredOn: item.occurredOn, accountId: String(item.accountId), memberId: String(item.memberId), categoryId: String(item.categoryId), merchant: item.merchant ?? '', location: item.location ?? '', note: item.note ?? '' }); }
+  function editTransaction(item: Transaction) { setDraft({ key: newIdempotencyKey(), generated: item.sourceType !== 'MANUAL', principalAmount: item.principalAmount, interestAmount: item.interestAmount, id: item.id, kind: item.kind, amount: item.amount, occurredOn: item.occurredOn, accountId: String(item.accountId), memberId: item.memberId ? String(item.memberId) : '0', categoryId: String(item.categoryId), merchant: item.merchant ?? '', location: item.location ?? '', note: item.note ?? '' }); }
   const manager = isManager(role);
   const canEdit = (item: Transaction) => manager || item.createdByUserId === userId;
   const canDelete = (item: Transaction) => canEdit(item) && item.sourceType === 'MANUAL';
@@ -100,7 +100,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
         <label>类型<select aria-label="收支类型筛选" value={kind} onChange={e => setKind(e.target.value)}><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option></select></label>
 <label>银行卡<select aria-label="银行卡筛选" value={bankAccountId} onChange={e=>{setBankAccountId(e.target.value);setAccountId("");}}><option value="">全部</option>{[...new Map((accountOptions.data??[]).filter(a=>a.bankAccountId).map(a=>[a.bankAccountId!,a.bankAccountName??a.name])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
         <label>账户<select aria-label="账户筛选" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">全部</option>{accountOptions.data?.filter(a=>!bankAccountId||a.bankAccountId===Number(bankAccountId)).map(item => <option key={item.id} value={item.id}>{accountLabel(item)}</option>)}</select></label>
-        <label>成员<select aria-label="成员筛选" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="">全部</option>{members.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>成员<select aria-label="成员筛选" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="">全部</option><option value="0">全体（家庭共同）</option>{members.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>分类<select aria-label="分类筛选" value={categoryId} onChange={e => setCategoryId(e.target.value)}><option value="">全部</option>{flatCategories.map(item => <option key={item.id} value={item.id}>{item.level === 2 ? '　' : ''}{item.name}</option>)}</select></label>
         <label className="search-field">搜索<input aria-label="搜索收支" value={q} onChange={e => setQ(e.target.value)} placeholder="商家、地点或备注" /></label>
         <a className="secondary-action" href={exportHref} download><Download size={15} aria-hidden="true"/>导出 CSV</a>
@@ -126,6 +126,10 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
 
 function TransactionForm({ request, accountsReady, draft, accounts, categories, members, error, saving, onChange, onSubmit }: { request:RequestFn; accountsReady:boolean; draft: TransactionDraft; accounts: Account[]; categories: Category[]; members: Member[]; error: unknown; saving: boolean; onChange: (draft: TransactionDraft) => void; onSubmit: () => void }) {
   const available = categories.filter(item => item.kind === draft.kind);
+  const hitMonth = draft.occurredOn?.slice(0, 7);
+  const amountValid = /^\d+(\.\d{1,2})?$/.test(draft.amount.trim()) && Number(draft.amount) > 0;
+  const hits = useQuery({ queryKey: ['budget-hit', hitMonth, draft.categoryId, draft.memberId, draft.amount], queryFn: () => request<BudgetHit[]>(`/api/budgets/hit-check?periodMonth=${hitMonth}&categoryId=${draft.categoryId}&memberId=${draft.memberId}&amountCents=${Math.round(Number(draft.amount) * 100)}`), enabled: draft.kind === 'expense' && amountValid && Boolean(draft.categoryId) && Boolean(draft.memberId) && Boolean(draft.occurredOn) });
+  const hitAlerts = Array.isArray(hits.data) ? hits.data.filter(hit => hit.statusAfter !== 'ON_TRACK') : [];
   function submit(event: FormEvent) { event.preventDefault(); onSubmit(); }
   return <form className="feature-form" onSubmit={submit}><FormError error={error} />
     {draft.generated && <p className="source-note">此记录由业务生成，仅可修改商家、地点和备注。财务更正须回到原业务，已记录还款不可独立冲销。{draft.principalAmount != null && <>本金 {money(draft.principalAmount)} · 利息 {money(draft.interestAmount)}</>}</p>}
@@ -134,8 +138,9 @@ function TransactionForm({ request, accountsReady, draft, accounts, categories, 
     <label>日期<DateField name="occurredOn" aria-label="日期" required max={businessDate()} value={draft.occurredOn} onChange={e => onChange({ ...draft, occurredOn: e.target.value })} /></label>
     <BankAccountPicker accountsReady={accountsReady} request={request} accounts={accounts} label="账户" name="accountId" value={draft.accountId} onChange={id=>onChange({...draft,accountId:id})}/>
     <label>分类<select name="categoryId" aria-label="分类" required value={draft.categoryId} onChange={e => onChange({ ...draft, categoryId: e.target.value })}><option value="">请选择分类</option>{available.map(item => <option key={item.id} value={item.id}>{item.level === 2 ? '　' : ''}{item.name}</option>)}</select></label>
-    <label>成员<select name="memberId" aria-label="成员" required value={draft.memberId} onChange={e => onChange({ ...draft, memberId: e.target.value })}><option value="">请选择成员</option>{members.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label>成员<select name="memberId" aria-label="成员" required value={draft.memberId} onChange={e => onChange({ ...draft, memberId: e.target.value })}><option value="">请选择成员</option><option value="0">全体（家庭共同）</option>{members.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     </fieldset>{!draft.generated && <PaymentPreview account={accounts.find(item => String(item.id) === draft.accountId)} amount={draft.amount} incoming={draft.kind === 'income'} adjustment={Boolean(draft.id)} />}
+    {!draft.generated && draft.kind === 'expense' && hitAlerts.length > 0 && <section className="budget-hit-note" role="status" aria-label="预算影响提醒">{hitAlerts.map(hit => { const label = [hit.categoryName, hit.memberName].filter(Boolean).join(' · '); const tone = hit.statusAfter === 'OVER_BUDGET' || hit.statusAfter === 'AT_LIMIT' ? 'budget-hit-over' : ''; return <p key={hit.budgetId} className={tone}>此笔将使“{label}”{hit.scopeType === 'CATEGORY' ? '预算' : '观察线'}使用至 {hit.percentAfter}%（{hit.statusAfter === 'OVER_BUDGET' ? '将超支' : hit.statusAfter === 'AT_LIMIT' ? '将用尽' : '接近额度'}；当前已用 {money(hit.spent)}）</p>; })}</section>}
     <label>商家<input name="merchant" aria-label="商家" value={draft.merchant} onChange={e => onChange({ ...draft, merchant: e.target.value })} /></label><label>地点<input name="location" aria-label="地点" value={draft.location} onChange={e => onChange({ ...draft, location: e.target.value })} /></label><label>备注<textarea name="note" aria-label="备注" value={draft.note} onChange={e => onChange({ ...draft, note: e.target.value })} /></label>
     <Button htmlType="submit" theme="solid" type="primary" loading={saving}>保存收支</Button>
   </form>;

@@ -59,7 +59,7 @@ class BudgetUsageServiceTest {
     private String currentEmail;
 
     @Test
-    void usageCountsOnlyExpenseTransactionsInMonthForTotalCategoryAndMemberScopes() throws Exception {
+    void usageCountsOnlyExpenseTransactionsInMonthForCategoryAndMemberScopes() throws Exception {
         MockHttpSession session = login();
         Household household = currentHousehold();
         FamilyMember first = members.findByHouseholdOrderById(household).get(0);
@@ -69,9 +69,6 @@ class BudgetUsageServiceTest {
         Category otherExpense = category(household, TransactionKind.EXPENSE, "预算其他支出", null);
         Category income = category(household, TransactionKind.INCOME, "预算收入", null);
 
-        long totalBudget = createBudget(session, """
-                {"periodMonth":"2025-09","scopeType":"TOTAL","amount":"1000.00"}
-                """);
         long categoryBudget = createBudget(session, """
                 {"periodMonth":"2025-09","scopeType":"CATEGORY","categoryId":%d,"amount":"50.00"}
                 """.formatted(parent.getId()));
@@ -103,7 +100,6 @@ class BudgetUsageServiceTest {
         // A pending occurrence has no financial transaction and therefore no posted expense.
 
         JsonNode exact = usage(session, false);
-        assertUsage(find(exact, totalBudget), "80.00", "920.00", "8.00", "ON_TRACK", false);
         assertUsage(find(exact, categoryBudget), "35.00", "15.00", "70.00", "ON_TRACK", false);
         assertUsage(find(exact, memberBudget), "60.00", "140.00", "30.00", "ON_TRACK", false);
 
@@ -167,9 +163,10 @@ class BudgetUsageServiceTest {
     void inactiveBudgetsAndOtherHouseholdsNeverAppearAndPagesAreBounded() throws Exception {
         MockHttpSession session = login();
         Household household = currentHousehold();
+        Category expense = category(household, TransactionKind.EXPENSE, "停用预算分类", null);
         long active = createBudget(session, """
-                {"periodMonth":"2026-12","scopeType":"TOTAL","amount":"10.00"}
-                """);
+                {"periodMonth":"2026-12","scopeType":"CATEGORY","categoryId":%d,"amount":"10.00"}
+                """.formatted(expense.getId()));
         int version = budget(session, active).path("version").asInt();
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
                         "/api/budgets/{id}", active).session(session).with(csrf())
@@ -257,13 +254,116 @@ class BudgetUsageServiceTest {
         FamilyMember member = members.findByHouseholdOrderById(household).get(0);
         Category category = category(household, TransactionKind.EXPENSE, "溢出预算", null);
         createBudget(session, """
-                {"periodMonth":"2025-01","scopeType":"TOTAL","amount":"1.00"}
-                """);
-        org.mockito.Mockito.doReturn("9223372036854775808").when(reporting).sumBudgetExpenseCents(org.mockito.ArgumentMatchers.eq(household.getId()),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.isNull(),org.mockito.ArgumentMatchers.isNull(),org.mockito.ArgumentMatchers.anyBoolean());
+                {"periodMonth":"2025-01","scopeType":"CATEGORY","categoryId":%d,"amount":"1.00"}
+                """.formatted(category.getId()));
+        org.mockito.Mockito.doReturn("9223372036854775808").when(reporting).sumBudgetExpenseCents(org.mockito.ArgumentMatchers.eq(household.getId()),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyBoolean());
 
         mvc.perform(get("/api/budgets/usage").session(session).param("periodMonth", "2025-01"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("AMOUNT_OVERFLOW"));
+    }
+
+    @Test
+    void drillDownEntriesListTheSameHitRowsNewestFirstWithScopeAndMemberFilters() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        FamilyMember first = members.findByHouseholdOrderById(household).get(0);
+        FamilyMember second = members.saveAndFlush(new FamilyMember(household, "明细第二成员", "成员", TEST_TIME));
+        Category parent = category(household, TransactionKind.EXPENSE, "明细父分类", null);
+        Category child = category(household, TransactionKind.EXPENSE, "明细子分类", parent);
+        Category other = category(household, TransactionKind.EXPENSE, "明细其他支出", null);
+
+        long categoryBudget = createBudget(session, """
+                {"periodMonth":"2025-09","scopeType":"CATEGORY","categoryId":%d,"amount":"50.00"}
+                """.formatted(parent.getId()));
+        long memberBudget = createBudget(session, """
+                {"periodMonth":"2025-09","scopeType":"CATEGORY_MEMBER","categoryId":%d,"memberId":%d,"amount":"200.00"}
+                """.formatted(parent.getId(), first.getId()));
+
+        transaction(household, first, parent, TransactionKind.EXPENSE, 1000L, "2025-09-02");
+        transaction(household, first, child, TransactionKind.EXPENSE, 2500L, "2025-09-03");
+        transaction(household, second, other, TransactionKind.EXPENSE, 900_00L, "2025-09-04");
+
+        mvc.perform(get("/api/budgets/{id}/usage-entries", categoryBudget).session(session)
+                        .param("page", "0").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Total-Elements", "2"))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].amount").value("25.00"))
+                .andExpect(jsonPath("$.data[0].occurredOn").value("2025-09-03"))
+                .andExpect(jsonPath("$.data[1].amount").value("10.00"))
+                .andExpect(jsonPath("$.data[1].occurredOn").value("2025-09-02"));
+
+        mvc.perform(get("/api/budgets/{id}/usage-entries", memberBudget).session(session))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Total-Elements", "2"))
+                .andExpect(jsonPath("$.data[0].categoryName").value(child.getName()));
+        mvc.perform(get("/api/budgets/{id}/usage-entries", Long.MAX_VALUE).session(session))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void copyForwardClonesActiveRowsSkipsDuplicatesAndHonoursCategoryOnlyScope() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        FamilyMember first = members.findByHouseholdOrderById(household).get(0);
+        Category food = category(household, TransactionKind.EXPENSE, "复制餐饮", null);
+        createBudget(session, categoryBudgetBody(food.getId(), "100.00"));
+        createBudget(session, """
+                {"periodMonth":"2025-09","scopeType":"MEMBER","memberId":%d,"amount":"50.00"}
+                """.formatted(first.getId()));
+
+        mvc.perform(post("/api/budgets/copy").session(session).with(csrf())
+                        .param("fromMonth", "2025-09").param("toMonth", "2025-10").param("scope", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.copied").value(2))
+                .andExpect(jsonPath("$.data.skipped").value(0));
+        mvc.perform(post("/api/budgets/copy").session(session).with(csrf())
+                        .param("fromMonth", "2025-09").param("toMonth", "2025-10").param("scope", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.copied").value(0))
+                .andExpect(jsonPath("$.data.skipped").value(2));
+        mvc.perform(post("/api/budgets/copy").session(session).with(csrf())
+                        .param("fromMonth", "2025-09").param("toMonth", "2025-11").param("scope", "category-only"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.copied").value(1))
+                .andExpect(jsonPath("$.data.skipped").value(0));
+        mvc.perform(get("/api/budgets").session(session).param("periodMonth", "2025-10"))
+                .andExpect(jsonPath("$.data.length()").value(2));
+        mvc.perform(post("/api/budgets/copy").session(session).with(csrf())
+                        .param("fromMonth", "2025-10").param("toMonth", "2025-10").param("scope", "all"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.fields.toMonth").exists());
+    }
+
+    @Test
+    void hitCheckNamesTheRowsAProspectiveExpenseWouldPushOverAndCsvExportsThem() throws Exception {
+        MockHttpSession session = login();
+        Household household = currentHousehold();
+        FamilyMember first = members.findByHouseholdOrderById(household).get(0);
+        Category parent = category(household, TransactionKind.EXPENSE, "提醒父分类", null);
+        Category child = category(household, TransactionKind.EXPENSE, "提醒子分类", parent);
+        createBudget(session, categoryBudgetBody(parent.getId(), "50.00"));
+        createBudget(session, """
+                {"periodMonth":"2025-09","scopeType":"CATEGORY_MEMBER","categoryId":%d,"memberId":%d,"amount":"30.00"}
+                """.formatted(parent.getId(), first.getId()));
+        transaction(household, first, parent, TransactionKind.EXPENSE, 4000L, "2025-09-02");
+
+        mvc.perform(get("/api/budgets/hit-check").session(session)
+                        .param("periodMonth", "2025-09").param("categoryId", String.valueOf(child.getId()))
+                        .param("memberId", String.valueOf(first.getId())).param("amountCents", "2000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[?(@.statusAfter=='OVER_BUDGET')].budgetId").exists());
+
+        mvc.perform(get("/api/budgets/export.csv").session(session).param("periodMonth", "2025-09"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", "text/csv;charset=UTF-8"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("分类预算")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("成员观察线")));
     }
 
     @Autowired BudgetRepository budgetRepository;

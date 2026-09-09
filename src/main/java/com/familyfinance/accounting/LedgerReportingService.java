@@ -112,12 +112,26 @@ public class LedgerReportingService {
     public BigDecimal sumBudgetExpenseAmount(long h,LocalDate from,LocalDate to,String scope,Long category,Long member,boolean rollup) {
         BigDecimal result=DecimalMoney.fromCents(0);
         for(var item:activities(h,from,to)) {
-            if(item.kind()!=TransactionKind.EXPENSE)continue;
-            if(scope.equals("CATEGORY")&&!(category!=null&&(item.category().id()==category||(rollup&&item.category().parent()!=null&&item.category().parent().id()==category))))continue;
-            if(scope.equals("MEMBER")&&!(member!=null&&item.member().id()==member))continue;
+            if(!matchesBudgetExpense(item,scope,category,member,rollup))continue;
             result=result.add(item.amount());
         }
         return result;
+    }
+    /** Per-budget drill-down: the same effective entries the usage sum counts, newest first. */
+    public java.util.List<LedgerActivity> budgetEntries(long h,LocalDate from,LocalDate to,String scope,Long category,Long member,boolean rollup) {
+        var matching=new java.util.ArrayList<>(activities(h,from,to).stream()
+                .filter(item->matchesBudgetExpense(item,scope,category,member,rollup))
+                .toList());
+        java.util.Collections.reverse(matching);
+        return java.util.List.copyOf(matching);
+    }
+    private static boolean matchesBudgetExpense(LedgerActivity item,String scope,Long category,Long member,boolean rollup) {
+        if(item.kind()!=TransactionKind.EXPENSE)return false;
+        boolean categoryBudget=scope.equals("CATEGORY")||scope.equals("CATEGORY_MEMBER");
+        boolean memberBudget=scope.equals("MEMBER")||scope.equals("CATEGORY_MEMBER");
+        if(categoryBudget&&!(category!=null&&(item.category().id()==category||(rollup&&item.category().parent()!=null&&item.category().parent().id()==category))))return false;
+        if(memberBudget&&!(member!=null&&item.member().id()==member))return false;
+        return true;
     }
 
     public CashFlow cashFlow(long h,LocalDate from,LocalDate to) {

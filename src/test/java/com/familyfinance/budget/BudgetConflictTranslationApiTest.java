@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.familyfinance.category.CategoryRepository;
+import com.familyfinance.category.TransactionKind;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,8 +29,16 @@ class BudgetConflictTranslationApiTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper objectMapper;
+    @Autowired CategoryRepository categories;
     @MockitoSpyBean BudgetRepository budgets;
     @Autowired BudgetRevisionRepository revisions;
+
+    private long expenseCategoryId() {
+        return categories.findAll().stream()
+                .filter(category -> category.getKind() == TransactionKind.EXPENSE)
+                .map(com.familyfinance.category.Category::getId)
+                .findFirst().orElseThrow();
+    }
 
     @Test
     void createTranslatesDatabaseIntegrityConflict() throws Exception {
@@ -38,7 +48,8 @@ class BudgetConflictTranslationApiTest {
 
         mvc.perform(post("/api/budgets").session(session).with(csrf())
                         .contentType("application/json")
-                        .content("{\"periodMonth\":\"2027-04\",\"scopeType\":\"TOTAL\",\"amount\":\"100.00\"}"))
+                        .content("{\"periodMonth\":\"2027-04\",\"scopeType\":\"CATEGORY\",\"categoryId\":"
+                                + expenseCategoryId() + ",\"amount\":\"100.00\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"))
                 .andExpect(jsonPath("$.error.message").value("预算关联的数据已变化，请刷新后重试"));
@@ -50,7 +61,8 @@ class BudgetConflictTranslationApiTest {
         MockHttpSession session = login();
         MvcResult created = mvc.perform(post("/api/budgets").session(session).with(csrf())
                         .contentType("application/json")
-                        .content("{\"periodMonth\":\"2027-05\",\"scopeType\":\"TOTAL\",\"amount\":\"100.00\"}"))
+                        .content("{\"periodMonth\":\"2027-05\",\"scopeType\":\"CATEGORY\",\"categoryId\":"
+                                + expenseCategoryId() + ",\"amount\":\"100.00\"}"))
                 .andExpect(status().isCreated()).andReturn();
         long id = objectMapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
         int version = objectMapper.readTree(created.getResponse().getContentAsString()).path("data").path("version").asInt();

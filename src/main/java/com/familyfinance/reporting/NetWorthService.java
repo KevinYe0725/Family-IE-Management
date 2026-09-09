@@ -90,12 +90,17 @@ public class NetWorthService {
 
     private BudgetSummary budget(long householdId, YearMonth month,LocalDate end) {
         List<Budget> active = budgets.findAllByHouseholdIdAndPeriodMonthAndActiveTrue(householdId, month.toString());
+        // Only member-less CATEGORY rows are hard family allocations; member-tagged
+        // rows are observation lines and must not inflate the household totals.
+        List<Budget> pool = active.stream()
+                .filter(budget -> budget.getScopeType() == com.familyfinance.budget.BudgetScopeType.CATEGORY)
+                .toList();
         BigInteger planned = BigInteger.ZERO;
         BigInteger spent = BigInteger.ZERO;
         int near = 0;
         int over = 0;
         boolean complete=true;
-        for (Budget budget : active) {
+        for (Budget budget : pool) {
             long used;
             try {used=parseAggregateCents(transactions.sumBudgetExpenseCents(householdId, month.atDay(1),end,budget.getScopeType().name(),
                 budget.getCategory()==null?null:budget.getCategory().getId(),budget.getMember()==null?null:budget.getMember().getId(),true));}
@@ -106,7 +111,7 @@ public class NetWorthService {
             if (status == BudgetUsageStatus.NEAR_LIMIT) near++;
             if (status == BudgetUsageStatus.AT_LIMIT || status == BudgetUsageStatus.OVER_BUDGET) over++;
         }
-        return new BudgetSummary(active.size(), bounded(planned), complete?bounded(spent):null, complete?near:null, complete?over:null);
+        return new BudgetSummary(pool.size(), bounded(planned), complete?bounded(spent):null, complete?near:null, complete?over:null);
     }
 
     private static BudgetUsageStatus budgetStatus(long spent, long amount) {

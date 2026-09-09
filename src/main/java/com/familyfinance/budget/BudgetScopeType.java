@@ -6,7 +6,8 @@ import java.util.Locale;
 public enum BudgetScopeType {
     TOTAL,
     CATEGORY,
-    MEMBER;
+    MEMBER,
+    CATEGORY_MEMBER;
 
     @JsonCreator
     public static BudgetScopeType fromJson(String value) {
@@ -16,7 +17,7 @@ public enum BudgetScopeType {
         try {
             return valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("预算范围只能是 TOTAL、CATEGORY 或 MEMBER");
+            throw new IllegalArgumentException("预算范围只能是 TOTAL、CATEGORY、MEMBER 或 CATEGORY_MEMBER");
         }
     }
 }

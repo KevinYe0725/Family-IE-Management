@@ -150,9 +150,14 @@ class MemberApiTest {
                 .andExpect(status().isCreated()).andReturn();
         long budgetId = JsonTestUtils.readId(createdBudget);
         int version = JsonTestUtils.readInt(createdBudget, "version");
+        long expenseCategoryId = categoryRepository.findAll().stream()
+                .filter(category -> category.getKind() == TransactionKind.EXPENSE)
+                .map(Category::getId)
+                .findFirst().orElseThrow();
         mvc.perform(patch("/api/budgets/{id}", budgetId)
                         .session(session).with(csrf()).contentType("application/json")
-                        .content("{\"version\":" + version + ",\"scopeType\":\"TOTAL\"}"))
+                        .content("{\"version\":" + version + ",\"scopeType\":\"CATEGORY\",\"categoryId\":"
+                                + expenseCategoryId + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.memberId").isEmpty());
 

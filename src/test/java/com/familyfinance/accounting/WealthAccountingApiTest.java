@@ -123,7 +123,7 @@ class WealthAccountingApiTest {
   long loan=id(send("/api/loans","{\"name\":\"Loan\",\"type\":\"OTHER\",\"memberId\":"+member+",\"assignedUserId\":"+actor+",\"paymentAccountId\":"+cash+",\"paymentCategoryId\":"+category+",\"principal\":\"1000.00\",\"annualRate\":0.1,\"termMonths\":1,\"repaymentMethod\":\"CUSTOM\",\"startOn\":\"2026-01-01\",\"fundingMode\":\"DISBURSEMENT\",\"accountingOn\":\"2026-01-02\",\"disbursementAccountId\":"+cash+",\"customSchedule\":[{\"dueOn\":\"2026-01-03\",\"principal\":\"1000.00\",\"interest\":\"100.00\"}]}","loan").andExpect(status().isCreated()));
   long installment=jdbc.queryForObject("select id from loan_installments where loan_id=?",Long.class,loan);
   send("/api/loan-installments/"+installment+"/confirm","{\"paidOn\":\"2026-01-03\"}","pay").andExpect(status().isOk());
-  send("/api/budgets","{\"periodMonth\":\"2026-01\",\"scopeType\":\"TOTAL\",\"amount\":\"1000.00\"}","budget").andExpect(status().isCreated());
+  send("/api/budgets","{\"periodMonth\":\"2026-01\",\"scopeType\":\"CATEGORY\",\"categoryId\":"+category+",\"amount\":\"1000.00\"}","budget").andExpect(status().isCreated());
   mvc.perform(get("/api/dashboard?month=2026-01").session(session)).andExpect(status().isOk())
    .andExpect(jsonPath("$.data.summary.expense").value("100.00")).andExpect(jsonPath("$.data.summary.income").value("0.00"))
    .andExpect(jsonPath("$.data.summary.cashIn").value("1000.00")).andExpect(jsonPath("$.data.summary.cashOut").value("1100.00")).andExpect(jsonPath("$.data.summary.principalPaid").value("1000.00"));

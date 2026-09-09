@@ -34,8 +34,8 @@ public class FinancialTransaction {
     @JoinColumn(name = "household_id", nullable = false)
     private Household household;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "member_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "member_id", nullable = true)
     private FamilyMember member;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -262,7 +262,7 @@ public class FinancialTransaction {
         Objects.requireNonNull(household, "household must not be null");
         Objects.requireNonNull(account, "account must not be null");
         Objects.requireNonNull(createdByUser, "creator must not be null");
-        Objects.requireNonNull(member, "member must not be null");
+        // member may be null: the expense is shared by the whole family (全体/家庭共同).
         Objects.requireNonNull(category, "category must not be null");
         Objects.requireNonNull(kind, "kind must not be null");
         if (!sameHousehold(household, account.getHousehold())) {
@@ -271,7 +271,7 @@ public class FinancialTransaction {
         if (!sameHousehold(household, createdByUser.getHousehold())) {
             throw new IllegalArgumentException("Transaction creator must belong to the transaction household");
         }
-        if (!sameHousehold(household, member.getHousehold())) {
+        if (member != null && !sameHousehold(household, member.getHousehold())) {
             throw new IllegalArgumentException("Transaction member must belong to the transaction household");
         }
         if (!sameHousehold(household, category.getHousehold())) {

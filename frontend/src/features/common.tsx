@@ -108,6 +108,25 @@ export function ActionDialog(props:Omit<Parameters<typeof Drawer>[0],'presentati
   return <Drawer {...props} presentation="modal"/>;
 }
 
+export function CenteredModal({ open, title, description, onClose, children, draft, busy = false, sessionKey, savedKey, onSessionStart, width }: {
+  open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode;
+  draft?: unknown; busy?: boolean; sessionKey?: unknown; savedKey?: unknown; onSessionStart?: () => void; width?: number;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const protection = useDraftProtection({ active: open, draft, busy, sessionKey, savedKey, onDiscard: onClose });
+  const start = useRef(onSessionStart); start.current = onSessionStart;
+  useLayoutEffect(() => { setConfirming(false); if (open) start.current?.(); }, [open, sessionKey]);
+  const requestClose = () => { if (busy) return; if (protection.dirty) setConfirming(true); else onClose(); };
+  const { id, ref } = useModal(open, requestClose);
+  if (!open) return null;
+  return createPortal(<><div className="sheet-backdrop dialog-backdrop" onMouseDown={event => event.target === event.currentTarget && requestClose()}>
+    <section ref={ref} tabIndex={-1} className="centered-sheet" role="dialog" aria-modal="true" aria-labelledby={id} style={width ? { maxWidth: width } : undefined}>
+      <header><div><h2 id={id}>{title}</h2>{description && <p>{description}</p>}</div><button type="button" className="icon-button" aria-label="关闭" disabled={busy} onClick={requestClose}><X size={20} aria-hidden="true" /></button></header>
+      <div className="sheet-body"><fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'grid', gap: 'inherit' }} onSubmitCapture={event => { if (busy) { event.preventDefault(); event.stopPropagation(); } }}>{children}</fieldset></div>
+    </section>
+  </div><ConfirmDialog open={confirming} title="放弃未保存的修改？" detail="关闭后，本次尚未保存的输入将被清除。" cancelLabel="继续编辑" confirmLabel="放弃修改" onClose={() => setConfirming(false)} onConfirm={() => { setConfirming(false); onClose(); }} /></>, document.body);
+}
+
 export function ConfirmDialog({ open, title, detail, banner, confirmLabel = '确认', cancelLabel = '取消', confirmDisabled = false, danger, onConfirm, onClose, loading = false, className = '' }: { open: boolean; title: string; detail: ReactNode; banner?: ReactNode; confirmLabel?: string; cancelLabel?: string; confirmDisabled?: boolean; danger?: boolean; onConfirm: () => void; onClose: () => void; loading?: boolean; className?: string }) {
   const {id,ref} = useModal(open,onClose);
   if (!open) return null;
