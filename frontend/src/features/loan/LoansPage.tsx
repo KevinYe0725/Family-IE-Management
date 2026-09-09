@@ -350,6 +350,7 @@ export function LoansPage({
       setDraft(null);
       setStep(0);
       void debtOverview.refetch();
+      void loans.refetch();
     },
   });
   const confirm = useMutation({
@@ -370,6 +371,7 @@ export function LoansPage({
       setPayment(null);
       await selectedDetail.refetch();
       void debtOverview.refetch();
+      void loans.refetch();
     },
   });
 
@@ -378,6 +380,7 @@ export function LoansPage({
       request<void>(`/api/loans/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       void debtOverview.refetch();
+      void loans.refetch();
     },
   });
   const blank = (): LoanDraft => ({
@@ -418,6 +421,16 @@ export function LoansPage({
       }
       readonly={!manager}
     >
+      {loanStatus === "ACTIVE" &&
+        loans.data &&
+        loans.data.totalElements > 0 &&
+        (debtOverview.isLoading ? (
+          <p className="source-note" role="status">
+            正在计算债务总览…
+          </p>
+        ) : debtOverview.error ? null : debtOverview.data ? (
+          <LoanDebtOverviewPanel data={debtOverview.data} />
+        ) : null)}
       <div className="filter-bar">
         <label>
           贷款状态
@@ -435,16 +448,6 @@ export function LoansPage({
         </label>
       </div>
       <FormError error={archive.error} />
-      {loanStatus === "ACTIVE" &&
-        loans.data &&
-        loans.data.totalElements > 0 &&
-        (debtOverview.isLoading ? (
-          <p className="source-note" role="status">
-            正在计算债务总览…
-          </p>
-        ) : debtOverview.error ? null : debtOverview.data ? (
-          <LoanDebtOverviewPanel data={debtOverview.data} />
-        ) : null)}
       <QueryState
         loading={loans.isLoading}
         error={loans.error}
@@ -1349,6 +1352,8 @@ export function LoansPage({
             setSchedulePage(0);
             setPrepayOpen(false);
             void debtOverview.refetch();
+            void loans.refetch();
+      void loans.refetch();
           }}
           onPayoff={() => {
             setPrepayOpen(false);
@@ -1547,6 +1552,8 @@ export function LoansPage({
             setPayoffOpen(false);
             await selectedDetail.refetch();
             void debtOverview.refetch();
+            void loans.refetch();
+      void loans.refetch();
           }}
         />
       )}

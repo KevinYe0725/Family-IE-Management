@@ -60,14 +60,16 @@ public class LoanDebtOverviewService {
                         + " and loan_id in (select id from loans where household_id=? and status='ACTIVE')",
                 rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, household, household);
 
+        // 累计已还现金按全家庭口径统计（含已结清/已归档贷款的历史还款），
+        // 否则刚还清一笔贷款后它会离开 ACTIVE 集合导致该指标“不涨反不动”。
         BigDecimal paid = jdbc.queryForObject(
                 "select coalesce(sum(case when i.status='PAID' then"
-                        + " (case when i.confirmed_transaction_id is not null then t.amount_cents else 0 end)/100.0"
+                        + " (case when t.amount_cents is not null then t.amount_cents/100.0"
+                        + " else i.principal_amount + i.interest_amount end)"
                         + " else 0 end),0) from loan_installments i"
                         + " left join financial_transactions t on t.id=i.confirmed_transaction_id"
-                        + " where i.household_id=? and i.loan_id in"
-                        + " (select id from loans where household_id=? and status='ACTIVE')",
-                BigDecimal.class, household, household);
+                        + " where i.household_id=?",
+                BigDecimal.class, household);
 
         BigDecimal weighted = weightedBase != null && weightedBase.signum() > 0
                 ? loan[1].multiply(new BigDecimal("100")).divide(weightedBase, 4, RoundingMode.HALF_UP)
