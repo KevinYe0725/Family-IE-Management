@@ -1,0 +1,6 @@
+.daily-fx-reference {display:grid;gap:12px;padding:14px 16px;border:1px solid var(--semi-color-border);border-radius:12px;background:var(--semi-color-fill-0);}
+.daily-fx-reference>div:first-child {display:grid;gap:5px;}
+.daily-fx-reference strong {font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;}
+.daily-fx-reference span {font-size:13px;color:var(--semi-color-text-2);}
+.daily-fx-actions {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+.daily-fx-actions button {min-height:36px;}

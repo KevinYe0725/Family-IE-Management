@@ -1,8 +1,9 @@
+import {useTransientNotice} from '../../shared/useTransientNotice';
 import {useEffect,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import Modal from '@douyinfe/semi-ui/lib/es/modal';
 import {InvestmentButton as Button,InvestmentActions} from './investment-ui';
-import {CalendarClock,ArrowRight,Repeat2} from 'lucide-react';
+import {CalendarClock,ArrowRight,Repeat2,X} from 'lucide-react';
 import type {Account,InvestmentAccount,Membership,Page} from '../../api/contracts';
 import {DateField} from '../../shared/DateField';
 import {businessDate,newIdempotencyKey} from '../../shared/runtime';
@@ -21,7 +22,8 @@ export function InvestmentPlansPanel({request,manager,accounts,cashAccounts,supp
  const [editor,setEditor]=useState<InvestmentPlan|'new'|null>(null);
  const [payment,setPayment]=useState<InvestmentPlanOccurrence|null>(null);
  const [skip,setSkip]=useState<InvestmentPlanOccurrence|null>(null),[reason,setReason]=useState('');
- const [ending,setEnding]=useState<InvestmentPlan|null>(null),[notice,setNotice]=useState('');
+ const [ending,setEnding]=useState<InvestmentPlan|null>(null);
+ const {message:notice,show:setNotice,dismiss:dismissNotice}=useTransientNotice();
  const refresh=async()=>{await Promise.all(['investment-plans','notifications','accounts','portfolio','investment-trades','dashboard','net-worth'].map(key=>cache.invalidateQueries({queryKey:[key]})));};
  const action=useMutation({mutationFn:({path,body}:{path:string;body:unknown})=>request(path,{method:'POST',body,headers:{'Idempotency-Key':newIdempotencyKey()}}),onSuccess:async()=>{setSkip(null);setEnding(null);await refresh();setNotice('已更新，未确认的实际成交不会自动记账。');}});
  const supportUnavailable=Boolean(supportState?.loading||supportState?.error);
@@ -31,7 +33,7 @@ export function InvestmentPlansPanel({request,manager,accounts,cashAccounts,supp
  return <section className="investment-plans" aria-label="定投计划">
   <header className="investment-plans-heading"><div><h2>让计划有节奏</h2><p>到期提醒，成交后由你确认。</p></div>{manager&&<Button theme="solid" disabled={supportUnavailable} onClick={()=>setEditor('new')}>新建定投计划</Button>}</header>
   {supportState?.error?<div className="plan-support-state" role="alert"><span>{supportState.error instanceof Error?supportState.error.message:'定投所需的投资账户或资金账户暂时无法读取。'}</span><button type="button" className="text-action" onClick={supportState.retry}>重试定投账户数据</button></div>:supportState?.loading?<p className="plan-support-state" role="status">正在读取定投所需的投资账户和资金账户…</p>:null}
-  {notice&&<p role="status">{notice}</p>}<FormError compact error={action.error}/>
+  {notice&&<p className="investment-saved" role="status">{notice}<button type="button" className="text-action" aria-label="关闭成功提示" onClick={dismissNotice}><X size={16}/></button></p>}<FormError compact error={action.error}/>
   <QueryState loading={query.isLoading} error={query.error} empty={false}>
    <div className="plan-section-heading"><h3>待确认</h3><span>{query.data?.pendingCount??pending.length} 期</span></div>
    {!pending.length?<div className="plan-quiet"><CalendarClock size={24} aria-hidden="true"/><span>当前页没有待确认定投，到期后会在提醒中心通知负责人。</span></div>:pending.map(item=><article className="plan-due" key={item.id}>
