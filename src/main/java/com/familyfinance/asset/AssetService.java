@@ -50,6 +50,7 @@ public class AssetService {
     private final com.familyfinance.accounting.AccountingRequests requests;
     private final AssetAccountingService accounting;
     private final jakarta.persistence.EntityManager entities;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public AssetService(
             AssetRepository assets,
@@ -59,7 +60,7 @@ public class AssetService {
             FamilyMutationAuthorization mutationAuthorization,
             LoanRepository loans,
             Clock clock,com.familyfinance.accounting.AccountingRequests requests,
-            AssetAccountingService accounting,jakarta.persistence.EntityManager entities) {
+            AssetAccountingService accounting,jakarta.persistence.EntityManager entities,org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.assets = assets;
         this.valuations = valuations;
         this.members = members;
@@ -67,7 +68,7 @@ public class AssetService {
         this.mutationAuthorization = mutationAuthorization;
         this.loans = loans;
         this.clock = clock;
-        this.requests=requests;this.accounting=accounting;this.entities=entities;
+        this.requests=requests;this.accounting=accounting;this.entities=entities;this.jdbc=jdbc;
     }
 
     public AssetPage list(
@@ -245,6 +246,40 @@ public class AssetService {
         assets.flush();
         requests.record(h,key,digest,assetId);
         return response(asset);
+    }
+
+    @Transactional
+    public void cancel(Authentication authentication, long assetId) {
+        cancel(authentication,assetId,com.familyfinance.accounting.AccountingRequests.key(null));
+    }
+    @Transactional
+    public void cancel(Authentication authentication,long assetId,String key) {
+        FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireAdmin(authentication);
+        long householdId = access.context().householdId();
+        String digest=requests.digest("ASSET_CANCEL:"+assetId,access.context().userId(),assetId);
+        if(requests.replay(householdId,key,digest)!=null)return;
+        Asset asset = findCurrent(householdId, assetId);
+        if (asset.isArchived()) throw archived();
+        if (asset.getPurchaseLoanId() != null)
+            throw new ResourceConflictException("ASSET_FINANCED_CANCEL_VIA_LOAN","该资产为贷款购买物，请从贷款计划取消对应贷款（将一并撤销资产）");
+        if (asset.getAccountingMode() == null)
+            throw new ResourceConflictException("ACCOUNTING_NOT_INITIALIZED","旧资产尚未确认账务期初，不能取消");
+        accounting.requireBalance(asset);
+        if (asset.getDisposedOn() != null)
+            throw new ResourceConflictException("ASSET_DISPOSED","资产已处置，不能取消");
+        if (hasLoanReference(householdId, assetId))
+            throw new ResourceConflictException("RESOURCE_IN_USE","资产仍被贷款引用，无法取消；请先取消关联贷款");
+        if (valuations.countByHouseholdIdAndAssetId(householdId, assetId) > 1)
+            throw new ResourceConflictException("ASSET_HAS_VALUATIONS","资产已有估值记录，暂不支持取消；请先删除后续估值后再取消");
+        Long initialValuationId = valuations.findFirstByAssetIdOrderByValuedOnDescFetchedAtDescIdDesc(assetId)
+                .map(AssetValuation::getId).orElse(null);
+        // 红字冲销取得凭证与创建时的估值差异（如现金购入，现金原路退回；期初资产则回冲期初权益）。
+        accounting.cancel(asset,initialValuationId,access.context().userId(),key);
+        jdbc.update("delete from asset_valuations where household_id=? and asset_id=?",householdId,assetId);
+        jdbc.update("delete from property_assets where household_id=? and asset_id=?",householdId,assetId);
+        jdbc.update("delete from vehicle_assets where household_id=? and asset_id=?",householdId,assetId);
+        jdbc.update("delete from assets where household_id=? and id=?",householdId,assetId);
+        requests.record(householdId,key,digest,assetId);
     }
 
     private AssetResponse response(Asset asset) {

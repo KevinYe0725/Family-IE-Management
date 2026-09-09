@@ -37,6 +37,10 @@ public class LoanAccountingService {
   if(replace)posting.replace(command);else posting.post(command);
   requireBalance(loan);
  }
+ /** 取消（冲销）一笔尚未发生还款的贷款：红字冲销其期初/放款/贷款购买凭证。 */
+ public void cancel(Loan loan,long actor,String key) {
+  posting.reverse(loan.getHousehold().getId(),source(loan),loan.getId(),key,actor);
+ }
  public void requireInitialized(Loan loan) {
   if(loan.getFundingMode()==null||loan.getAccountingOn()==null||ledger.currentSource(loan.getHousehold().getId(),source(loan),loan.getId()).isEmpty())
    throw new ResourceConflictException("ACCOUNTING_NOT_INITIALIZED","贷款尚未确认账务期初，不能进行资金操作");

@@ -71,3 +71,10 @@ it.each([
   expect(screen.queryByRole('button', { name: '未来还款设置' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: '贷款起始账务历史' })).toBeInTheDocument();
 });
+it('cancels a pristine active loan through a confirmation dialog', async () => {
+  const { user, request } = setup();
+  await user.click(await screen.findByRole('button', { name: '取消' }));
+  expect(screen.getByText(/红字冲销该贷款的期初\/放款账务/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: '取消贷款' }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith('/api/loans/4/cancel', expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': expect.any(String) } })));
+});

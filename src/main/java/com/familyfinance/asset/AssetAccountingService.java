@@ -51,8 +51,16 @@ public class AssetAccountingService {
         add(entries,delta>=0?"INCOME:VALUATION_GAIN":"EXPENSE:VALUATION_LOSS",delta>=0?INCOME:EXPENSE,-delta);
         post(asset,"ASSET_VALUATION",valuationId,key,day,actor,entries);
     }
-    public void dispose(Asset asset,LocalDate day,long proceeds,Long cashId,long actor,String key) {
-        requireBalance(asset);
+    /** 取消（冲销）一笔尚未有后续估值/处置的资产：红字冲销取得凭证与创建时的估值差异。 */
+    public void cancel(Asset asset,Long initialValuationId,long actor,String key) {
+        long h=asset.getHousehold().getId();
+        posting.reverse(h,"ASSET_ACQUISITION",asset.getId(),key,actor);
+        if(initialValuationId!=null && jdbc.queryForObject(
+            "select count(*) from ledger_sources where household_id=? and source_type='ASSET_VALUATION' and source_id=? and current_journal_id is not null",
+            Long.class,h,initialValuationId)>0)
+            posting.reverse(h,"ASSET_VALUATION",initialValuationId,key+":revalue",actor);
+    }
+    public void dispose(Asset asset,LocalDate day,long proceeds,Long cashId,long actor,String key) {        requireBalance(asset);
         requireChronology(asset,day);
         if(cashId!=null)requireCash(asset.getHousehold().getId(),cashId,day);
         if(proceeds>0&&cashId==null)throw new ResourceConflictException("DISPOSAL_CASH_REQUIRED","有处置收入时必须选择资金账户");

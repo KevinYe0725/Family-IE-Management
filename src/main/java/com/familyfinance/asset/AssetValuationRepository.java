@@ -15,4 +15,6 @@ public interface AssetValuationRepository extends JpaRepository<AssetValuation, 
     Optional<AssetValuation> findFirstByAssetIdOrderByValuedOnDescFetchedAtDescIdDesc(Long assetId);
 
     Page<AssetValuation> findByHouseholdIdAndAssetId(Long householdId, Long assetId, Pageable pageable);
+
+    long countByHouseholdIdAndAssetId(Long householdId, Long assetId);
 }
