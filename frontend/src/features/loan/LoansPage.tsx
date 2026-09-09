@@ -477,10 +477,12 @@ export function LoansPage({
                         : "自定义"}
                   </span>
                 </header>
-                <div className="loan-principal">
-                  <span>剩余本金</span>
-                  <strong>{money(item.currentPrincipal)}</strong>
-                </div>
+                {item.status !== "CLOSED" && (
+                  <div className="loan-principal">
+                    <span>剩余本金</span>
+                    <strong>{money(item.currentPrincipal)}</strong>
+                  </div>
+                )}
                 {loanOverviewFacts(item)}
                 <footer>
                   <Button
@@ -1638,17 +1640,10 @@ function loanOverviewFacts(item: Loan) {
   const fold: Fact[] = closed
     ? facts([
         { dt: "原合同期限", dd: term },
-        item.remainingTerm !== undefined
-          ? { dt: "剩余期数", dd: `${item.remainingTerm} 期` }
-          : null,
-        item.remainingTerm !== undefined
-          ? { dt: "计划到期", dd: dateText(item.maturityOn) }
-          : null,
         {
           dt: "当前有效计划总金额",
           dd: money(item.scheduledRepaymentTotal),
         },
-        { dt: "计划剩余本息", dd: money(item.remainingRepaymentTotal) },
         item.nextPaymentOn
           ? { dt: "下期还款日", dd: dateText(item.nextPaymentOn) }
           : null,

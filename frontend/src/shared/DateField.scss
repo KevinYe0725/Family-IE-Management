@@ -103,3 +103,6 @@
 @media (prefers-reduced-motion: reduce) {
   .unified-date-field__trigger { transition: none; }
 }
+
+/* 日历弹层挂在 body：贴近输入框展开，并确保高于抽屉/弹窗遮罩不被遮挡 */
+.unified-date-calendar { z-index: 1200; }
