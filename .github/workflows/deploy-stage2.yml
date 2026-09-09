@@ -37,7 +37,7 @@ jobs:
         run: |
           npm ci
           npm run typecheck
-          npm test -- --run
+          npm test -- --run --maxWorkers=2
           npm run build
       - name: Stamp exact deployed version
         env:

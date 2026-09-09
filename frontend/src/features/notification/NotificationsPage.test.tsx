@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { NotificationsPage } from './NotificationsPage';
 import type { RequestFn } from '../common';
 
+it('opens investment plan reminders at the actionable plan tab',async()=>{
+ const request=(async()=>({unreadCount:1,items:[{id:7,title:'定投到期',body:'请确认实际成交',type:'INVESTMENT_PLAN_DUE',referenceType:'INVESTMENT_PLAN_OCCURRENCE',referenceId:9,dueAt:'2026-09-09',readAt:null,resolvedAt:null}]})) as RequestFn;
+ render(<QueryClientProvider client={new QueryClient()}><NotificationsPage request={request} role="ADMIN"/></QueryClientProvider>);
+ expect(await screen.findByRole('link',{name:'查看来源'})).toHaveAttribute('href','/workspace/investments?tab=plans');
+});
+
 it.each(['OWNER', 'ADMIN', 'MEMBER'] as const)('keeps read/resolve and gates generation for %s', async role => {
   const writes: string[] = [];
   const request: RequestFn = async <T,>(path: string, options?: { method?: string }) => {

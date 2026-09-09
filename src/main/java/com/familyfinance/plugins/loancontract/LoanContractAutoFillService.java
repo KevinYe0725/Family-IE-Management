@@ -60,12 +60,12 @@ public class LoanContractAutoFillService {
         Integer term = ai.termMonths() != null ? ai.termMonths() : f.termMonths();
 
         Map<String, Double> confidence = new LinkedHashMap<>(fallback.confidence());
-        if (type != null) confidence.put("loanType", 0.98);
-        if (principal != null) confidence.put("principal", 0.98);
-        if (rate != null) confidence.put("annualRatePercent", 0.98);
-        if (term != null) confidence.put("termMonths", 0.98);
-        if (startOn != null) confidence.put("startOn", 0.98);
-        if (method != null) confidence.put("repaymentMethod", 0.98);
+        if (ai.loanType() != null) confidence.put("loanType", 0.98);
+        if (ai.principal() != null) confidence.put("principal", 0.98);
+        if (ai.annualRatePercent() != null) confidence.put("annualRatePercent", 0.98);
+        if (ai.termMonths() != null) confidence.put("termMonths", 0.98);
+        if (ai.startOn() != null) confidence.put("startOn", 0.98);
+        if (ai.repaymentMethod() != null) confidence.put("repaymentMethod", 0.98);
 
         List<String> warnings = new ArrayList<>();
         if (principal == null) warnings.add("未识别到贷款本金，请人工填写");

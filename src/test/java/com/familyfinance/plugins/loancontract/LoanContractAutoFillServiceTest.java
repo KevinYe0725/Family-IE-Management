@@ -57,4 +57,14 @@ class LoanContractAutoFillServiceTest {
     private static AiLoanContractExtractor extractor(String reply) {
         return new AiLoanContractExtractor((a, prompt) -> reply, new JsonMapper());
     }
+
+    @Test
+    void preservesCorrectRuleAmountAndConfidenceWhenModelAmountContainsUnits() {
+        var rules = new LoanContractExtractionService();
+        var expected = rules.extractFromText(MORTGAGE, "合同.docx");
+        var result = new LoanContractAutoFillService(rules, extractor("{\"principal\":\"120万元\",\"termMonths\":300}"))
+                .extractFromText(auth, true, MORTGAGE, "合同.docx");
+        assertThat(result.fields().principal()).isEqualTo("1200000");
+        assertThat(result.confidence().get("principal")).isEqualTo(expected.confidence().get("principal"));
+    }
 }

@@ -109,6 +109,16 @@ public class InvestmentTradeService {
         return InvestmentTradeResponse.from(trade, cashImpact(trade));
     }
 
+    /** Internal occurrence replay; caller has already authorized and locked this household. */
+    @Transactional
+    InvestmentTradeResponse currentIfPresent(long householdId,long id) {
+        var existing=trades.findCurrent(id,householdId);
+        if(existing.isEmpty())return null;
+        entities.detach(existing.get());
+        return trades.findCurrent(id,householdId)
+                .map(trade->InvestmentTradeResponse.from(trade,cashImpact(trade))).orElse(null);
+    }
+
     @Transactional
     public InvestmentTradeMutationResponse create(Authentication authentication, InvestmentTradeRequest request) {
         return create(authentication,request,com.familyfinance.accounting.AccountingRequests.key(null));

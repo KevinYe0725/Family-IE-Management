@@ -32,9 +32,10 @@ function setup() {
 
 it('creates an investment account with the backend fundingAccountId field', async () => {
   const { user, request } = setup();
-  await user.click(screen.getByRole('button', { name: '账户' }));
+  await user.click(screen.getByRole('button',{name:'投资管理'}));
+  await user.click(await screen.findByRole('menuitem',{name:'账户'}));
   await user.click(screen.getByRole('button', { name: '新建账户' }));
-  const form = within(screen.getByRole('dialog'));
+  const form = within(screen.getByRole('dialog',{name:'新建投资账户'}));
   await user.type(form.getByLabelText('账户名称'), '新证券账户');
   await user.type(form.getByLabelText('券商名称'), '新券商');
   await user.selectOptions(form.getByLabelText('资金账户'), '1');
@@ -44,9 +45,10 @@ it('creates an investment account with the backend fundingAccountId field', asyn
 
 it('loads and changes the future funding default from the real account response shape', async () => {
   const { user, request } = setup();
-  await user.click(screen.getByRole('button', { name: '账户' }));
+  await user.click(screen.getByRole('button',{name:'投资管理'}));
+  await user.click(await screen.findByRole('menuitem',{name:'账户'}));
   await user.click(await screen.findByRole('button', { name: '编辑' }));
-  const form = within(screen.getByRole('dialog'));
+  const form = within(screen.getByRole('dialog',{name:'编辑投资账户'}));
   expect(form.getByLabelText('资金账户')).toHaveValue('7');
   await user.selectOptions(form.getByLabelText('资金账户'), '1');
   await user.click(form.getByRole('button', { name: '保存账户' }));

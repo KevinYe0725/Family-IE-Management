@@ -19,6 +19,7 @@ import { ModuleSidebar } from './ModuleSidebar';
 import { WorkspaceHeader } from './WorkspaceHeader';
 import { PluginPage } from '../extensions/registry';
 import { AccountInitializationGuide } from './AccountInitializationGuide';
+import { RecurringBillingGuide } from './RecurringBillingGuide';
 
 export const SIDEBAR_PREFERENCE_KEY = 'family-finance:module-sidebar-collapsed';
 
@@ -48,6 +49,7 @@ export function WorkspaceLayout({ session, onLogout }: { session: Session; onLog
   const auth = useContext(AuthContext);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === 'true');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountGuideDecision, setAccountGuideDecision] = useState<'waiting' | 'show' | 'dismissed'>('waiting');
   const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 
   const closeMobile = useCallback(() => {
@@ -76,7 +78,15 @@ export function WorkspaceLayout({ session, onLogout }: { session: Session; onLog
         <main className="workspace-main"><WorkspaceContent session={session} /></main>
       </div>
       <MobileModuleDrawer open={mobileOpen} onClose={closeMobile} />
-      {auth?.status === 'authenticated' && <AccountInitializationGuide key={`${session.userId}:${session.householdId}`} session={session} request={auth.request} />}
+      {auth?.status === 'authenticated' && <>
+        <AccountInitializationGuide
+          key={`${session.userId}:${session.householdId}`}
+          session={session}
+          request={auth.request}
+          onDecisionChange={setAccountGuideDecision}
+        />
+        {accountGuideDecision === 'dismissed' && <RecurringBillingGuide key={`${session.userId}:${session.householdId}`} session={session} request={auth.request} />}
+      </>}
     </div>
   );
 }

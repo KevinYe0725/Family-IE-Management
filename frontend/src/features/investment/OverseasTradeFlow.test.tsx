@@ -27,7 +27,9 @@ it('creates a US investment through the unified picker and previews USD cash wit
  expect(await form.findByRole('option',{name:'美元证券 · USD'})).toBeInTheDocument();
  await user.click(form.getByRole('button',{name:'美股'}));await waitFor(()=>expect(form.getByRole('combobox',{name:'证券'})).toHaveAttribute('aria-disabled','false'));
  await user.click(form.getByRole('combobox',{name:'证券'}));await user.click(await screen.findByRole('option',{name:/AAPL.*Apple/}));
- await user.type(form.getByLabelText('数量'),'1000');await user.type(form.getByLabelText('成交单价'),'0.001234');
+ // This integration case verifies trade precision, not per-keystroke search/IME behavior.
+ await user.click(form.getByLabelText('数量'));await user.paste('1000');
+ await user.click(form.getByLabelText('成交单价'));await user.paste('0.001234');
  expect(form.getByText('预计余额 USD 8.77')).toBeInTheDocument();
  await user.click(form.getByRole('button',{name:'保存投资记录'}));
  await waitFor(()=>expect(writes).toHaveLength(1));expect(writes[0]).toMatchObject({accountId:1,securityId:7,quantity:'1000',price:'0.001234',type:'BUY'});

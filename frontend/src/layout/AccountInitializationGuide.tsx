@@ -8,7 +8,11 @@ import { readAllPages } from '../shared/pagination';
 import { AccountIdentity } from '../features/ledger/AccountIdentity';
 
 /** One reminder per authenticated workspace entry; no financial writes or persisted dismissal. */
-export function AccountInitializationGuide({ session, request }: { session: Session; request: ApiRequest }) {
+export function AccountInitializationGuide({ session, request, onDecisionChange }: {
+  session: Session;
+  request: ApiRequest;
+  onDecisionChange?: (decision: 'waiting' | 'show' | 'dismissed') => void;
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const onAccountPage = location.pathname === '/workspace/transactions'
@@ -43,6 +47,7 @@ export function AccountInitializationGuide({ session, request }: { session: Sess
 
   const manager = isManager(session.role);
   const close = () => setDecision('dismissed');
+  useEffect(() => { onDecisionChange?.(decision); }, [decision, onDecisionChange]);
   return <ConfirmDialog
     open={decision === 'show' && !accounts.isFetching && !accounts.isError && pending.length > 0 && !onAccountPage}
     title="先确认账户期初余额"

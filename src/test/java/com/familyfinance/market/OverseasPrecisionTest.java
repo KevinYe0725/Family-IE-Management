@@ -45,11 +45,11 @@ class OverseasPrecisionTest {
         }
     }
 
-    @Test void clockSkewAcrossMidnightCannotAdmitTheActualCurrentTradingDay() {
-        Instant actualNow = Instant.parse("2026-09-08T03:58:00Z");
+    @Test void clockSkewAcrossPublicationCutoffCannotAdmitNotYetCompletedTradingDay() {
+        Instant actualNow = Instant.parse("2026-09-08T21:28:00Z");
         var clockService = new OverseasMarketService(security, client, Clock.fixed(actualNow, ZoneOffset.UTC));
         var input = response("US", "11", "12", "9", "10");
-        var day = LocalDate.of(2026, 9, 7);
+        var day = LocalDate.of(2026, 9, 8);
         var bar = new CandleBar(day.atStartOfDay(ZoneId.of("America/New_York")).toInstant().toEpochMilli(), new BigDecimal("10"), new BigDecimal("12"), new BigDecimal("9"), new BigDecimal("11"), 100, null);
         when(client.overseasCandles("US", "AAPL")).thenReturn(new OverseasCandleResponse(input.instrument(), "AAPL", "SINA", "none", day, actualNow.plusSeconds(300), false, true, List.of(bar)));
         assertThatThrownBy(() -> clockService.candles(auth, "US", "AAPL")).isInstanceOf(MarketProviderException.class);

@@ -22,6 +22,12 @@ public interface FinancialTransactionRepository
     java.util.Optional<FinancialTransaction> findBySourceTypeAndSourceId(
             TransactionSourceType sourceType, Long sourceId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from FinancialTransaction t where t.household.id=:householdId and t.sourceType=:sourceType and t.sourceId=:sourceId")
+    java.util.Optional<FinancialTransaction> findLockedByHouseholdIdAndSourceTypeAndSourceId(
+            @Param("householdId") Long householdId, @Param("sourceType") TransactionSourceType sourceType,
+            @Param("sourceId") Long sourceId);
+
     boolean existsByHouseholdIdAndMemberId(Long householdId, Long memberId);
 
     boolean existsByHouseholdIdAndCategoryId(Long householdId, Long categoryId);

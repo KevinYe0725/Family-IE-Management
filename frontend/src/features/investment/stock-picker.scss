@@ -1,22 +1,27 @@
-.stock-picker { position: relative; display: grid; gap: 8px; min-width: 0; font-size: 14px; }
-.stock-picker__label { color: var(--ledger-text); font-weight: 500; }
-.stock-picker > .stock-picker__select { min-height: 46px; height: auto; border: 1px solid var(--ledger-border); border-radius: 10px; background: #fff; box-shadow: none; }
+.stock-picker { position: relative; display: grid; gap: 8px; min-width: 0; font-size:var(--inv-font-body); }
+.stock-picker__label { color: var(--inv-text); font-weight: 500; }
+.stock-picker > .stock-picker__select { min-height: 48px; height: auto; border: 1px solid var(--inv-border); border-radius: 10px; background: var(--inv-surface); box-shadow: none; }
 .stock-picker > .stock-picker__select:hover { border-color: #b8c3d4; }
-.stock-picker > .stock-picker__select.semi-select-focus { border-color: var(--ledger-primary); box-shadow: 0 0 0 3px #4b6bee12; }
+.stock-picker > .stock-picker__select.semi-select-focus { border-color: var(--inv-accent); box-shadow: 0 0 0 3px #4b6bee12; }
 .stock-picker .stock-picker__select input { min-height: 0; height: auto; width: 100%; padding: 0; margin: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; font: inherit; }
 .stock-picker .semi-select-selection { min-width: 0; padding-block: 5px; }
 .stock-picker-selected { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.stock-picker-selected strong { color: var(--ledger-text); font-weight: 550; overflow: hidden; text-overflow: ellipsis; }
-.stock-picker-selected > span:not(.sr-only) { color: var(--ledger-muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.stock-picker-dropdown { border: 1px solid var(--ledger-border); border-radius: 12px; padding: 5px; box-shadow: 0 8px 28px #20272e18; background: #fff; overflow: hidden; }
+.stock-picker-selected strong { color: var(--inv-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.stock-picker-selected > span:not(.sr-only) { color: var(--inv-muted); font-size:var(--inv-font-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stock-picker-dropdown { border: 1px solid var(--inv-border); border-radius: 12px; padding: 5px; box-shadow: 0 8px 28px #20272e18; background: var(--inv-surface); overflow: hidden; }
 .stock-picker-dropdown .semi-select-option-list { max-height: 264px; overscroll-behavior: contain; }
 .stock-picker-dropdown .semi-select-option { border-radius: 7px; min-height: 58px; padding: 9px 12px; align-items: center; }
-.stock-picker-dropdown .semi-select-option:hover, .stock-picker-dropdown .semi-select-option-focused { background: var(--ledger-canvas); }
+.stock-picker-dropdown .semi-select-option:hover, .stock-picker-dropdown .semi-select-option-focused { background: var(--inv-muted-surface); }
 .stock-picker-dropdown .semi-select-option-selected { background: #edf1fc; }
 .stock-picker-dropdown .semi-select-option-text { min-width: 0; width: 100%; }
 .stock-picker-option-content { display: grid; gap: 5px; min-width: 0; }
-.stock-picker-option-name { font-size: 14px; line-height: 1.4; color: var(--ledger-text); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stock-picker-option-meta { display: flex; align-items: center; gap: 10px; color: var(--ledger-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.stock-picker-option-exchange { border-left: 1px solid var(--ledger-border); padding-left: 10px; }
-.stock-picker .stock-picker-status { min-height: 0; color: var(--ledger-muted); font-size: 13px; line-height: 1.6; }
+.stock-picker-option-name { font-size:var(--inv-font-body); line-height: 1.4; color: var(--inv-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-picker-option-meta { display: flex; align-items: center; gap: 10px; color: var(--inv-muted); font-size:var(--inv-font-meta); font-variant-numeric: tabular-nums; }
+.stock-picker-option-exchange { border-left: 1px solid var(--inv-border); padding-left: 10px; }
+.stock-picker .stock-picker-status { min-height: 0; color: var(--inv-muted); font-size:var(--inv-font-meta); line-height: 1.6; }
 .stock-picker-status:empty { display: none; }
+.market-switch {display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px;margin:0 0 12px;background:var(--inv-muted-surface);border:1px solid var(--inv-border);border-radius:var(--inv-radius-control);}
+.market-switch>button {appearance:none;border:0;border-radius:6px;background:transparent;color:var(--inv-muted);font-family:inherit;font-size:var(--inv-font-body);font-weight:500;min-height:36px;padding:7px 14px;cursor:pointer;}
+.market-switch>button[aria-pressed="true"] {background:var(--inv-surface);color:var(--inv-text);box-shadow:0 1px 3px #20272e12;font-weight:600;}
+.market-switch>button:focus-visible {outline:2px solid var(--inv-accent);outline-offset:2px;}
+.market-switch>button:disabled {opacity:.5;cursor:not-allowed;}

@@ -147,7 +147,7 @@ export function DateField({
 
   useLayoutEffect(() => {
     if (!open || !keyboardOpenRef.current) return;
-    // 弹层挂在 document.body；从这里定位日历以支持键盘进入。
+    // 弹层定位：modal 内随上游挂载到内容层，其余场景挂 document.body 避免被裁剪/遮挡。
     const container = document.body;
     const focusCalendar = () => {
       const selected = container.querySelector<HTMLElement>('.unified-date-calendar [role="gridcell"][aria-selected="true"]:not([aria-disabled="true"])');
@@ -197,7 +197,10 @@ export function DateField({
         dropdownClassName="unified-date-calendar"
         position="bottomLeft"
         zIndex={1200}
-        getPopupContainer={() => document.body}
+        getPopupContainer={() =>
+          rootRef.current?.closest<HTMLElement>('.semi-modal-content') ??
+          document.body
+        }
         onOpenChange={nextOpen => {
           if (nextOpen) keyboardOpenRef.current = false;
           setOpen(readOnly ? false : nextOpen);

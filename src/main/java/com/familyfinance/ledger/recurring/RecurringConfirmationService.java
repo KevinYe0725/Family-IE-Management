@@ -14,6 +14,8 @@ import com.familyfinance.ledger.FinancialAccount;
 import com.familyfinance.ledger.FinancialAccountRepository;
 import com.familyfinance.shared.ResourceConflictException;
 import com.familyfinance.shared.ResourceNotFoundException;
+import com.familyfinance.shared.Money;
+import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.transaction.FinancialTransaction;
 import com.familyfinance.transaction.FinancialTransactionRepository;
 import com.familyfinance.transaction.TransactionSourceType;
@@ -72,16 +74,30 @@ public class RecurringConfirmationService {
     }
     @Transactional
     public RecurringOccurrenceResponse confirm(Authentication authentication,long occurrenceId,java.time.LocalDate occurredOn) {
+        return confirm(authentication, occurrenceId, occurredOn, (String) null);
+    }
+    @Transactional
+    public RecurringOccurrenceResponse confirm(
+            Authentication authentication, long occurrenceId, java.time.LocalDate occurredOn, String amount) {
+        Long amountOverrideCents = parseAmountOverride(amount);
+        return confirm(authentication, occurrenceId, occurredOn, amountOverrideCents);
+    }
+    private RecurringOccurrenceResponse confirm(
+            Authentication authentication, long occurrenceId, java.time.LocalDate occurredOn,
+            Long amountOverrideCents) {
         FamilyMutationAuthorization.LockedFamilyAccess access = mutationAuthorization.requireCurrent(authentication);
         long householdId = access.context().householdId();
         RecurringOccurrence occurrence = occurrences.findLockedByIdAndHouseholdId(occurrenceId, householdId)
                 .orElseThrow(() -> new ResourceNotFoundException("周期发生项不存在"));
+        // Refresh after locking: an entity graph may have hydrated from a repeatable-read snapshot.
+        entityManager.refresh(occurrence, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         Long assigneeId = occurrence.getAssignedUser() == null ? null : occurrence.getAssignedUser().getId();
         if (assigneeId == null) {
             throw new ResourceConflictException("OCCURRENCE_UNASSIGNED", "周期发生项尚未分配，无法确认");
         }
         permissions.requireCanConfirmAssignedOccurrence(access.context(), assigneeId);
         if (occurrence.getStatus() == RecurringOccurrenceStatus.CONFIRMED) {
+            requireMatchingAmount(occurrence.getConfirmedTransaction(), amountOverrideCents);
             return RecurringOccurrenceResponse.from(occurrence);
         }
         if (occurrence.getStatus() == RecurringOccurrenceStatus.CANCELLED) {
@@ -90,12 +106,15 @@ public class RecurringConfirmationService {
         if (occurrence.getAssignedUser().getStatus() != AppUserStatus.ACTIVE) {
             throw staleReference();
         }
-        String key="recurring:"+occurrenceId;
-        String digest=requests.digest("RECURRING_CONFIRM",access.context().userId(),occurrenceId);
-        Long replay=requests.replay(householdId,key,digest);
-
         RecurringRule rule = occurrence.getRule();
         entityManager.refresh(rule,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        long amountCents = amountOverrideCents == null ? rule.getAmountCents() : amountOverrideCents;
+        String key="recurring:"+occurrenceId;
+        String digest=requests.digest("RECURRING_CONFIRM", access.context().userId(),
+                java.util.Map.of("occurrenceId", occurrenceId, "amountCents", amountCents));
+        String historicalDigest=requests.digest("RECURRING_CONFIRM", access.context().userId(), occurrenceId);
+        Long replay=requests.replay(householdId,key,digest,historicalDigest);
+
         FinancialAccount account = accounts
                 .findLockedByIdAndHouseholdId(rule.getAccount().getId(), householdId).filter(a->!a.isArchived())
                 .orElseThrow(RecurringConfirmationService::staleReference);
@@ -107,9 +126,10 @@ public class RecurringConfirmationService {
                 .orElseThrow(RecurringConfirmationService::staleReference);
 
         FinancialTransaction existing = transactions
-                .findBySourceTypeAndSourceId(TransactionSourceType.RECURRING, occurrenceId)
+                .findLockedByHouseholdIdAndSourceTypeAndSourceId(householdId, TransactionSourceType.RECURRING, occurrenceId)
                 .orElse(null);
         if (existing != null) {
+            requireMatchingAmount(existing, amountOverrideCents);
             if(ledger.currentSource(householdId,"TRANSACTION",existing.getId()).isEmpty())
                 throw new ResourceConflictException("ACCOUNTING_NOT_INITIALIZED","历史周期收支未初始化账务");
             occurrence.confirm(existing);
@@ -122,7 +142,7 @@ public class RecurringConfirmationService {
             cash.requireConfirmed(account);
             FinancialTransaction transaction = transactions.saveAndFlush(FinancialTransaction.recurring(
                     access.household(), account, access.membership().getUser(), member, category,
-                    rule.getKind(), rule.getAmountCents(), occurredOn, occurrenceId, clock.instant()));
+                    rule.getKind(), amountCents, occurredOn, occurrenceId, clock.instant()));
             cash.postTransaction(transaction,key);
             occurrence.confirm(transaction);
             occurrences.flush();
@@ -131,6 +151,23 @@ public class RecurringConfirmationService {
         } catch (DataIntegrityViolationException exception) {
             throw new ResourceConflictException(
                     "RECURRING_CONFIRMATION_RACE", "周期账单已由另一请求确认，请重试");
+        }
+    }
+
+    private void requireMatchingAmount(FinancialTransaction transaction, Long amountOverrideCents) {
+        if (amountOverrideCents == null) return; // Legacy callers retry without an amount.
+        entityManager.refresh(transaction, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        if (!amountOverrideCents.equals(transaction.getAmountCents())) {
+            throw new ResourceConflictException("IDEMPOTENCY_KEY_REUSED", "本期账单已按其他金额入账，请在收支明细中更正");
+        }
+    }
+
+    private static Long parseAmountOverride(String amount) {
+        if (amount == null) return null;
+        try {
+            return Money.parseCents(amount);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException(java.util.Map.of("amount", exception.getMessage()));
         }
     }
 

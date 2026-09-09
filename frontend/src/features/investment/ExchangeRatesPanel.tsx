@@ -1,3 +1,4 @@
+import {InvestmentButton as Button} from './investment-ui';
 import { useEffect,useState } from 'react';
 import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
@@ -33,7 +34,7 @@ export function ExchangeRatesPanel({request,manager}:{request:RequestFn;manager:
   }});
   const state=table.data?.refreshState;
   const notices:Record<string,string>={FAILED:'更新失败，保留上次汇率。',THROTTLED:'更新较频繁，请一分钟后再试。',UPDATING:'汇率正在更新…',SUCCESS:'汇率已更新。'};
-  return <DataPanel title="汇率" action={manager&&<button className="text-action" disabled={refresh.isPending||!asOf} onClick={()=>refresh.mutate(asOf)}><RefreshCw size={15} aria-hidden="true"/>{refresh.isPending?'正在更新…':'更新汇率'}</button>}>
+  return <DataPanel title="汇率" action={manager&&<Button variant="primary" disabled={refresh.isPending||!asOf} onClick={()=>refresh.mutate(asOf)}><RefreshCw size={15} aria-hidden="true"/>{refresh.isPending?'正在更新…':'更新汇率'}</Button>}>
     <div className="fx-toolbar"><label>汇率日期<DateField allowClear={false} min="1999-01-01" max={businessDate()} value={asOf} onChange={e=>{setAsOf(e.target.value);refresh.reset();}}/></label><p>1 单位原币折合人民币 · 日参考价，非实际成交价</p></div>
     <FormError error={refresh.error}/>{state&&notices[state]&&<p role="status">{notices[state]}</p>}
     {(audit.data?.unverifiedReferences??0)>0&&<p role="status">本家庭有 {audit.data?.unverifiedReferences} 条历史汇率引用尚无法确认当时是否使用了正确发布日。系统保留原记录，不会自动重写；请结合原始凭证核对历史人民币折算。</p>}
@@ -46,7 +47,7 @@ export function ExchangeRatesPanel({request,manager}:{request:RequestFn;manager:
     </QueryState>
     <div className="fx-history-heading"><h3>历史汇率</h3><label>历史范围<select value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>最近30天</option><option value={90}>最近90天</option></select></label></div>
     {history.data?.state==='UPDATING'&&<p role="status">正在补齐历史汇率，已有记录仍可查看…</p>}
-    {history.data?.state==='FAILED'&&<p role="status">{history.data.detail??'历史汇率获取失败，已保留已有记录。'} <button type="button" className="text-action" disabled={history.isFetching} onClick={()=>void history.refetch()}>重试历史汇率</button></p>}
+    {history.data?.state==='FAILED'&&<p role="status">{history.data.detail??'历史汇率获取失败，已保留已有记录。'} <Button variant="quiet" size="small" disabled={history.isFetching} onClick={()=>void history.refetch()}>重试历史汇率</Button></p>}
     {history.data?.state==='READY'&&<p>已获取发布日汇率，周末和休市日不生成记录。</p>}
     {history.data?.state==='UNAVAILABLE'&&<p role="status">历史汇率采集暂不可用。</p>}
     {history.data&&<FormError error={history.error}/>}

@@ -14,6 +14,16 @@ function renderPortfolio(unpricedPositions: number) {
   render(<QueryClientProvider client={client}><InvestmentsPage request={request} role="MEMBER"/></QueryClientProvider>);
 }
 
+it('hides summary amounts without replacing unknown values with fake numbers',async()=>{
+ renderPortfolio(0);
+ await screen.findByText('¥100.00');
+ await userEvent.click(screen.getByRole('button',{name:'隐藏汇总金额'}));
+ expect(screen.queryByText('¥100.00')).not.toBeInTheDocument();
+ expect(screen.queryByText('¥20.00')).not.toBeInTheDocument();
+ await userEvent.click(screen.getByRole('button',{name:'显示汇总金额'}));
+ expect(screen.getByText('¥100.00')).toBeInTheDocument();
+});
+
 it('keeps valuation guidance available on demand without a zero-price warning card', async () => {
   renderPortfolio(0);
   const user = userEvent.setup();

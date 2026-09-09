@@ -212,7 +212,8 @@ const investmentRequest: RequestFn = async <T,>(path: string) => {
 
 it('starts a locked SELL draft from a historic position without catalog verification', async () => {
   render(wrap(<InvestmentsPage request={investmentRequest} role="OWNER"/>));
-  await userEvent.click((await screen.findAllByRole('button', { name: '记录卖出历史自定义证券' }))[0]);
+  await userEvent.click(await screen.findByRole('button',{name:'历史自定义证券更多操作'}));
+  await userEvent.click(await screen.findByRole('menuitem', { name: '记录卖出历史自定义证券' }));
   const dialog = screen.getByRole('dialog', { name: '记一笔投资' });
   expect(dialog.querySelector('select[name="accountId"]')).toHaveValue('3');
   expect(screen.getByLabelText('业务类型')).toHaveValue('SELL');

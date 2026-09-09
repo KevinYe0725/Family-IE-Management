@@ -98,7 +98,9 @@ public class AiLoanContractExtractor {
     private static String money(JsonNode node, String key) {
         String v = text(node, key);
         if (v == null) return null;
-        String cleaned = v.replaceAll("[,\\s元万￥¥]", "");
+        // The model contract is a plain yuan amount. Never discard unit multipliers.
+        if (!v.matches("[0-9]{1,15}(?:\\.[0-9]{1,2})?")) return null;
+        String cleaned = v;
         try {
             BigDecimal bd = new BigDecimal(cleaned);
             return bd.signum() > 0 ? bd.toPlainString() : null;
@@ -111,6 +113,7 @@ public class AiLoanContractExtractor {
         String v = text(node, key);
         if (v == null) return null;
         String cleaned = v.replace("%", "").trim();
+        if (!cleaned.matches("[0-9]{1,3}(?:\\.[0-9]{1,8})?")) return null;
         try {
             BigDecimal bd = new BigDecimal(cleaned);
             return bd.signum() >= 0 ? bd.toPlainString() : null;

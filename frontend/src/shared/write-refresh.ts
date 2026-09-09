@@ -3,7 +3,7 @@ import type { ApiRequestOptions } from '../api/client';
 
 const summaries = ['dashboard', 'net-worth', 'analysis', 'debt-analysis', 'plugin'];
 const ledger = ['transactions', 'accounts', 'accounting-history', 'transfers', 'budget-usage', 'notifications', ...summaries];
-const investments = [...ledger, 'portfolio', 'investment-setup', 'investment-accounts', 'investment-trades', 'market-quotes', 'securities', ...summaries];
+const investments = [...ledger, 'portfolio', 'investment-setup', 'investment-accounts', 'investment-trades', 'investment-plans', 'market-quotes', 'securities', ...summaries];
 const dependencies: Record<string, string[]> = {
   transactions: ledger,
   transfers: ledger,
@@ -15,6 +15,7 @@ const dependencies: Record<string, string[]> = {
   assets: ['assets', 'asset-valuations', 'loans', ...ledger],
   'investment-accounts': investments,
   'investment-trades': investments,
+  'investment-plans': investments,
   'market-quotes': investments,
   securities: investments,
   'investment-setup': ['investment-setup'],

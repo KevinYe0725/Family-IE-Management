@@ -50,6 +50,20 @@ it.each(['/api/transactions/1', '/api/budgets/1', '/api/accounts/1', '/api/asset
   expect(await cache.fetchQuery(query)).toEqual({ total: '90.00' });
 });
 
+it.each([
+  ['/api/investment-plans/occurrences/11/confirm', 'POST', ['net-worth', 'summary'], '100.00', '90.00'],
+  ['/api/investment-trades/44', 'PATCH', ['investment-plans', 0, 1], 'old execution', 'revised execution'],
+  ['/api/investment-trades/44', 'DELETE', ['investment-plans', 0, 1], 'confirmed', 'trade reversed']
+] as const)('refreshes inactive investment reports or plan history after %s', async (path, method, queryKey, before, after) => {
+  let saved = false;
+  const cache = await setup(async url => url === '/api/session' ? response(session) : (saved = true, response({ id: 1 })));
+  const query = { queryKey, queryFn: async () => saved ? after : before };
+  await cache.fetchQuery(query);
+  await act(async () => { await auth.request(path, { method, body: {} }); });
+  expect(cache.getQueryData(queryKey)).toBe(after);
+  expect(await cache.fetchQuery(query)).toBe(after);
+});
+
 it('cancels an older read, refreshes active and inactive keys, and ignores its late response', async () => {
   const old = deferred<unknown>(); let reads = 0;
   const cache = await setup(async path => response(path === '/api/session' ? session : { id: 1 }));
@@ -147,6 +161,7 @@ it.each([
   ['/api/budgets/1', ['budget-usage', 'budget-revisions', 'dashboard', 'notifications']],
   ['/api/assets/1/valuations', ['assets', 'asset-valuations', 'net-worth', 'notifications']],
   ['/api/investment-accounts/1', ['investment-accounts', 'investment-trades', 'portfolio', 'net-worth']],
+  ['/api/investment-plans/1', ['investment-plans', 'investment-accounts', 'investment-trades', 'portfolio', 'net-worth', 'notifications']],
   ['/api/market-quotes/refresh', ['market-quotes', 'portfolio', 'net-worth']],
   ['/api/loans/1/prepay', ['loans', 'loan-schedule', 'debt-analysis', 'transactions', 'accounts', 'net-worth']],
   ['/api/recurring-rules/1', ['recurring-rules', 'recurring-occurrences', 'transactions', 'budget-usage', 'notifications']],

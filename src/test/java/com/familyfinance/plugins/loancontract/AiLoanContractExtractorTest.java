@@ -17,6 +17,14 @@ class AiLoanContractExtractorTest {
     private final Authentication auth = new UsernamePasswordAuthenticationToken("demo@local.family", "x");
 
     @Test
+    void rejectsUnitBearingAndExponentAmountsInsteadOfChangingTheirMeaning() {
+        for (String amount : java.util.List.of("120万元", "1.2万", "￥1,200", "1e1000000")) {
+            var extractor = new AiLoanContractExtractor(fake("{\"principal\":\""+amount+"\",\"termMonths\":12}"), new JsonMapper());
+            assertThat(extractor.read(auth, "合同").orElseThrow().principal()).as(amount).isNull();
+        }
+    }
+
+    @Test
     void parsesModelJsonIntoNormalizedFieldsEvenWhenWrappedInFences() {
         String modelReply = "```json\n{\"principal\":\"1200000\",\"annualRatePercent\":\"4.20\","
                 + "\"termMonths\":300,\"startOn\":\"2026-09-08\","

@@ -1,3 +1,4 @@
+import {InvestmentButton as Button} from './investment-ui';
 import { useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Select, { type OptionProps } from '@douyinfe/semi-ui/lib/es/select';
@@ -9,7 +10,7 @@ import { dateText, type RequestFn } from '../common';
 import './stock-picker.scss';
 import { useStockSearch } from './useStockSearch';
 
-export function OverseasMarketPanel({ request, market,initial,onBuy,busy=false,tradingEnabled=false }: { request: RequestFn; market: OverseasMarket;initial?:OverseasInstrument;onBuy?:(value:OverseasInstrument)=>void;busy?:boolean;tradingEnabled?:boolean }) {
+export function OverseasMarketPanel({ request, market,initial,onBuy,onSelected,busy=false,tradingEnabled=false }: { request: RequestFn; market: OverseasMarket;initial?:OverseasInstrument;onBuy?:(value:OverseasInstrument)=>void;onSelected?:(value:OverseasInstrument)=>void;busy?:boolean;tradingEnabled?:boolean }) {
   const id = useId();
   const pickerId = `${id}-picker`;
   const dropdown = useStockDropdown(pickerId);
@@ -34,7 +35,7 @@ export function OverseasMarketPanel({ request, market,initial,onBuy,busy=false,t
         style={{ width: '100%' }} disabled={busy} loading={waiting} placeholder="搜索股票代码或官方名称"
         value={selected ? { value: selected.symbol, label: `${selected.symbol} · ${selected.name}`, instrument: selected } : undefined}
         optionList={items.map(item => ({ value: item.symbol, instrument: item, label: <StockLabel name={item.name} code={item.symbol} exchange={item.exchange} accessibleLabel={`${item.symbol} · ${item.name}`}/> }))}
-        onSearch={setQuery} onSelect={(_value, option) => { if(composing)return;const instrument = option.instrument as OverseasInstrument; if (isOverseasInstrument(instrument, market)) setSelected(instrument); }}
+        onSearch={setQuery} onSelect={(_value, option) => { if(composing)return;const instrument = option.instrument as OverseasInstrument; if (isOverseasInstrument(instrument, market)) {setSelected(instrument);onSelected?.(instrument);} }}
         getPopupContainer={() => document.getElementById(pickerId)!} onDropdownVisibleChange={dropdown.setMenuOpen} rePosKey={dropdown.controlWidth}
         dropdownClassName="stock-picker-dropdown" dropdownMatchSelectWidth dropdownStyle={{ width: dropdown.controlWidth || '100%', minWidth: 0, boxSizing: 'border-box' }}
         renderSelectedItem={(option: OptionProps) => { const item = option.instrument as OverseasInstrument | undefined; return item ? `${item.name} · ${item.symbol}` : option.label; }}
@@ -48,7 +49,7 @@ export function OverseasMarketPanel({ request, market,initial,onBuy,busy=false,t
         {search.data?.stale && <span>缓存目录 · {dateText(search.data.updatedAt)}</span>}
       </div>
     </div></div>
-    {selected&&onBuy&&<button type="button" className="secondary-action" disabled={busy} onClick={()=>onBuy(selected)}>{busy?'正在核对股票…':`记录买入${selected.name}`}</button>}
+    {selected&&onBuy&&<Button variant="primary" disabled={busy} onClick={()=>onBuy(selected)}>{busy?'正在核对股票…':`记录买入${selected.name}`}</Button>}
     {selected?.market === market ? <StockChart key={`${market}/${selected.symbol}`} request={request} security={selected}/> : <div className="investment-market-empty"><p>选择股票，查看参考收盘价与历史走势。</p></div>}
   </section>;
 }

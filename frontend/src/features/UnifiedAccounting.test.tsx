@@ -64,7 +64,8 @@ it('limits a generated payment edit to metadata and displays its principal and i
 });
 it('requires a cash funding account for a new investment account', async () => {
   const { user } = setup({}, true);
-  await user.click(screen.getByRole('button', { name: '账户' }));
+  await user.click(screen.getByRole('button',{name:'投资管理'}));
+  await user.click(await screen.findByRole('menuitem',{name:'账户'}));
   await user.click(await screen.findByRole('button', { name: '新建账户' }));
   expect(await screen.findByLabelText('资金账户')).toBeRequired();
   expect(screen.getByRole('option', { name: /工资卡/ })).toBeInTheDocument();

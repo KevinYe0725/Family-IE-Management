@@ -1,0 +1,27 @@
+.sheet-backdrop.action-dialog-backdrop {align-items:center;justify-content:center;padding:24px;}
+.side-sheet.action-dialog {position:relative;width:min(640px,100%);height:auto;max-height:calc(100dvh - 48px);border:1px solid #e5e9ee;border-radius:18px;box-shadow:0 24px 80px #20272e26;display:flex;flex-direction:column;overflow:visible;}
+.side-sheet.action-dialog--wide {width:min(980px,100%);}
+.side-sheet.action-dialog>header {position:relative;flex-shrink:0;min-height:0;padding:24px 28px 20px;align-items:center;background:#fff;border-radius:17px 17px 0 0;}
+.side-sheet.action-dialog>header h2 {font-size:23px;letter-spacing:-.6px;font-weight:650;}
+.side-sheet.action-dialog>.sheet-body {display:block;min-height:0;overflow:auto;padding:24px 28px;}
+.action-dialog .feature-form>label {font-size:14px;line-height:1.45;}
+.investment-modal-grid {display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);gap:28px;align-items:start;}
+.investment-modal-fields {min-width:0;}.investment-modal-fields>fieldset {border:0;padding:0;margin:0;display:grid;gap:18px;min-width:0;}
+.investment-modal-fields label {display:grid;gap:8px;font-size:14px;font-weight:500;}
+.investment-numbers-grid {display:grid;grid-template-columns:1fr 1fr;gap:18px 16px;}
+.action-dialog .investment-numbers-grid input {font-variant-numeric:tabular-nums;font-size:18px;}
+.investment-modal-summary {background:#f7f8fa;border:1px solid #edf0f3;border-radius:12px;padding:22px;min-width:0;}
+.investment-modal-summary .payment-preview {padding:0;margin:0;border:0;background:transparent;}
+.investment-modal-summary .payment-preview>div {display:flex;justify-content:space-between;gap:12px;margin-bottom:16px;}
+.investment-modal-summary .payment-preview>div>strong {text-align:right;min-width:0;overflow-wrap:anywhere;}
+.investment-modal-summary .payment-preview>div:nth-child(3) {display:grid;gap:8px;padding-top:18px;border-top:1px solid #e1e5eb;}
+.investment-modal-summary .payment-preview>div:nth-child(3)>strong {font-size:29px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;text-align:left;}
+.investment-modal-summary .payment-preview__remaining {font-size:15px;font-weight:600;}
+.investment-modal-summary .source-note,.investment-mode-note {font-size:14px;line-height:1.65;color:#67727e;}
+.investment-mode-note strong {display:block;font-size:18px;color:#20272e;margin-bottom:12px;}
+.investment-modal-footer {display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;bottom:-24px;background:#fff;border-top:1px solid #e5e9ee;margin-top:24px;padding:18px 0 0;z-index:1;}
+.investment-modal-footer>span {font-size:13px;color:#67727e;}
+.investment-reference-compact {padding:12px 14px;background:#f7f8fa;border-radius:10px;}.investment-reference-compact p {margin:6px 0;font-size:12px;}.investment-reference-compact>div {display:flex;align-items:center;flex-wrap:wrap;gap:10px;}.investment-reference-compact strong {font-size:17px;}
+.action-dialog .audit-list>details {border:1px solid #e5e9ee;border-radius:10px;margin:12px 0;padding:16px;}.action-dialog .audit-list summary {display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;}.action-dialog .audit-list summary strong {font-size:17px;}.action-dialog .audit-list summary span {font-size:13px;color:#67727e;}.action-dialog .audit-list table {margin-top:16px;}.action-dialog .audit-meta {display:flex;gap:24px;flex-wrap:wrap;margin-top:18px;font-size:13px;color:#67727e;}.action-dialog .audit-meta dt {margin-bottom:5px;}.action-dialog .audit-meta dd {margin:0;color:#20272e;}
+@media(max-width:720px){.sheet-backdrop.action-dialog-backdrop {padding:12px;}.side-sheet.action-dialog {max-height:calc(100dvh - 24px);border-radius:12px;}.side-sheet.action-dialog>header {padding:18px 20px;}.side-sheet.action-dialog>.sheet-body {padding:20px;}.investment-modal-grid {grid-template-columns:1fr;gap:20px;}.investment-modal-summary {padding:18px;}.investment-modal-footer {bottom:-20px;}.investment-modal-footer>span {max-width:45%;}.investment-modal-fields .investment-numbers-grid {gap:16px 12px;}.action-dialog .audit-list summary {align-items:flex-start;flex-direction:column;}}
+@media(max-width:720px){.investment-numbers-grid>label:has(.unified-date-field),.investment-numbers-grid>label:has(input[name="fee"]) {grid-column:1/-1;}}

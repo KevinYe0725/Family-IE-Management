@@ -80,9 +80,12 @@ public class RecurringController {
 
     @PostMapping("/api/recurring-occurrences/{id}/confirm")
     ApiEnvelope<RecurringOccurrenceResponse> confirm(
-            Authentication authentication, @PathVariable long id) {
+            Authentication authentication,
+            @PathVariable long id,
+            @RequestBody(required = false) RecurringConfirmRequest request) {
         LocalDate occurredOn=LocalDate.now(clock.withZone(java.time.ZoneId.of("Asia/Shanghai")));
-        return ApiEnvelope.data(executor.execute(()->confirmationService.confirm(authentication, id,occurredOn)));
+        return ApiEnvelope.data(executor.execute(() -> confirmationService.confirm(
+                authentication, id, occurredOn, request == null ? null : request.amount())));
     }
 
     @PostMapping("/api/recurring-occurrences/confirm")

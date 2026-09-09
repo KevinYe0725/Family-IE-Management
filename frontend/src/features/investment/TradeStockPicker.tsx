@@ -77,7 +77,6 @@ function MarketPicker({market,request,value,onChange,disabled}:{market:Market;re
   {!disabled&&(market==='ALL'||market==='CN')&&!catalog.isFetching&&(!catalogAvailable||catalog.data?.state==='ERROR'||catalog.error)&&<p role="status">{catalogAvailable?'A股目录更新失败，使用已有目录。':'A股目录尚未就绪或未启用。'}<button type="button" onClick={()=>void catalog.refetch()}>重试A股目录</button></p>}
   {active.filter(item=>item.state.error||directoryIssue(item.state.data)).map(item=><p role="status" key={item.label}>{item.label}搜索或目录更新暂不可用，请刷新后选择。<button type="button" onClick={()=>void item.state.refetch()}>重试{item.label}</button></p>)}
   {active.some(item=>'state' in (item.state.data??{})&&(item.state.data as OverseasSearch).state==='SYNCING')&&<p role="status">部分市场目录正在准备<button type="button" onClick={()=>active.forEach(item=>void item.state.refetch())}>重试目录</button></p>}
-  {active.some(item=>item.state.data?.hasNext)&&<p className="stock-picker-status">每个市场显示前20条，可输入更完整的名称或代码。</p>}
   <FormError error={resolve.error}/>
  </div>;
 }

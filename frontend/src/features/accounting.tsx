@@ -21,7 +21,7 @@ export function sumMoney(...values: Array<string | null | undefined>): string | 
   return parsed.some(value => value === null) ? null : decimal(parsed.reduce<bigint>((total, value) => total + value!, 0n));
 }
 export function tradeCash(quantity: string, price: string, fee: string, selling = false): string | null {
-  if (!/^\d{1,12}(\.\d{1,4})?$/.test(quantity)) return null;
+  if (!/^\d{1,15}(\.\d{1,4})?$/.test(quantity)) return null;
   const [whole, fraction = ''] = quantity.split('.');
   const q = BigInt(whole) * 10000n + BigInt(fraction.padEnd(4, '0'));
   const p = unitPrice(price), f = cents(fee || '0');
@@ -36,7 +36,7 @@ export function unitPrice(raw:string):bigint|null {
 export function AccountOptions({ accounts }: { accounts: Account[] }) {
   return <>{accounts.map(account => <option key={account.id} value={account.id} disabled={!account.openingConfirmed || Boolean(account.archivedAt)}>{accountLabel(account)}{!account.openingConfirmed ? ' · 待确认期初余额' : ` · 可用 ${money(account.availableBalance,account.currency)}`}</option>)}</>;
 }
-export function PaymentPreview({ account, amount, incoming = false, adjustment = false }: { account?: Account; amount: string | null | undefined; incoming?: boolean; adjustment?: boolean }) {
+export function PaymentPreview({ account, amount, incoming = false, adjustment = false, compact = false, showNote = true }: { account?: Account; amount: string | null | undefined; incoming?: boolean; adjustment?: boolean;compact?:boolean;showNote?:boolean }) {
   const balance = account?.openingConfirmed ? cents(account.availableBalance) : null;
   const payment = cents(amount);
   const remaining = balance !== null && payment !== null ? balance + (incoming ? payment : -payment) : null;
@@ -45,10 +45,11 @@ export function PaymentPreview({ account, amount, incoming = false, adjustment =
     <div><span>账内可用余额</span><strong>{balance === null ? '待核对' : money(decimal(balance),account?.currency)}</strong></div>
     <div><span>{adjustment ? '本次更正金额' : incoming ? '本次现金流入' : '本次现金合计'}</span><strong>{money(amount,account?.currency)}</strong></div>
     {!adjustment && <p className="payment-preview__remaining">预计余额 {remaining === null ? '待核对' : money(decimal(remaining),account?.currency)}</p>}
-    {!adjustment && !incoming && remaining !== null && <p role="status">资金缺口 {money(decimal(remaining < 0n ? -remaining : 0n),account?.currency)}</p>}
+    {!adjustment && !incoming && remaining !== null && (!compact||remaining<0n) && <p role="status">资金缺口 {money(decimal(remaining < 0n ? -remaining : 0n),account?.currency)}</p>}
     {account && !account.openingConfirmed && <p role="status">请先在收支明细 → 账户中确认期初余额，零余额也需要明确确认。</p>}
+    {compact&&adjustment&&<p className="source-note">冲回原记录后重新入账，资金账户不变。</p>}
     {!adjustment && remaining !== null && remaining < 0n && <p role="status">账内可用余额不足，请核对资金记录；保存时由服务器检查。</p>}
-    <small>{adjustment ? '更正会冲回原记录后重新入账，余额由服务器按原资金账户核对。' : '仅预览本系统账本余额；记录不会执行银行或券商转账。'}</small>
+    {showNote&&!compact&&<small>{adjustment ? '更正会冲回原记录后重新入账，余额由服务器按原资金账户核对。' : '仅预览本系统账本余额；记录不会执行银行或券商转账。'}</small>}
   </section>;
 }
 export function useFundsRefresh() {

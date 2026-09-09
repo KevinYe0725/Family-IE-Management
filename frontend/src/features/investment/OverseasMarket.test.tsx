@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InvestmentsPage } from './InvestmentsPage';
 import { OverseasMarketPanel } from './OverseasMarketPanel';
@@ -49,8 +49,9 @@ it('keeps overseas selection and charts read-only, currency-correct, and isolate
   await user.click(await screen.findByRole('option', { name: /AAPL.*Apple/ }));
   expect(await screen.findByText(/USD\s*319\.97/)).toBeInTheDocument();
   expect(screen.getByText('只读行情，暂不计入家庭资产')).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /记录买入|记录卖出|记一笔投资|录入已有持仓/ })).not.toBeInTheDocument();
-  expect(screen.queryByRole('region', { name: '投资初始化' })).not.toBeInTheDocument();
+  const dialog=screen.getByRole('dialog',{name:'证券行情'});
+  expect(within(dialog).queryByRole('button', { name: /记录买入|记录卖出|记一笔投资|录入已有持仓/ })).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('region', { name: '投资初始化' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('复权方式')).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: '港股' }));
   expect(screen.queryByText(/USD\s*319\.97/)).not.toBeInTheDocument();
