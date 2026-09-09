@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DashboardPage } from './DashboardPage';
 import type { RequestFn } from '../common';
@@ -21,7 +21,53 @@ it('renders authoritative dashboard values and stale market state', async () => 
   expect(await screen.findByText('¥350,000.00')).toBeInTheDocument();
   expect(screen.getByText('¥8,149.75')).toBeInTheDocument();
   expect(screen.getByText('行情已过期')).toBeInTheDocument();
-  expect(screen.getByText('2 条未读')).toBeInTheDocument();
+  expect(screen.queryByText('2 条未读')).not.toBeInTheDocument();
+  expect(screen.queryByText('最近流水')).not.toBeInTheDocument();
+  expect(screen.queryByText('费用预算执行')).not.toBeInTheDocument();
+  expect(screen.queryByText('成员费用')).not.toBeInTheDocument();
+  expect(screen.queryByText('累计资产估值变动')).not.toBeInTheDocument();
+});
+
+it('keeps detailed net worth history behind a dialog and avoids irrelevant home requests', async () => {
+  request.mockClear();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DashboardPage request={request as RequestFn} role="OWNER" /></QueryClientProvider>);
+  await screen.findByText('¥350,000.00');
+  expect(request.mock.calls.some(([path]) => path === '/api/debt-analysis' || path === '/api/notifications' || path.startsWith('/api/transactions'))).toBe(false);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: '查看净资产详情' }));
+  expect(screen.getByRole('dialog', { name: '净资产详情' })).toBeInTheDocument();
+  expect(screen.getByText('资产配置')).toBeInTheDocument();
+});
+
+it('explains unknown allocation inside net worth details instead of presenting an empty asset list', async () => {
+  const missingFx = (async (path: string) => {
+    const result = await request(path);
+    return path === '/api/net-worth' ? { ...result, asset: null, netWorth: null, allocation: [], unconverted: [{currency:'USD',nativeAmount:'100.00',kind:'ACCOUNT'}] } : result;
+  }) as RequestFn;
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><DashboardPage request={missingFx} role="OWNER"/></QueryClientProvider>);
+  await screen.findByText('汇率待补齐');
+  await userEvent.click(screen.getByRole('button',{name:'查看净资产详情'}));
+  const dialog = screen.getByRole('dialog',{name:'净资产详情'});
+  expect(within(dialog).getByText('资产配置待补齐估值')).toBeInTheDocument();
+  expect(within(dialog).getByRole('link',{name:'补充汇率'})).toHaveAttribute('href','/workspace/investments?tab=rates');
+});
+
+it('opens the selected overseas stock chart lazily and preserves native currency and unavailable profit', async () => {
+  const marketRequest = vi.fn(async (path: string) => {
+    if (path === '/api/portfolio') return { positions: [{ accountId: 9, accountName: '港股账户', securityId: 55, name: '小米集团－W', tsCode: '01810.HK', market: 'HK', symbol: '01810', exchange: 'HKEX', timezone: 'Asia/Hong_Kong', currency: 'HKD', quantity: 100, price: '26.38', marketValue: '2638.00', cost: '2500.00', averageCost: '25.00', unrealizedProfit: null, totalProfit: null, source: 'TENCENT', stale: true, base: { marketValue: '2400.00', fxState: 'READY' } }], totals: { marketValue: '2400.00', unrealizedProfit: null, totalProfit: null, unpricedPositions: 0 } };
+    if (path.startsWith('/api/overseas-market/candles')) throw new Error('行情暂时不可用');
+    return request(path);
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DashboardPage request={marketRequest as RequestFn} role="OWNER" /></QueryClientProvider>);
+  const stock = await screen.findByRole('button', { name: '查看小米集团－W行情' });
+  expect(within(stock).getByText('HKD 26.38')).toBeInTheDocument();
+  expect(within(stock).getByText('—')).toBeInTheDocument();
+  expect(screen.queryByText('今日涨跌')).not.toBeInTheDocument();
+  expect(marketRequest.mock.calls.some(([path]) => path.includes('/candles'))).toBe(false);
+  await userEvent.click(stock);
+  expect(await screen.findByRole('dialog', { name: '小米集团－W · 行情' })).toBeInTheDocument();
+  expect(await screen.findByText('行情暂时不可用')).toBeInTheDocument();
+  expect(marketRequest.mock.calls.some(([path]) => path === '/api/overseas-market/candles?market=HK&symbol=01810')).toBe(true);
 });
 
 it('offers one initialization action instead of repeated failing financial panels', async () => {

@@ -64,6 +64,11 @@ export interface Account { bankAccountId?:number|null;bankAccountName?:string|nu
 export interface BankAccount {id:number;name:string;bankName:string|null;cardLastFour:string|null;archivedAt:string|null;accounts:Account[]}
 export interface Category { id: number; kind: TransactionKind; name: string; color: string; defaultCategory: boolean; createdAt: string; parentId: number | null; level: number; children: Category[] }
 export interface Member { id: number; name: string; roleLabel: string; createdAt: string }
+export interface FamilyPerson {
+  memberId: number | null; membershipId: number | null; name: string; relationship: string | null;
+  accountDisplayName: string | null; email: string | null; role: HouseholdRole | null;
+  loginStatus: 'AVAILABLE' | 'NONE' | 'SUSPENDED';
+}
 export interface Transaction { currency?: string; id: number; kind: TransactionKind; amount: string; occurredOn: string; accountId: number; accountName: string; memberId: number; memberName: string; createdByUserId: number; createdByName: string | null; sourceId?: number | null; principalAmount?: string | null; interestAmount?: string | null; sourceType: 'MANUAL' | 'RECURRING' | 'LOAN' | 'LOAN_PAYMENT' | 'LOAN_PREPAYMENT'; categoryId: number; categoryName: string; categoryParentId: number | null; categoryLevel: number; merchant: string | null; location: string | null; note: string | null; createdAt: string; updatedAt: string }
 
 export type BudgetScopeType = 'TOTAL' | 'CATEGORY' | 'MEMBER';

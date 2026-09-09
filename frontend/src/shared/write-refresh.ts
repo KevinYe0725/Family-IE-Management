@@ -25,8 +25,8 @@ const dependencies: Record<string, string[]> = {
   'recurring-rules': ['recurring-rules', 'recurring-occurrences', ...ledger],
   'recurring-occurrences': ['recurring-rules', 'recurring-occurrences', ...ledger],
   notifications: ['notifications'],
-  family: ['family', 'memberships', 'family-invites', 'members'],
-  members: ['members', ...ledger]
+  family: ['family', 'family-people', 'memberships', 'family-invites', 'members'],
+  members: ['members', 'family-people', ...ledger]
 };
 const pendingRefreshes = new WeakMap<QueryClient, Promise<void>>();
 

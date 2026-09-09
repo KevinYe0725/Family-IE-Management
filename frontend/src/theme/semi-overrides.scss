@@ -697,6 +697,16 @@ a:hover { text-decoration: underline; }
 .member-list article { display: grid; grid-template-columns: 34px 1fr auto auto; align-items: center; gap: 9px; padding: 9px 4px; }
 .member-list article + article { border-top: 1px solid #eff0f1; }
 .member-list h3, .member-list p, .invite-list p { margin: 0; }
+.family-directory article { grid-template-columns: 34px minmax(0, 1fr) auto; padding: 16px 4px; gap: 12px; }
+.family-directory .family-person-identity { min-width: 0; }
+.family-directory .family-person-identity p { overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.family-person-access { display: grid; justify-items: end; gap: 6px; }
+.family-person-permission { font-size: 12px; color: var(--ledger-muted); }
+.family-directory .card-actions { grid-column: 2 / -1; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .family-directory .family-person-access { grid-column: 2 / -1; justify-items: start; }
+  .family-directory .card-actions { justify-content: flex-start; }
+}
 .member-list p, .invite-list p { color: var(--ledger-muted); font-size: 11px; }
 .invite-list article { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; }
 .invite-list article + article { border-top: 1px solid #eff0f1; }

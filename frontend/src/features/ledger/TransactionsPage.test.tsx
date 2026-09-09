@@ -9,6 +9,20 @@ const pageResult = <T,>(items: T[], current = 0, total = items.length) => ({
   items, page: current, size: 50, totalElements: total, totalPages: total === 0 ? 0 : Math.ceil(total / 50), hasNext: (current + 1) * 50 < total
 });
 
+it('opens one empty entry from the homepage shortcut without submitting anything', async () => {
+  const original = window.location.href;
+  window.history.replaceState({}, '', '/workspace/transactions?create=1');
+  const request = vi.fn(async (path: string) => path === '/api/members' ? [] : pageResult([]));
+  try {
+    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TransactionsPage request={request as RequestFn} role="OWNER" userId={7}/></QueryClientProvider>);
+    expect(await screen.findByRole('dialog', {name:'记一笔'})).toBeInTheDocument();
+    expect(screen.getByLabelText('金额')).toHaveValue('');
+    expect(window.location.search).not.toContain('create=1');
+    await userEvent.click(screen.getByRole('button',{name:'关闭'}));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  } finally { window.history.replaceState({}, '', original); }
+});
+
 it('retains a failed draft, links its field error, and clears errors on reopen', async () => {
   const request: RequestFn = async <T,>(path: string, options?: { method?: string }) => {
     if (options?.method === 'POST') throw new ApiError('保存失败', { status: 400, fields: { amount: '金额必须大于零' } });

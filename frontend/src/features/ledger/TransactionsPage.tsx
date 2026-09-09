@@ -35,7 +35,14 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const [transactionPage, setTransactionPage] = useState(0);
   const [accountPage, setAccountPage] = useState(0);
   const [categoryPage, setCategoryPage] = useState(0);
-  const [draft, setDraft] = useState<TransactionDraft | null>(null);
+  const [draft, setDraft] = useState<TransactionDraft | null>(() => !requestedSection && section === 'transactions' && new URLSearchParams(window.location.search).get('create') === '1' ? emptyDraft() : null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!requestedSection && url.searchParams.get('create') === '1') {
+      url.searchParams.delete('create');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+  }, [requestedSection]);
   const [deleting, setDeleting] = useState<{ id: number; key: string } | null>(null);
   const deleteId = deleting?.id ?? null;
   const setDeleteId = (id: number | null) => setDeleting(id === null ? null : { id, key: newIdempotencyKey() });
