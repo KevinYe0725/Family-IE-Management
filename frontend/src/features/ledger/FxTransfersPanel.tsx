@@ -25,8 +25,10 @@ export function FxTransfersPanel({request,role,accounts,accountsReady=true,initi
  const cache=useQueryClient(),fundsError=useFundsRefresh();
  const [page,setPage]=useState(0),[draft,setDraft]=useState<Draft|null>(null),[audit,setAudit]=useState<number|null>(null);
  const [estimated,setEstimated]=useState(false);
- const [attempt,retainAttempt]=useState<Attempt|null>(()=>cache.getQueryData<Attempt>(pendingKey)??null);
- const setAttempt=(value:Attempt|null)=>{retainAttempt(value);if(value)cache.setQueryData(pendingKey,value);else cache.removeQueries({queryKey:pendingKey,exact:true});};
+ // Unknown financial outcomes must survive panel switches until resolved or the auth cache is cleared.
+ const pending=useQuery<Attempt|null>({queryKey:pendingKey,queryFn:()=>null,enabled:false,initialData:null,gcTime:Infinity});
+ const attempt=pending.data??null;
+ const setAttempt=(value:Attempt|null)=>{cache.setQueryData(pendingKey,value);};
  const [reversing,setReversing]=useState<{row:FxRow;key:string}|null>(null);
  useEffect(()=>{onOverlayChange?.(draft!==null||audit!==null||reversing!==null);},[draft,audit,reversing,onOverlayChange]);
  useEffect(()=>()=>onOverlayChange?.(false),[onOverlayChange]);

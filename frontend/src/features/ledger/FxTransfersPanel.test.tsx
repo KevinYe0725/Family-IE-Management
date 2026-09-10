@@ -31,6 +31,30 @@ it('opens a selected bank exchange with its two currency child ids',async()=>{
  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><FxTransfersPanel request={request} role="OWNER" accounts={accounts} initialBankId={10} onInitialHandled={handled}/></QueryClientProvider>);
  const dialog=within(await screen.findByRole('dialog'));expect(dialog.getByLabelText('转出账户')).toHaveValue('21');expect(dialog.getByLabelText('转入账户')).toHaveValue('22');expect(handled).toHaveBeenCalledOnce();
 });
+it('retains an uncertain exchange across unmounts and inactive query garbage collection',async()=>{
+ const writes:unknown[]=[];
+ const accounts=[{id:1,name:'人民币卡',currency:'CNY',availableBalance:'7010.00',openingConfirmed:true,type:'BANK'}, {id:2,name:'美元卡',currency:'USD',availableBalance:'0.00',openingConfirmed:true,type:'BANK'}] as Account[];
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:1}}});
+ const request:RequestFn=async<T,>(path:string,options?:Parameters<RequestFn>[1])=>{
+  if(options?.method==='POST'){writes.push(structuredClone(options.body));if(writes.length===1)throw new TypeError('连接中断');return {id:1} as T;}
+  return (path.includes('exchange-rates')?{rows:[]}:{items:[],page:0,size:20,totalElements:0,totalPages:0,hasNext:false}) as T;
+ };
+ const element=<QueryClientProvider client={client}><FxTransfersPanel request={request} role="OWNER" accounts={accounts}/></QueryClientProvider>;
+ const view=render(element);const user=userEvent.setup();
+ await user.click(screen.getByRole('button',{name:'记录换汇'}));
+ let form=within(screen.getByRole('dialog'));
+ await user.selectOptions(form.getByLabelText('转出账户'),'1');await user.selectOptions(form.getByLabelText('转入账户币种'),'USD');await user.selectOptions(form.getByLabelText('转入账户'),'2');
+ await user.type(form.getByLabelText('实际转出本金'),'7000');await user.type(form.getByLabelText('实际到账金额'),'1000');
+ await user.click(form.getByRole('button',{name:'确认记录换汇'}));await screen.findByText('连接中断');
+ view.unmount();client.setQueryData(['inactive-gc-probe'],true);
+ await waitFor(()=>expect(client.getQueryData(['inactive-gc-probe'])).toBeUndefined());
+ render(element);
+ await user.click(screen.getByRole('button',{name:'继续核对上次换汇'}));form=within(screen.getByRole('dialog'));
+ expect(form.getByLabelText('实际转出本金')).toHaveValue('7000');
+ expect(form.getByLabelText('实际转出本金')).toBeDisabled();
+ await user.click(form.getByRole('button',{name:'核对本次换汇结果'}));
+ await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toEqual(writes[0]);
+});
 it('previews both currencies and retries an uncertain exchange with the identical request',async()=>{
  const writes:unknown[]=[];const accounts=[{id:1,name:'人民币卡',currency:'CNY',availableBalance:'7010.00',openingConfirmed:true,type:'BANK'}, {id:2,name:'美元卡',currency:'USD',availableBalance:'0.00',openingConfirmed:true,type:'BANK'}] as Account[];
  const request:RequestFn=async<T,>(path:string,options?:Parameters<RequestFn>[1])=>{
