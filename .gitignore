@@ -13,3 +13,4 @@ data/*.db-*
 data-backups/
 tmp/
 __pycache__/
+.ci-plan.json

@@ -2,11 +2,19 @@ name: Stage 2 CI and deploy
 
 on:
   push:
-    branches: [codex/family-finance-stage-2]
+    branches: [main, codex/family-finance-stage-2]
   pull_request:
-    branches: [codex/family-finance-stage-2]
+    branches: [main, codex/family-finance-stage-2]
+  schedule:
+    # 02:20 Beijing time. Full checks only; never deploy from a schedule.
+    - cron: '20 18 * * *'
   workflow_dispatch:
     inputs:
+      full_tests:
+        description: 'Run the complete test suite before packaging'
+        type: boolean
+        required: false
+        default: false
       deploy_main:
         description: 'Explicitly deploy main for this manual run'
         type: boolean
@@ -15,9 +23,91 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      application: ${{ steps.selection.outputs.application }}
+      market: ${{ steps.selection.outputs.market }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Test selection and deployment safety
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Select checks from all unverified changes
+        id: selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_plan.py
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-plan-${{ github.sha }}
+          path: .ci-plan.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  frontend-build:
+    needs: plan
+    if: needs.plan.outputs.application == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Check types and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+      - name: Stamp exact deployed version
+        env:
+          COMMIT: ${{ github.sha }}
+        run: jq -n --arg commit "$COMMIT" '{commit:$commit}' > target/classes/static/deployment.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: frontend-${{ github.sha }}
+          path: target/classes/static/
+          retention-days: 1
+          if-no-files-found: error
+
+  frontend-tests:
+    needs: plan
+    if: needs.plan.outputs.application == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: test-plan-${{ github.sha }}
+      - run: npm ci
+        working-directory: frontend
+      - name: Run selected frontend safety and module tests
+        run: python3 scripts/ci_plan.py --run frontend
+
   build:
+    needs: [plan, frontend-build]
+    if: needs.plan.outputs.application == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -29,28 +119,18 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Test deployment safety
-        run: python3 -m unittest discover -s scripts/tests -v
+          name: test-plan-${{ github.sha }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: frontend-${{ github.sha }}
+          path: target/classes/static
       - name: Test market data adapter
+        if: needs.plan.outputs.market == 'true'
         run: python3 -m unittest discover -s scripts/market-data -v
-      - name: Check and build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run typecheck
-          npm test -- --run --maxWorkers=2
-          npm run build
-      - name: Stamp exact deployed version
-        env:
-          COMMIT: ${{ github.sha }}
-        run: jq -n --arg commit "$COMMIT" '{commit:$commit}' > target/classes/static/deployment.json
-      - name: Test backend and package application
-        run: ./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true verify
+      - name: Run selected backend tests and package application
+        run: python3 scripts/ci_plan.py --run backend
       - name: Prepare release artifact
         run: |
           python3 scripts/build_release.py --jar target/family-finance-0.0.1-SNAPSHOT.jar \
@@ -69,10 +149,39 @@ jobs:
           path: target/surefire-reports/
           retention-days: 3
 
+  checks:
+    # Keep a stable required check even for documentation-only changes.
+    needs: [plan, frontend-build, frontend-tests, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require all planned checks to pass
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          APPLICATION: ${{ needs.plan.outputs.application }}
+          FRONTEND_BUILD_RESULT: ${{ needs.frontend-build.result }}
+          FRONTEND_TEST_RESULT: ${{ needs.frontend-tests.result }}
+          BACKEND_RESULT: ${{ needs.build.result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          if [ "$APPLICATION" = true ]; then
+            test "$FRONTEND_BUILD_RESULT" = success
+            test "$FRONTEND_TEST_RESULT" = success
+            test "$BACKEND_RESULT" = success
+          else
+            test "$APPLICATION" = false
+            test "$FRONTEND_BUILD_RESULT" = skipped
+            test "$FRONTEND_TEST_RESULT" = skipped
+            test "$BACKEND_RESULT" = skipped
+          fi
+          echo 'All planned checks passed. See plan job for selected/skipped scope.' >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
-    needs: build
+    needs: [plan, build, checks]
     if: >-
-      github.event_name != 'pull_request' &&
+      needs.plan.outputs.application == 'true' &&
+      github.event_name != 'pull_request' && github.event_name != 'schedule' &&
       (github.ref == 'refs/heads/codex/family-finance-stage-2' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_main))
     runs-on: ubuntu-latest
