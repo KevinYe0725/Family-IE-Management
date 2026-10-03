@@ -61,7 +61,7 @@ public class FxTransferService {
         if(id==null){
             var keys=new GeneratedKeyHolder();
             jdbc.update(connection->{
-                var ps=connection.prepareStatement("insert into fx_transfers(household_id,from_account_id,to_account_id,from_currency,to_currency,from_amount,to_amount,fee,occurred_on,actor_id,recorded_at,revision,reversed) values(?,?,?,?,?,?,?,?,?,?,?,?,false)",java.sql.Statement.RETURN_GENERATED_KEYS);
+                var ps=connection.prepareStatement("insert into fx_transfers(household_id,from_account_id,to_account_id,from_currency,to_currency,from_amount,to_amount,fee,occurred_on,actor_id,recorded_at,revision,reversed) values(?,?,?,?,?,?,?,?,?,?,?,?,false)",new String[]{"id"});
                 ps.setLong(1,h);ps.setLong(2,from.getId());ps.setLong(3,to.getId());ps.setString(4,from.getCurrency());ps.setString(5,to.getCurrency());
                 ps.setBigDecimal(6,DecimalMoney.fromCents(debit));ps.setBigDecimal(7,DecimalMoney.fromCents(credit));ps.setBigDecimal(8,DecimalMoney.fromCents(fee));
                 ps.setObject(9,day);ps.setLong(10,actor);ps.setTimestamp(11,java.sql.Timestamp.from(clock.instant()));ps.setLong(12,revision);return ps;

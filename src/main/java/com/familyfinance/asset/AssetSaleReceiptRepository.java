@@ -16,7 +16,7 @@ public class AssetSaleReceiptRepository {
     public AssetSaleResult append(long household,long actor,String key,AssetSaleDraft draft,AssetSalePreview preview,Instant now){
         var holder=new GeneratedKeyHolder();
         jdbc.update(c->{
-            var statement=c.prepareStatement("insert into asset_sale_receipts(household_id,asset_id,actor_id,request_key,draft_json,preview_json,recorded_at) values(?,?,?,?,?,?,?)",Statement.RETURN_GENERATED_KEYS);
+            var statement=c.prepareStatement("insert into asset_sale_receipts(household_id,asset_id,actor_id,request_key,draft_json,preview_json,recorded_at) values(?,?,?,?,?,?,?)",new String[]{"id"});
             statement.setLong(1,household);statement.setLong(2,preview.assetId());statement.setLong(3,actor);statement.setString(4,key);
             statement.setString(5,mapper.writeValueAsString(draft));statement.setString(6,mapper.writeValueAsString(preview));
             statement.setTimestamp(7,Timestamp.from(now));return statement;

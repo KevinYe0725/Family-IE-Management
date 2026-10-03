@@ -110,6 +110,17 @@ jobs:
     if: needs.plan.outputs.application == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: family_test
+          POSTGRES_PASSWORD: disposable-test-password
+          POSTGRES_DB: family_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U family_test -d family_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -131,6 +142,12 @@ jobs:
         run: python3 -m unittest discover -s scripts/market-data -v
       - name: Run selected backend tests and package application
         run: python3 scripts/ci_plan.py --run backend
+      - name: Verify accounting and permissions on PostgreSQL
+        env:
+          FAMILY_PG_TEST_URL: jdbc:postgresql://localhost:5432/family_test
+          FAMILY_PG_TEST_USER: family_test
+          FAMILY_PG_TEST_PASSWORD: disposable-test-password
+        run: ./mvnw -q -Dskip.installnodenpm=true -Dskip.npm=true '-Dtest=Postgresql*Test' test
       - name: Prepare release artifact
         run: |
           python3 scripts/build_release.py --jar target/family-finance-0.0.1-SNAPSHOT.jar \

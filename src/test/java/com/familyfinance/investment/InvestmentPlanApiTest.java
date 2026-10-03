@@ -106,7 +106,7 @@ class InvestmentPlanApiTest {
         generate();
         assertThat(count("investment_plan_occurrences")).isEqualTo(2);
         assertThat(jdbc.queryForObject("select quantity from investment_plan_occurrences where id=?",String.class,oldOccurrence)).isEqualTo("100.1234");
-        assertThat(jdbc.queryForObject("select quantity from investment_plan_occurrences where due_on=?",String.class,today)).isEqualTo("250.0001");
+        assertThat(jdbc.queryForObject("select quantity from investment_plan_occurrences where due_on=?",String.class,LocalDate.parse(today))).isEqualTo("250.0001");
         assertThat(jdbc.queryForObject("select actual_amount from investment_plan_occurrences where id=?",String.class,oldOccurrence)).isEqualTo("101.00");
         assertThat(count("investment_trades")).isEqualTo(1);
     }
@@ -172,7 +172,7 @@ class InvestmentPlanApiTest {
 
     @Test void concurrentConfirmationAndDueGenerationRemainSinglePosting() throws Exception {
         setup("1000.00");long plan=create(today,"MONTHLY");long occurrence=generate();
-        jdbc.update("update investment_plans set next_due_on=? where id=?",today,plan);
+        jdbc.update("update investment_plans set next_due_on=? where id=?",LocalDate.parse(today),plan);
         ExecutorService pool=Executors.newFixedThreadPool(4);CountDownLatch start=new CountDownLatch(1);
         try {
             Future<Long> a=pool.submit(()->{start.await();return confirm(occurrence,"race-a",200).path("tradeId").asLong();});
@@ -296,7 +296,7 @@ class InvestmentPlanApiTest {
 
     @Test void earlierSnapshotGeneratorSeesCommittedOccurrenceAndNotification() throws Exception {
         setup("1000.00");long plan=create(LocalDate.parse(today).plusDays(1).toString(),"MONTHLY");
-        jdbc.update("update investment_plans set first_due_on=?,next_due_on=? where id=?",today,today,plan);
+        jdbc.update("update investment_plans set first_due_on=?,next_due_on=? where id=?",LocalDate.parse(today),LocalDate.parse(today),plan);
         withEarlierSnapshot(()->generate(),
                 ()->mvc.perform(post("/api/investment-plans/generate").session(owner).with(csrf())).andExpect(status().isOk()).andExpect(jsonPath("$.data.generated").value(0)));
         assertThat(count("investment_plan_occurrences")).isEqualTo(1);

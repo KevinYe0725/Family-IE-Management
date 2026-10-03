@@ -26,7 +26,7 @@ public class LoanPlanToken {
  public List<Period> pending(long household,long loan,boolean current){return jdbc.query("select id,installment_no,due_on,principal_cents,interest_cents,precise_principal_amount,precise_interest_amount,interest_carry_amount,rounding_policy,custom_rate_principal_amount,custom_rate_interest_amount from loan_installments where household_id=? and loan_id=? and status='PENDING' order by installment_no,id"+(current?" for update":""),(r,n)->new Period(r.getLong(1),r.getInt(2),r.getObject(3,LocalDate.class),r.getLong(4),r.getLong(5),r.getBigDecimal(6),r.getBigDecimal(7),r.getBigDecimal(8),r.getString(9),r.getBigDecimal(10),r.getBigDecimal(11)),household,loan);}
  public LoanRoundingContext roundingContext(long household,long loan,boolean current){
   String lock=current?" for update":"";
-  var rows=jdbc.query("select i.precise_interest_amount,i.interest_amount,t.loan_interest_cents from loan_installments i left join financial_transactions t on t.id=i.confirmed_transaction_id and t.household_id=i.household_id where i.household_id=? and i.loan_id=? and i.status='PAID' order by i.installment_no"+lock,(r,n)->{
+  var rows=jdbc.query("select i.precise_interest_amount,i.interest_amount,t.loan_interest_cents from loan_installments i left join financial_transactions t on t.id=i.confirmed_transaction_id and t.household_id=i.household_id where i.household_id=? and i.loan_id=? and i.status='PAID' order by i.installment_no"+(current?" for update of i":""),(r,n)->{
    BigDecimal actual=r.getObject(3)==null?r.getBigDecimal(2):DecimalMoney.fromCents(r.getLong(3));
    return new LoanRoundingContext(r.getBigDecimal(1)==null?actual:r.getBigDecimal(1),actual);
   },household,loan);

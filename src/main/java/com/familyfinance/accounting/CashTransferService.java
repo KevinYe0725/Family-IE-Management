@@ -62,7 +62,7 @@ public class CashTransferService {
         cash.requireConfirmed(from,day); cash.requireConfirmed(to,day);
         GeneratedKeyHolder holder=new GeneratedKeyHolder();
         jdbc.update(connection->{
-            var s=connection.prepareStatement("insert into cash_transfers(household_id,from_account_id,to_account_id,amount_cents,occurred_on,actor_id,recorded_at) values(?,?,?,?,?,?,?)",java.sql.Statement.RETURN_GENERATED_KEYS);
+            var s=connection.prepareStatement("insert into cash_transfers(household_id,from_account_id,to_account_id,amount_cents,occurred_on,actor_id,recorded_at) values(?,?,?,?,?,?,?)",new String[]{"id"});
             s.setLong(1,h);s.setLong(2,from.getId());s.setLong(3,to.getId());s.setLong(4,amount);s.setObject(5,day);s.setLong(6,access.context().userId());s.setTimestamp(7,java.sql.Timestamp.from(clock.instant()));return s;
         },holder);
         long id=holder.getKey().longValue();

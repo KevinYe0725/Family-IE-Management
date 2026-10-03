@@ -94,7 +94,7 @@ public class CashAccountingService {
         if(!earlier.isEmpty()) throw new ResourceConflictException("OPENING_DATE_AFTER_ACTIVITY", "开账日期不能晚于已有有效现金业务日期");
         GeneratedKeyHolder holder=new GeneratedKeyHolder();
         jdbc.update(connection->{
-            var s=connection.prepareStatement("insert into cash_opening_events(household_id,account_id,amount_cents,opening_on,actor_id,recorded_at) values(?,?,?,?,?,?)",java.sql.Statement.RETURN_GENERATED_KEYS);
+            var s=connection.prepareStatement("insert into cash_opening_events(household_id,account_id,amount_cents,opening_on,actor_id,recorded_at) values(?,?,?,?,?,?)",new String[]{"id"});
             s.setLong(1,h); s.setLong(2,account.getId()); s.setLong(3,amount); s.setObject(4,day); s.setLong(5,actor); s.setTimestamp(6,java.sql.Timestamp.from(clock.instant())); return s;
         },holder);
         long event=holder.getKey().longValue();

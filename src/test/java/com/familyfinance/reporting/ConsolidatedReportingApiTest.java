@@ -34,7 +34,16 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest(properties = "app.seed.enabled=true")
 @AutoConfigureMockMvc
 @Transactional
+@org.springframework.context.annotation.Import(ConsolidatedReportingApiTest.FixedClock.class)
 class ConsolidatedReportingApiTest {
+    @org.springframework.boot.test.context.TestConfiguration
+    static class FixedClock {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        java.time.Clock reportingClock() {
+            return java.time.Clock.fixed(Instant.parse("2026-09-03T00:00:00Z"), java.time.ZoneOffset.UTC);
+        }
+    }
     @Autowired MockMvc mvc;
     @Autowired org.springframework.context.ApplicationContext context;
     @Autowired AppUserRepository users;

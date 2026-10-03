@@ -19,10 +19,10 @@ public class LoanTotalsService {
  public Totals read(Loan loan,boolean current){
   if(current)em.flush();
   String lock=current?" for update":"";long h=loan.getHousehold().getId(),id=loan.getId();BigDecimal paid=BigDecimal.ZERO,remaining=BigDecimal.ZERO;
-  var rows=jdbc.query("select i.status,i.principal_amount,i.interest_amount,cast(t.amount_cents as decimal(21,2))/100,i.due_on from loan_installments i left join financial_transactions t on t.id=i.confirmed_transaction_id and t.household_id=i.household_id where i.household_id=? and i.loan_id=? order by i.installment_no"+lock,(rs,n)->new Row(rs.getString(1),rs.getBigDecimal(2),rs.getBigDecimal(3),rs.getBigDecimal(4),rs.getObject(5,LocalDate.class)),h,id);
+  var rows=jdbc.query("select i.status,i.principal_amount,i.interest_amount,cast(t.amount_cents as decimal(21,2))/100,i.due_on from loan_installments i left join financial_transactions t on t.id=i.confirmed_transaction_id and t.household_id=i.household_id where i.household_id=? and i.loan_id=? order by i.installment_no"+(current?" for update of i":""),(rs,n)->new Row(rs.getString(1),rs.getBigDecimal(2),rs.getBigDecimal(3),rs.getBigDecimal(4),rs.getObject(5,LocalDate.class)),h,id);
   for(var row:rows){if("PENDING".equals(row.status()))remaining=remaining.add(row.principal().add(row.interest()));else if("PAID".equals(row.status()))paid=paid.add(row.cash()==null?row.principal().add(row.interest()):row.cash());}
   // One authoritative cash value per prepayment; never add both event and transaction.
-  for(BigDecimal cash:jdbc.query("select coalesce(cast(t.amount_cents as decimal(21,2))/100,p.amount+p.interest_amount) from loan_prepayments p left join financial_transactions t on t.id=p.transaction_id and t.household_id=p.household_id where p.household_id=? and p.loan_id=? order by p.id"+lock,(rs,n)->rs.getBigDecimal(1),h,id))paid=paid.add(cash);
+  for(BigDecimal cash:jdbc.query("select coalesce(cast(t.amount_cents as decimal(21,2))/100,p.amount+p.interest_amount) from loan_prepayments p left join financial_transactions t on t.id=p.transaction_id and t.household_id=p.household_id where p.household_id=? and p.loan_id=? order by p.id"+(current?" for update of p":""),(rs,n)->rs.getBigDecimal(1),h,id))paid=paid.add(cash);
   var pending=rows.stream().filter(row->"PENDING".equals(row.status())).toList();
   // 逾期：未确认且到期日早于今日的待还期次（仅状态计算，不落表）。
   LocalDate today=LocalDate.now(clock.withZone(BUSINESS_ZONE));

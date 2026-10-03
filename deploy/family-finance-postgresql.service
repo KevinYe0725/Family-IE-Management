@@ -1,0 +1,27 @@
+[Unit]
+Description=Family IE Management private household workspace
+After=network.target docker.service family-finance-market.service
+Requires=docker.service
+Wants=family-finance-market.service
+
+[Service]
+Type=simple
+User=family-finance
+Group=family-finance
+WorkingDirectory=/srv/family-finance/current
+EnvironmentFile=/etc/family-finance/family-finance.env
+ExecStart=/usr/bin/java -Xms64m -Xmx256m -XX:MaxMetaspaceSize=160m -XX:MaxDirectMemorySize=64m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -jar /srv/family-finance/current/app.jar
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/family-finance
+MemoryHigh=512M
+MemoryMax=640M
+
+[Install]
+WantedBy=multi-user.target

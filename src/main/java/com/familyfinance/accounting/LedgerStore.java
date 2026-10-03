@@ -2,7 +2,6 @@ package com.familyfinance.accounting;
 
 import com.familyfinance.shared.ResourceConflictException;
 import com.familyfinance.shared.ResourceNotFoundException;
-import java.sql.Statement;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -92,7 +91,7 @@ class LedgerStore {
     LedgerReceipt append(LedgerPostingCommand c,long revision,String operation,String digest,Long reversed,Instant now) {
         var keys=new GeneratedKeyHolder();
         jdbc.update(connection->{
-            var ps=connection.prepareStatement("insert into ledger_journals(household_id,source_type,source_id,revision,request_key,request_digest,operation,effective_on,recorded_at,actor_id,reverses_journal_id) values (?,?,?,?,?,?,?,?,?,?,?)",Statement.RETURN_GENERATED_KEYS);
+            var ps=connection.prepareStatement("insert into ledger_journals(household_id,source_type,source_id,revision,request_key,request_digest,operation,effective_on,recorded_at,actor_id,reverses_journal_id) values (?,?,?,?,?,?,?,?,?,?,?)",new String[]{"id"});
             ps.setLong(1,c.householdId()); ps.setString(2,c.sourceType()); ps.setLong(3,c.sourceId());
             ps.setLong(4,revision); ps.setString(5,c.idempotencyKey()); ps.setString(6,digest); ps.setString(7,operation);
             ps.setObject(8,c.effectiveOn()); ps.setTimestamp(9,Timestamp.from(now)); ps.setLong(10,c.actorId()); ps.setObject(11,reversed);

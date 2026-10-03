@@ -23,7 +23,7 @@ public class LoanRepaymentBatchRepository {
                 insert into loan_repayment_batches(household_id,loan_id,request_key,actor_id,paid_on,payment_account_id,
                 due_principal_amount,due_interest_amount,additional_principal,total_cash_amount,balance_after,
                 remaining_principal,loan_status,preview_json,recorded_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,Statement.RETURN_GENERATED_KEYS);
+                """,new String[]{"id"});
             s.setLong(1,household);s.setLong(2,loan.getId());s.setString(3,key);s.setLong(4,actor);s.setObject(5,preview.paidOn());s.setLong(6,preview.paymentAccountId());
             s.setBigDecimal(7,new BigDecimal(preview.duePrincipalAmount()));s.setBigDecimal(8,new BigDecimal(preview.dueInterestAmount()));
             s.setBigDecimal(9,new BigDecimal(preview.additionalPrincipal()));s.setBigDecimal(10,new BigDecimal(preview.totalCashAmount()));

@@ -61,7 +61,7 @@ public class ExchangeRateStore {
         int revision=previous.isEmpty()?1:Math.addExact(previous.get(0).revision(),1);
         var keys=new GeneratedKeyHolder();
         jdbc.update(connection->{
-            var ps=connection.prepareStatement("insert into fx_rate_batches(source,effective_on,fetched_at,revision,payload_hash) values (?,?,?,?,?)",java.sql.Statement.RETURN_GENERATED_KEYS);
+            var ps=connection.prepareStatement("insert into fx_rate_batches(source,effective_on,fetched_at,revision,payload_hash) values (?,?,?,?,?)",new String[]{"id"});
             ps.setString(1,batch.source());ps.setObject(2,batch.effectiveOn());ps.setTimestamp(3,java.sql.Timestamp.from(fetchedAt));
             ps.setInt(4,revision);ps.setString(5,digest);return ps;
         },keys);
