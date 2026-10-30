@@ -16,7 +16,9 @@ import com.familyfinance.ledger.FinancialAccountRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,20 +28,36 @@ public final class SourceFilterQaLauncher {
     private SourceFilterQaLauncher() {}
 
     public static void main(String[] args) throws Exception {
+        String databaseUrl = "jdbc:h2:mem:qa_source_filter;DB_CLOSE_DELAY=-1";
+        String port = System.getenv().getOrDefault("FAMILY_QA_SOURCE_PORT", "18801");
+        int requestedPort = Integer.parseInt(port);
+        if (requestedPort < 0 || requestedPort > 65535) throw new IllegalArgumentException("Invalid QA port");
         ConfigurableApplicationContext context = new SpringApplicationBuilder(FamilyFinanceApplication.class).run(
-                "--server.address=127.0.0.1", "--server.port=18801",
-                "--spring.profiles.active=test", "--spring.datasource.url=jdbc:h2:mem:qa_source_filter;DB_CLOSE_DELAY=-1",
+                "--server.address=127.0.0.1", "--server.port=" + requestedPort,
+                "--spring.profiles.active=test", "--spring.datasource.url=" + databaseUrl,
+                "--spring.datasource.driver-class-name=org.h2.Driver",
                 "--spring.datasource.username=sa", "--spring.datasource.password=",
-                "--spring.flyway.locations=classpath:db/migration", "--app.seed.enabled=true",
-                "--app.scheduling.enabled=false", "--app.fx.scheduled=false");
-        try (var connection = context.getBean(DataSource.class).getConnection()) {
-            if (!connection.getMetaData().getURL().equals("jdbc:h2:mem:qa_source_filter")) {
-                context.close();
+                "--spring.flyway.url=" + databaseUrl, "--spring.flyway.driver-class-name=org.h2.Driver",
+                "--spring.flyway.user=sa", "--spring.flyway.password=",
+                "--spring.flyway.enabled=true", "--spring.flyway.locations=classpath:db/migration",
+                "--app.seed.enabled=true", "--app.scheduling.enabled=false", "--app.fx.scheduled=false");
+        try (var connection = context.getBean(DataSource.class).getConnection();
+             var migration = context.getBean(Flyway.class).getConfiguration().getDataSource().getConnection()) {
+            String actualUrl = connection.getMetaData().getURL();
+            if (!actualUrl.equals("jdbc:h2:mem:qa_source_filter")
+                    || !migration.getMetaData().getURL().equals(actualUrl)
+                    || !connection.getMetaData().getUserName().equals("SA")
+                    || !migration.getMetaData().getUserName().equals("SA")) {
                 throw new IllegalStateException("Refusing to seed a database other than the QA in-memory H2 database");
             }
+            System.out.println("QA_SOURCE_DATABASE " + actualUrl);
+        } catch (Exception exception) {
+            context.close();
+            throw exception;
         }
         context.getBean(TransactionTemplate.class).executeWithoutResult(status -> seed(context));
-        System.out.println("QA_SOURCE_READY http://127.0.0.1:18801/workspace/transactions?month=2026-10");
+        int actualPort = ((WebServerApplicationContext) context).getWebServer().getPort();
+        System.out.println("QA_SOURCE_READY http://127.0.0.1:" + actualPort + "/workspace/transactions?month=2026-10");
     }
 
     private static void seed(ConfigurableApplicationContext context) {

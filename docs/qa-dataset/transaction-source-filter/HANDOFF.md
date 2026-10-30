@@ -10,10 +10,10 @@
 npm --prefix frontend ci
 npm --prefix frontend run build
 ./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true test-compile dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/qa-source-classpath.txt
-java -cp "target/test-classes:target/classes:$(cat target/qa-source-classpath.txt)" com.familyfinance.transaction.SourceFilterQaLauncher
+FAMILY_QA_SOURCE_PORT=18801 java -cp "target/test-classes:target/classes:$(cat target/qa-source-classpath.txt)" com.familyfinance.transaction.SourceFilterQaLauncher
 ```
 
-出现 `QA_SOURCE_READY` 后打开 `http://127.0.0.1:18801/workspace/transactions?month=2026-10`。页面和 `/api/*` 同源，无需单独的 18802 Vite 服务；测试账号为项目测试演示账户 `demo` / `demo1234`。进程前台运行，Ctrl+C 只停止该测试进程。启动器强制 loopback、`test` profile、专用的进程内 `jdbc:h2:mem:qa_source_filter`、H2 迁移与禁用调度，并核对实际连接；它不会连接现有 MySQL。内存数据进程退出即消失，下次启动重新生成。不要在该进程运行时重编译或重建其 `target/classes`；需要重建先停止它。
+出现 `QA_SOURCE_READY` 后打开 `http://127.0.0.1:18801/workspace/transactions?month=2026-10`。页面和 `/api/*` 同源，无需单独的 18802 Vite 服务；测试账号为项目测试演示账户 `demo` / `demo1234`。进程前台运行，Ctrl+C 只停止该测试进程。启动器在 Spring 启动前通过最高优先级的应用参数固定 loopback、`test` profile、H2 驱动、应用与 Flyway 的同一个专用进程内 `jdbc:h2:mem:qa_source_filter` 及其测试凭据、H2 迁移位置与禁用调度，并在启动后额外核对两条连接；它不会因外部 `SPRING_DATASOURCE_*` 或 `SPRING_FLYWAY_*` URL/凭据设置而连接现有 MySQL。内存数据进程退出即消失，下次启动重新生成。`FAMILY_QA_SOURCE_PORT` 只控制监听端口；隔离测试将其设为 0 以分配随机端口。不要在该进程运行时重编译或重建其 `target/classes`；需要重建先停止它。
 
 ## 合成数据与可执行检查
 
@@ -23,7 +23,25 @@ java -cp "target/test-classes:target/classes:$(cat target/qa-source-classpath.tx
 2. 在第二页选择「手工录入」：回到第一页，看到 1.00 的 `QA-MANUAL`；汇总和下载的 CSV 应同步筛选。切回全部恢复 55 条合成支出。
 3. 分别选择历史贷款、贷款还款、贷款提前还款，核对 3.00 / 4.00 / 5.00 与对应备注。组合成员、账户、分类或搜索，列表、统计和 CSV 应一致。空结果应保留原有空状态。
 4. 使用登录 Cookie 查询 `GET /api/transactions?month=2026-10&kind=expense&sourceType=RECURRING&page=0&size=50`、`GET /api/transactions/summary?month=2026-10&kind=expense&sourceType=RECURRING` 和 `GET /api/export.csv?month=2026-10&kind=expense&sourceType=RECURRING`。请求通过认证且 CSV 使用 `Accept: */*` 或 `text/csv` 时，错误值如 `sourceType=manual` 应返回 HTTP 400、`error.code=VALIDATION_ERROR`、`error.fields.sourceType=来源类型无效`；导出即便发送 `Accept: text/csv` 也应返回该 JSON 错误。仅接受 `application/json` 的 CSV 请求因既有媒体协商问题在基准和候选均返回 500，不属于本 PR 修复范围。
-5. 自动化（隔离 H2）：`./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true -Dtest=TransactionSourceFilterApiTest,CsvExportApiTest test`；界面行为：`cd frontend && npm test -- --run src/features/ledger/TransactionSourceFilter.test.tsx`。不要把以上开发验证直接当成独立 QA 结论。
+5. 新增的 API 和启动器隔离回归可安全运行以下命令：测试类在 Spring 初始化前固定唯一的内存 H2，启动器进程也固定独立 H2。
+
+   ```bash
+   ./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true -Dtest=TransactionSourceFilterApiTest,SourceFilterQaLauncherIsolationTest test
+   ```
+
+6. 原有 `CsvExportApiTest` 本身没有同样的环境隔离保护。不要直接运行它；需要回归时在仓库根目录使用下面的受控命令，通过一次赋值将应用数据源与 Flyway 绑定到同一新建内存库。命令行属性覆盖外部 Spring 数据源和 Flyway URL、驱动、用户名、密码与迁移位置。
+
+   ```bash
+   QA_CSV_JDBC="jdbc:h2:mem:qa-csv-$(date +%s)-$$;DB_CLOSE_DELAY=-1"
+   ./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true \
+     "-Dspring.datasource.url=$QA_CSV_JDBC" -Dspring.datasource.driver-class-name=org.h2.Driver \
+     -Dspring.datasource.username=sa -Dspring.datasource.password= \
+     "-Dspring.flyway.url=$QA_CSV_JDBC" -Dspring.flyway.driver-class-name=org.h2.Driver \
+     -Dspring.flyway.user=sa -Dspring.flyway.password= -Dspring.flyway.enabled=true \
+     -Dspring.flyway.locations=classpath:db/migration -Dtest=CsvExportApiTest test
+   ```
+
+界面行为：`cd frontend && npm test -- --run src/features/ledger/TransactionSourceFilter.test.tsx`。不要把以上开发验证直接当成独立 QA 结论。
 
 ## 责任和范围
 

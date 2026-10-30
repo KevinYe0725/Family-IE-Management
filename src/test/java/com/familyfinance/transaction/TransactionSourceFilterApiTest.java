@@ -31,6 +31,9 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -40,6 +43,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -50,12 +55,16 @@ import tools.jackson.databind.ObjectMapper;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TransactionSourceFilterApiTest {
+    private static final String TEST_DATABASE_URL = "jdbc:h2:mem:transaction-source-filter-"
+            + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
     private static final Instant NOW = Instant.parse("2026-10-01T00:00:00Z");
     private static final LocalDate OCTOBER = LocalDate.parse("2026-10-12");
     @LocalServerPort int port;
     @Autowired ObjectMapper mapper;
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
+    @Autowired Flyway flyway;
     @Autowired FinancialTransactionRepository transactions;
     @Autowired AppUserRepository users;
     @Autowired HouseholdRepository households;
@@ -70,6 +79,19 @@ class TransactionSourceFilterApiTest {
     private long memberId;
     private long categoryId;
     private long sourceId = 800000;
+
+    @DynamicPropertySource
+    static void isolatedDatabase(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () -> TEST_DATABASE_URL);
+        registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
+        registry.add("spring.datasource.username", () -> "sa");
+        registry.add("spring.datasource.password", () -> "");
+        registry.add("spring.flyway.url", () -> TEST_DATABASE_URL);
+        registry.add("spring.flyway.driver-class-name", () -> "org.h2.Driver");
+        registry.add("spring.flyway.user", () -> "sa");
+        registry.add("spring.flyway.password", () -> "");
+        registry.add("spring.flyway.locations", () -> "classpath:db/migration");
+    }
 
     @BeforeAll
     void setUp() throws Exception {
@@ -136,6 +158,29 @@ class TransactionSourceFilterApiTest {
             jdbc.update("update financial_transactions set source_type = 'LOAN' where id = ?", row.getId());
         }
         return row;
+    }
+
+    @Test
+    void datasourceAndFlywayUseTheSameDedicatedInMemoryH2() throws Exception {
+        try (var applicationConnection = dataSource.getConnection();
+             var migrationConnection = flyway.getConfiguration().getDataSource().getConnection()) {
+            String databaseUrl = applicationConnection.getMetaData().getURL();
+            assertThat(databaseUrl).startsWith("jdbc:h2:mem:transaction-source-filter-");
+            assertThat(migrationConnection.getMetaData().getURL()).isEqualTo(databaseUrl);
+            assertThat(applicationConnection.getMetaData().getUserName()).isEqualTo("SA");
+            assertThat(migrationConnection.getMetaData().getUserName()).isEqualTo("SA");
+        }
+    }
+
+    @Test
+    void otherCsvFilterValidationAlsoReturnsJsonForCsvClients() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/export.csv?month=invalid"))
+                .header("Accept", "text/csv").GET().build();
+        HttpResponse<String> response = send(request);
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(value -> assertThat(value).startsWith("application/json"));
+        assertThat(json(response).path("error").path("code").asText()).isEqualTo("VALIDATION_ERROR");
+        assertThat(json(response).path("error").path("fields").path("month").asText()).isEqualTo("月份格式必须是 YYYY-MM");
     }
 
     @Test
