@@ -51,6 +51,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const [transferKind,setTransferKind]=useState<'same'|'fx'>('same');
   const [memberId, setMemberId] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [sourceType, setSourceType] = useState<Transaction['sourceType'] | ''>('');
   const [transactionPage, setTransactionPage] = useState(0);
   const [accountPage, setAccountPage] = useState(0);
   const [categoryPage, setCategoryPage] = useState(0);
@@ -68,7 +69,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
   const [accountDraft, setAccountDraft] = useState<{ id?: number; name: string; type: AccountType; walletProvider: WalletProvider | ''; bankName: string; cardLastFour: string; currency: string; openingBalance: string; openingOn: string; mode: 'create' | 'metadata' | 'opening'; confirmed: boolean; key: string } | null>(null);
   const [categoryDraft, setCategoryDraft] = useState<{ id?: number; name: string; kind: TransactionKind; color: string; parentId: string } | null>(null);
 
-  const filters = useMemo(() => new URLSearchParams(Object.entries({ month: selectedDay ? '' : month, from: selectedDay ?? '', to: selectedDay ?? '', kind, q, accountId, bankAccountId, memberId, categoryId }).filter(([, value]) => value)).toString(), [month, selectedDay, kind, q, accountId, bankAccountId, memberId, categoryId]);
+  const filters = useMemo(() => new URLSearchParams(Object.entries({ month: selectedDay ? '' : month, from: selectedDay ?? '', to: selectedDay ?? '', kind, q, accountId, bankAccountId, memberId, categoryId, sourceType }).filter(([, value]) => value)).toString(), [month, selectedDay, kind, q, accountId, bankAccountId, memberId, categoryId, sourceType]);
   const transactions = useQuery({ queryKey: ['transactions', 'page', filters, transactionPage], queryFn: () => request<Page<Transaction>>(`/api/transactions?${filters}&page=${transactionPage}&size=50`, { responseType: 'page' }) });
 
   const accountOptions = useQuery({ queryKey: ['accounts', 'all-options'], queryFn: () => readAllPages(page => request<Page<Account>>(`/api/accounts?page=${page}&size=50`, { responseType: 'page' })) });
@@ -104,7 +105,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
     onSuccess: (_saved, value) => {
       setDraft(null); setTransactionPage(0); selectKind(value.kind);
       setMonth(value.occurredOn.slice(0, 7));
-      setQ(''); setAccountId(''); setBankAccountId(''); setMemberId('');
+      setQ(''); setAccountId(''); setBankAccountId(''); setMemberId(''); setSourceType('');
     }
   });
   const remove = useMutation({ mutationFn: (id: number) => request<void>(`/api/transactions/${id}`, { method: 'DELETE', headers: { 'Idempotency-Key': deleting!.key } }), onError: fundsError, onSuccess: () => { setDeleteId(null); setTransactionPage(0); } });
@@ -128,6 +129,7 @@ export function TransactionsPage({ request, role, userId, requestedSection }: { 
       <div className="filter-bar">
         <label>账期<DateField aria-label="账期" mode="month" allowClear={false} value={month} onChange={e => setMonth(e.target.value)} /></label>
         <label>类型<select aria-label="收支类型筛选" value={kind} onChange={e => selectKind(e.target.value as TransactionKind)}><option value="expense">支出</option><option value="income">收入</option></select></label>
+        <label>来源<select aria-label="来源筛选" value={sourceType} onChange={e => { setSourceType(e.target.value as Transaction['sourceType'] | ''); setTransactionPage(0); }}><option value="">全部</option><option value="MANUAL">手工录入</option><option value="RECURRING">周期账单</option><option value="LOAN">历史贷款</option><option value="LOAN_PAYMENT">贷款还款</option><option value="LOAN_PREPAYMENT">贷款提前还款</option></select></label>
 <label>银行卡<select aria-label="银行卡筛选" value={bankAccountId} onChange={e=>{setBankAccountId(e.target.value);setAccountId("");}}><option value="">全部</option>{[...new Map((accountOptions.data??[]).filter(a=>a.bankAccountId).map(a=>[a.bankAccountId!,a.bankAccountName??a.name])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
         <label>账户<select aria-label="账户筛选" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">全部</option>{accountOptions.data?.filter(a=>!bankAccountId||a.bankAccountId===Number(bankAccountId)).map(item => <option key={item.id} value={item.id}>{accountLabel(item)}</option>)}</select></label>
         <label>成员<select aria-label="成员筛选" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="">全部</option><option value="0">全体（家庭共同）</option>{members.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>

@@ -1,6 +1,9 @@
 package com.familyfinance.reporting;
 
 import com.familyfinance.shared.CurrentHousehold;
+import com.familyfinance.shared.ApiEnvelope;
+import com.familyfinance.shared.ApiError;
+import com.familyfinance.shared.RequestValidationException;
 import com.familyfinance.transaction.TransactionFilter;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -8,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,6 +28,12 @@ public class ExportController {
         this.currentHousehold = currentHousehold;
     }
 
+    @ExceptionHandler(RequestValidationException.class)
+    ResponseEntity<ApiEnvelope<Void>> handleFilterValidation(RequestValidationException exception) {
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                .body(ApiEnvelope.error(new ApiError("VALIDATION_ERROR", "请检查输入内容", exception.fields())));
+    }
+
     @GetMapping(value = "/api/export.csv", produces = "text/csv;charset=UTF-8")
     ResponseEntity<byte[]> export(
             Authentication authentication,
@@ -31,12 +41,13 @@ public class ExportController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String q) {
-        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId);
+        TransactionFilter filter = new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId, sourceType);
         byte[] body = csvExportService.export(currentHousehold.id(authentication), filter);
         return ResponseEntity.ok()
                 .contentType(CSV_UTF8)

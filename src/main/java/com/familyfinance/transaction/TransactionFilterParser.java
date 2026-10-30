@@ -50,6 +50,7 @@ class TransactionFilterParser {
         }
 
         TransactionKind kind = parseKind(filter.kind(), fields);
+        TransactionSourceType sourceType = parseSourceType(filter.sourceType(), fields);
         if (filter.accountId() != null) {
             requireAccountExists(householdId, filter.accountId(), fields);
         }
@@ -76,7 +77,8 @@ class TransactionFilterParser {
                 filter.memberId(),
                 filter.categoryId(),
                 keyword,
-                filter.bankAccountId());
+                filter.bankAccountId(),
+                sourceType);
     }
 
     private void requireAccountExists(long householdId, long accountId, Map<String, String> fields) {
@@ -130,6 +132,18 @@ class TransactionFilterParser {
             return TransactionKind.fromJson(rawKind.trim());
         } catch (IllegalArgumentException exception) {
             fields.put("kind", exception.getMessage());
+            return null;
+        }
+    }
+
+    private static TransactionSourceType parseSourceType(String rawSourceType, Map<String, String> fields) {
+        if (rawSourceType == null || rawSourceType.isBlank()) {
+            return null;
+        }
+        try {
+            return TransactionSourceType.valueOf(rawSourceType);
+        } catch (IllegalArgumentException exception) {
+            fields.put("sourceType", "来源类型无效");
             return null;
         }
     }
