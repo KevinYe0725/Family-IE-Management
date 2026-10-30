@@ -24,6 +24,9 @@ final class TransactionSpecifications {
             }
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.equal(root.get("household").get("id"), criteria.householdId()));
+            if (criteria.sourceType() != null) {
+                predicates.add(builder.equal(root.get("sourceType"), criteria.sourceType()));
+            }
             if (criteria.kind() != null) {
                 predicates.add(builder.equal(root.get("kind"), criteria.kind()));
             }

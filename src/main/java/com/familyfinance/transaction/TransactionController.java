@@ -48,6 +48,7 @@ public class TransactionController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) Long memberId,
@@ -55,7 +56,7 @@ public class TransactionController {
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q);
+        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q, sourceType);
         TransactionPage result = transactionService.list(currentHousehold.id(authentication), filter, page, size);
         return ResponseEntity.ok()
                 .header("X-Page", Integer.toString(result.page()))
@@ -73,12 +74,13 @@ public class TransactionController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String kind,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) Long accountId,
             @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) Long memberId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String q) {
-        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q);
+        TransactionFilter filter = filter(month, from, to, kind, accountId, bankAccountId, memberId, categoryId, q, sourceType);
         return ApiEnvelope.data(transactionSummaryService.summarize(currentHousehold.id(authentication), filter));
     }
 
@@ -124,7 +126,8 @@ public class TransactionController {
             Long bankAccountId,
             Long memberId,
             Long categoryId,
-            String q) {
-        return new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId);
+            String q,
+            String sourceType) {
+        return new TransactionFilter(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId, sourceType);
     }
 }

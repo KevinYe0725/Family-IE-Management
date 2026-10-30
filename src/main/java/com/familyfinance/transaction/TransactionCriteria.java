@@ -12,7 +12,8 @@ record TransactionCriteria(
         Long memberId,
         Long categoryId,
         String keyword,
-        Long bankAccountId) {
+        Long bankAccountId,
+        TransactionSourceType sourceType) {
 
     TransactionCriteria(
             long householdId,
@@ -23,6 +24,6 @@ record TransactionCriteria(
             Long memberId,
             Long categoryId,
             String keyword) {
-        this(householdId, from, to, kind, accountId, memberId, categoryId, keyword, null);
+        this(householdId, from, to, kind, accountId, memberId, categoryId, keyword, null, null);
     }
 }

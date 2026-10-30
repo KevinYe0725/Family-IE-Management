@@ -1,6 +1,6 @@
 # Transaction Source Filter Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Independent final review is coordinated by the parent agent.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Independent final review is coordinated by the parent agent.
 
 **Goal:** 按来源一致筛选当前家庭的收支列表、统计、CSV 和账本界面。
 
@@ -30,10 +30,10 @@
 
 **Interfaces:** 现有过滤器扩展 `String sourceType` 并保留 8/9 参数重载；解析后 criteria 保存 `TransactionSourceType`；三个现有 GET 接口均接受相同查询参数。
 
-- [ ] 添加 Spring MockMvc + H2 测试：真实会话下插入手工、周期、贷款付款、提前还款、旧贷款以及其他家庭合成记录，断言来源、现有组合筛选、隔离、所有端点、分页、全部和精确 400 契约。
-- [ ] 运行 `./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true -Dtest=TransactionSourceFilterApiTest test`，确认因忽略来源而失败。
-- [ ] 添加控制器参数、过滤器和 criteria 字段、严格解析及共享 JPA 相等条件；保留原构造器。
-- [ ] 重跑该测试并确认通过；运行相关现有交易、统计、CSV 测试。
+- [x] 添加 Spring MockMvc + H2 测试：真实会话下插入手工、周期、贷款付款、提前还款、旧贷款以及其他家庭合成记录，断言来源、现有组合筛选、隔离、所有端点、分页、全部和精确 400 契约。
+- [x] 运行 `./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true -Dtest=TransactionSourceFilterApiTest test`，确认因忽略来源而失败。
+- [x] 添加控制器参数、过滤器和 criteria 字段、严格解析及共享 JPA 相等条件；保留原构造器。
+- [x] 重跑该测试并确认通过；运行相关现有交易、统计、CSV 测试。
 
 ### Task 2: 账本来源选择
 
@@ -41,15 +41,15 @@
 
 **Interfaces:** 下拉框可访问名称为 `来源筛选`，值为空或 `Transaction['sourceType']`；已有 `filters` 参数字符串同时传给列表、`LedgerCharts` 和 CSV 链接。
 
-- [ ] 添加 UI 行为测试：进入第二页，选 `RECURRING`，检查列表页码 0、统计请求与 CSV 包含来源和既有条件；切换全部时参数消失；核对五个可选值。
-- [ ] 运行 `npm test -- --run src/features/ledger/TransactionsPage.test.tsx`，确认因控件不存在而失败。
-- [ ] 实现下拉、共享查询串和同步页码重置，并将保存后的来源清空；不改角色判断。
-- [ ] 重跑定向前端测试、`npm run typecheck` 和 `npm run build`。
+- [x] 添加 UI 行为测试：进入第二页，选 `RECURRING`，检查列表页码 0、统计请求与 CSV 包含来源和既有条件；切换全部时参数消失；核对五个可选值。
+- [x] 运行 `npm test -- --run src/features/ledger/TransactionsPage.test.tsx`，确认因控件不存在而失败。
+- [x] 实现下拉、共享查询串和同步页码重置，并将保存后的来源清空；不改角色判断。
+- [x] 重跑定向前端测试、`npm run typecheck` 和 `npm run build`。
 
 ### Task 3: 全量验证和交接
 
 **Files:** Create `docs/qa-dataset/transaction-source-filter/{DEVELOPMENT_MEMORY,HANDOFF}.md`。
 
-- [ ] 运行全量前后端测试，记录命令、用例数、失败及跳过和环境限制；不修无关问题。
-- [ ] 写明测试库和可运行的 API/UI、合成夹具准备、基准及规范提交、职责与已知限制；开发测试结果不称作独立 QA 验收。
-- [ ] 对改动和测试记录做最终检查，精确暂存本任务文件并提交；将提交给父代理复核。
+- [x] 运行全量前后端测试，记录命令、用例数、失败及跳过和环境限制；不修无关问题。
+- [x] 写明测试库和可运行的 API/UI、合成夹具准备、基准及规范提交、职责与已知限制；开发测试结果不称作独立 QA 验收。
+- [x] 对改动和测试记录做最终检查，精确暂存本任务文件并提交；将提交给父代理复核。

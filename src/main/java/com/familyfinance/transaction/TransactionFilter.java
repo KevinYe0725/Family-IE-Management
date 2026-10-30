@@ -9,7 +9,8 @@ public record TransactionFilter(
         Long memberId,
         Long categoryId,
         String q,
-        Long bankAccountId) {
+        Long bankAccountId,
+        String sourceType) {
 
     public TransactionFilter(
             String month,
@@ -20,6 +21,18 @@ public record TransactionFilter(
             Long memberId,
             Long categoryId,
             String q) {
-        this(month, from, to, kind, accountId, memberId, categoryId, q, null);
+        this(month, from, to, kind, accountId, memberId, categoryId, q, null, null);
+    }
+    public TransactionFilter(
+            String month,
+            String from,
+            String to,
+            String kind,
+            Long accountId,
+            Long memberId,
+            Long categoryId,
+            String q,
+            Long bankAccountId) {
+        this(month, from, to, kind, accountId, memberId, categoryId, q, bankAccountId, null);
     }
 }
