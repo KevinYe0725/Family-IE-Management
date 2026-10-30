@@ -22,7 +22,7 @@ java -cp "target/test-classes:target/classes:$(cat target/qa-source-classpath.tx
 1. 登录后选「收支记录」、账期 `2026-10` 和支出，选择「周期账单」：第一页 50 条，第二页 1 条，支出合计 102.00；CSV 有 51 条数据行，且不含外家庭标记。
 2. 在第二页选择「手工录入」：回到第一页，看到 1.00 的 `QA-MANUAL`；汇总和下载的 CSV 应同步筛选。切回全部恢复 55 条合成支出。
 3. 分别选择历史贷款、贷款还款、贷款提前还款，核对 3.00 / 4.00 / 5.00 与对应备注。组合成员、账户、分类或搜索，列表、统计和 CSV 应一致。空结果应保留原有空状态。
-4. 使用登录 Cookie 查询 `GET /api/transactions?month=2026-10&kind=expense&sourceType=RECURRING&page=0&size=50`、`GET /api/transactions/summary?month=2026-10&kind=expense&sourceType=RECURRING` 和 `GET /api/export.csv?month=2026-10&kind=expense&sourceType=RECURRING`。错误值如 `sourceType=manual` 应返回 HTTP 400、`error.code=VALIDATION_ERROR`、`error.fields.sourceType=来源类型无效`；导出即便发送 `Accept: text/csv` 也应返回该 JSON 错误。
+4. 使用登录 Cookie 查询 `GET /api/transactions?month=2026-10&kind=expense&sourceType=RECURRING&page=0&size=50`、`GET /api/transactions/summary?month=2026-10&kind=expense&sourceType=RECURRING` 和 `GET /api/export.csv?month=2026-10&kind=expense&sourceType=RECURRING`。请求通过认证且 CSV 使用 `Accept: */*` 或 `text/csv` 时，错误值如 `sourceType=manual` 应返回 HTTP 400、`error.code=VALIDATION_ERROR`、`error.fields.sourceType=来源类型无效`；导出即便发送 `Accept: text/csv` 也应返回该 JSON 错误。仅接受 `application/json` 的 CSV 请求因既有媒体协商问题在基准和候选均返回 500，不属于本 PR 修复范围。
 5. 自动化（隔离 H2）：`./mvnw -B -Dskip.npm=true -Dskip.installnodenpm=true -Dtest=TransactionSourceFilterApiTest,CsvExportApiTest test`；界面行为：`cd frontend && npm test -- --run src/features/ledger/TransactionSourceFilter.test.tsx`。不要把以上开发验证直接当成独立 QA 结论。
 
 ## 责任和范围

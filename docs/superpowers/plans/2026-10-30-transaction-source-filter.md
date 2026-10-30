@@ -12,13 +12,13 @@
 
 ## Global Constraints
 
-- 唯一合法值 `MANUAL`、`RECURRING`、`LOAN`、`LOAN_PAYMENT`、`LOAN_PREPAYMENT`；缺省或空白为全部，其他值 HTTP 400 字段 `sourceType`。
+- 唯一合法值 `MANUAL`、`RECURRING`、`LOAN`、`LOAN_PAYMENT`、`LOAN_PREPAYMENT`；缺省或空白为全部，通过认证及现有 CSV 媒体协商后其他值 HTTP 400 字段 `sourceType`。
 - 不改数据库、记账、金额及币种语义、导出列、权限或排序；旧过滤器构造调用继续可用。
 - 只使用隔离测试库和合成数据；先有实际 RED，再实现 GREEN。
 
 ## Review Focus
 
-- 非法、大小写变化、两侧空格：三个 API 均按字段拒绝。
+- 非法、大小写变化、两侧空格：通过认证和现有媒体协商后，三个 API 均按字段拒绝。
 - 空白及缺省：三个 API 维持不筛选的全部结果。
 - 多条件交集和跨家庭同来源：列表、统计与导出一致且隔离。
 - 筛选后超过一页：分页不影响全量统计和 CSV。
