@@ -13,9 +13,11 @@ npm --prefix frontend run build
 FAMILY_QA_SOURCE_PORT=18801 java -cp "target/test-classes:target/classes:$(cat target/qa-source-classpath.txt)" com.familyfinance.transaction.SourceFilterQaLauncher
 ```
 
-出现 `QA_SOURCE_READY` 后打开 `http://127.0.0.1:18801/workspace/transactions?month=2026-10`。页面和 `/api/*` 同源，无需单独的 18802 Vite 服务；测试账号为项目测试演示账户 `demo` / `demo1234`。进程前台运行，Ctrl+C 只停止该测试进程。启动器在 Spring 启动前通过最高优先级的应用参数固定 loopback、`test` profile、H2 驱动、应用与 Flyway 的同一个专用进程内 `jdbc:h2:mem:qa_source_filter` 及其测试凭据、H2 迁移位置与禁用调度，并在启动后额外核对两条连接；它不会因外部 `SPRING_DATASOURCE_*` 或 `SPRING_FLYWAY_*` URL/凭据设置而连接现有 MySQL。内存数据进程退出即消失，下次启动重新生成。`FAMILY_QA_SOURCE_PORT` 只控制监听端口；隔离测试将其设为 0 以分配随机端口。不要在该进程运行时重编译或重建其 `target/classes`；需要重建先停止它。
+出现 `QA_SOURCE_READY` 后打开 `http://127.0.0.1:18801/workspace/transactions?month=2026-10`。页面和 `/api/*` 同源，无需单独的 18802 Vite 服务；网页登录使用测试邮箱 `demo@local.family`、密码 `demo1234`（接口也兼容用户名 `demo`）。进程前台运行，Ctrl+C 只停止该测试进程。启动器在 Spring 启动前通过最高优先级的应用参数固定 loopback、`test` profile、H2 驱动、应用与 Flyway 的同一个专用进程内 `jdbc:h2:mem:qa_source_filter` 及其测试凭据、H2 迁移位置与禁用调度，并在启动后额外核对两条连接；它不会因外部 `SPRING_DATASOURCE_*` 或 `SPRING_FLYWAY_*` URL/凭据设置而连接现有 MySQL。内存数据进程退出即消失，下次启动重新生成。`FAMILY_QA_SOURCE_PORT` 只控制监听端口；隔离测试将其设为 0 以分配随机端口。不要在该进程运行时重编译或重建其 `target/classes`；需要重建先停止它。
 
 ## 合成数据与可执行检查
+
+首次登录若出现“先确认账户期初余额”，选择“稍后处理”后再验证筛选。合成账户未构建完整账务链，当前场景不要求初始化账户，也不要为了关闭提示而修改期初数据。
 
 启动器 `src/test/java/com/familyfinance/transaction/SourceFilterQaLauncher.java` 生成 2026-10、支出、CNY 的 `QA 合成账户` / `QA 合成分类`：手工 1 条（1.00）、周期 51 条（每条 2.00）、历史贷款 1 条（3.00）、贷款还款 1 条（4.00）、提前还款 1 条（5.00）；另有外家庭周期记录 `QA-FOREIGN-DO-NOT-SHOW`。这些合成收支由测试实体工厂直接写入，不经过周期确认或贷款记账，也不附带完整账务分录；它们只用于验证读取筛选，不用于验证预算、账户余额或真实账务链。来源为 `LOAN` 的历史样例仅在该隔离 H2 中用 SQL 构造，以模拟没有当前创建入口的旧记录。项目还会装载原有合成 demo 数据，使用 2026-10 月份可排除其旧月记录。
 
